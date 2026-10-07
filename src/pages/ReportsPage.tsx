@@ -8,11 +8,19 @@ import { ROLE_LABEL } from "@/data/catalog";
 import { downloadCsv } from "@/lib/csv";
 import { averageResponseMinutes, employeeRows, followUpSeries, formatDuration, snapshotMetrics } from "@/lib/metrics";
 import { percent } from "@/lib/utils";
+import { useAuth } from "@/context/AuthContext";
+import { ProductionReports } from "@/pages/production/ProductionOpsPages";
 import type { DateRangeKey } from "@/types";
 
 type Range = DateRangeKey | "all";
 
 export function ReportsPage() {
+  const { productionUser } = useAuth();
+  if (productionUser) return <ProductionReports />;
+  return <DemoReports />;
+}
+
+function DemoReports() {
   const { state } = useCrm();
   const [range, setRange] = useState<Range>("all");
   const metrics = snapshotMetrics(state);

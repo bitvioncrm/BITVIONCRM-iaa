@@ -7,7 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
+import { canOperateWhatsApp } from "@/lib/production-access";
+import { listVisibleMessages } from "@/services/production-ops";
 import { useCrm } from "@/context/CrmContext";
 import { inDayRange } from "@/lib/day-filter";
 import { formatTime, toDateTimeLocal, tomorrowAt10 } from "@/lib/dates";
@@ -19,6 +22,62 @@ import type { Lead } from "@/types";
 const SEND_LIMIT = 30;
 
 export function WhatsAppPage() {
+  const { productionUser } = useAuth();
+  if (productionUser) return <ProductionWhatsApp />;
+  return <DemoWhatsApp />;
+}
+
+function ProductionWhatsApp() {
+  const { productionUser } = useAuth();
+  const operate = canOperateWhatsApp(productionUser?.roleKey ?? "");
+  const [status, setStatus] = useState("");
+  const [template, setTemplate] = useState("");
+  const [to, setTo] = useState("");
+  const [leadId, setLeadId] = useState("");
+  const [messages, setMessages] = useState<Array<{ id: string; body: string; direction: string; status: string; created_at: string }>>([]);
+  useEffect(() => {
+    void listVisibleMessages().then((rows) => setMessages(rows as typeof messages)).catch((reason: unknown) => setStatus(reason instanceof Error ? reason.message : "Could not load messages"));
+  }, []);
+  return (
+    <div className="space-y-4">
+      <h1 className="text-2xl font-semibold">WhatsApp</h1>
+      <p className="text-sm text-muted">{operate ? "Admin can send an approved template. A message is stored only after Meta accepts it." : "View only. Sending, templates, campaigns, and automation are limited to Admin."}</p>
+      {operate ? (
+        <form className="max-w-lg space-y-3" onSubmit={(event) => {
+          event.preventDefault();
+          void supabase?.auth.getSession().then(async ({ data }) => {
+            const token = data.session?.access_token;
+            if (!token) {
+              setStatus("Sign in again before sending.");
+              return;
+            }
+            const response = await fetch("/.netlify/functions/whatsapp-send", {
+              method: "POST",
+              headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+              body: JSON.stringify({ leadId, to, template }),
+            });
+            const body = (await response.json()) as { status?: string };
+            setStatus(body.status ?? "request_failed");
+          });
+        }}>
+          <input value={leadId} onChange={(event) => setLeadId(event.target.value)} required placeholder="Lead id" className="w-full rounded-md border border-line px-2 py-2" />
+          <input value={to} onChange={(event) => setTo(event.target.value)} required placeholder="Phone" className="w-full rounded-md border border-line px-2 py-2" />
+          <input value={template} onChange={(event) => setTemplate(event.target.value)} required placeholder="Approved template name" className="w-full rounded-md border border-line px-2 py-2" />
+          <button className="rounded-md bg-navy px-3 py-2 text-sm text-white" type="submit">Send template</button>
+        </form>
+      ) : null}
+      {status ? <p className="text-sm">{status}</p> : null}
+      <section className="rounded-lg border border-line bg-white p-4">
+        <h2 className="text-sm font-semibold">Messages you are allowed to see</h2>
+        {messages.length === 0 ? <p className="mt-2 text-sm text-muted">No messages yet.</p> : messages.map((item) => (
+          <p key={item.id} className="mt-2 text-sm">{item.created_at} · {item.direction} · {item.status} · {item.body}</p>
+        ))}
+      </section>
+    </div>
+  );
+}
+
+function DemoWhatsApp() {
   const { session } = useAuth();
   const { state, sendWhatsApp, broadcastWhatsApp, simulateReply, markRead, createFollowUps } = useCrm();
   const [params, setParams] = useSearchParams();

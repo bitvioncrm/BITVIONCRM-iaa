@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/context/AuthContext";
-import { DEMO_EMAIL, DEMO_PASSWORD, STAFF_PASSWORD } from "@/data/catalog";
+import { supabaseConfigured } from "@/lib/supabase";
 
 const schema = z.object({
   email: z.string().trim().email("Enter a valid email address"),
@@ -17,13 +17,16 @@ const schema = z.object({
 });
 
 export function LoginPage() {
-  const { session, login } = useAuth();
+  const { session, login, signup, resetPassword } = useAuth();
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
   const [loading, setLoading] = useState(false);
   const [forgot, setForgot] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
-    defaultValues: { email: DEMO_EMAIL, password: "", remember: true },
+    defaultValues: { email: "", password: "", remember: true },
   });
 
   if (session) return <Navigate to="/" replace />;
@@ -36,7 +39,7 @@ export function LoginPage() {
           <p className="text-3xl leading-tight font-semibold tracking-tight">Perumbavoor clinic and IAA Kochi, on one desk.</p>
           <p className="mt-4 text-sm leading-6 text-slate-400">Dr. K's Aesthetic Clinic, Vengola. Meta leads come in fresh. The admin assigns them. Clinic WhatsApp can run automatically. Institute stays on a direct call.</p>
         </div>
-        <p className="text-xs text-slate-500">Demo environment · WhatsApp API not connected</p>
+        <p className="text-xs text-slate-500">{supabaseConfigured ? "Sign in with your Supabase user." : "Configuration Required — Supabase Auth is not set."}</p>
       </section>
       <section className="flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
@@ -47,12 +50,17 @@ export function LoginPage() {
           <form
             className="mt-8 space-y-4"
             onSubmit={form.handleSubmit(async (values) => {
-              setLoading(true);
+              if (mode === "sign-up" && values.password.length < 8) {
+                setLoading(false);
+                setError("Use at least 8 characters.");
+                return;
+              }
               setError("");
-              await new Promise((resolve) => window.setTimeout(resolve, 400));
-              const message = login(values.email, values.password, values.remember);
+              setLoading(true);
+              const message = mode === "sign-up" ? await signup(values.email, values.password) : await login(values.email, values.password);
               setLoading(false);
               if (message) setError(message);
+              else if (mode === "sign-up") setNotice("Account requested. Confirm the email if required, then sign in. The first user becomes Super Admin.");
             })}
           >
             <label className="block text-[13px] font-medium">
@@ -75,22 +83,30 @@ export function LoginPage() {
               </button>
             </div>
             {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
-            <Button type="submit" className="w-full" disabled={loading}>{loading ? "Signing in…" : "Sign In"}</Button>
+            {notice ? <p className="text-sm">{notice}</p> : null}
+            <Button type="submit" className="w-full" disabled={loading}>{loading ? "Please wait…" : mode === "sign-up" ? "Create account" : "Sign In"}</Button>
           </form>
-          <div className="mt-6 rounded-lg border border-line bg-white px-3 py-3 text-xs leading-5 text-muted">
-            Admin · {DEMO_EMAIL} · {DEMO_PASSWORD}<br />
-            Clinic counsellor · anu.thomas@bitvion.demo · {STAFF_PASSWORD}<br />
-            Institute · rahul.mathew@bitvion.demo · {STAFF_PASSWORD}
-          </div>
+          <button type="button" className="mt-4 text-sm text-muted" onClick={() => setMode(mode === "sign-in" ? "sign-up" : "sign-in")}>
+            {mode === "sign-in" ? "Create an account" : "Already have an account"}
+          </button>
+          {supabaseConfigured ? null : <p className="mt-4 text-sm text-muted">Configuration Required. Business data is not stored in this browser.</p>}
         </div>
       </section>
       <Dialog open={forgot} onOpenChange={setForgot}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Forgot password</DialogTitle>
-            <DialogDescription>Demo Mode — password reset emails are not sent. Use {DEMO_EMAIL} and {DEMO_PASSWORD}.</DialogDescription>
+            <DialogDescription>Supabase sends the reset email. No password is stored in this app.</DialogDescription>
           </DialogHeader>
-          <Button type="button" onClick={() => setForgot(false)}>Back to sign in</Button>
+          <Input type="email" value={resetEmail} onChange={(event) => setResetEmail(event.target.value)} placeholder="Email" />
+          {notice ? <p className="text-sm">{notice}</p> : null}
+          <Button type="button" onClick={() => {
+            void resetPassword(resetEmail).then((message) => {
+              if (message) setError(message);
+              else setNotice("If that account exists, a reset email has been requested.");
+              setForgot(false);
+            });
+          }}>Send reset email</Button>
         </DialogContent>
       </Dialog>
     </div>

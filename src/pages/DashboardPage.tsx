@@ -15,9 +15,16 @@ import { dayFilterBounds, defaultDayFilter, inDayRange, yearsIn, type DayFilterV
 import { deskLeads, isAdmin } from "@/lib/scope";
 import { renderTemplate, userName } from "@/lib/template";
 import { firstName, formatTalk, greeting } from "@/lib/utils";
+import { ProductionDashboard } from "@/pages/production/ProductionDashboard";
 import type { CallLog, Lead, LeadStatus, User } from "@/types";
 
 export function DashboardPage() {
+  const { productionUser } = useAuth();
+  if (productionUser) return <ProductionDashboard />;
+  return <DemoDashboard />;
+}
+
+function DemoDashboard() {
   const { session } = useAuth();
   const { state } = useCrm();
   const me = state.users.find((user) => user.id === session?.userId);

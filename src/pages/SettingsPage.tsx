@@ -6,14 +6,22 @@ import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { useAuth } from "@/context/AuthContext";
 import { useCrm } from "@/context/CrmContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { downloadText } from "@/lib/csv";
 import { CLINIC, INSTITUTE, META_CAMPAIGNS, ROLE_LABEL } from "@/data/catalog";
+import { ProductionSettings } from "@/pages/production/ProductionOpsPages";
 
 const SECTIONS = ["General", "Company profile", "WhatsApp", "Meta Ads", "Notifications", "Automation", "Users & permissions", "Data management"] as const;
 
 export function SettingsPage() {
+  const { productionUser } = useAuth();
+  if (productionUser) return <ProductionSettings />;
+  return <DemoSettings />;
+}
+
+function DemoSettings() {
   const { state, updateSettings, updateAutomation, resetDemo } = useCrm();
   const { canManageSettings } = usePermissions();
   const [section, setSection] = useState<(typeof SECTIONS)[number]>("General");

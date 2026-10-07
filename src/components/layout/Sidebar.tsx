@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { LogOut } from "lucide-react";
-import { NAV_ITEMS, STAFF_NAV } from "@/components/layout/nav";
+import { NAV_ITEMS, productionNav, STAFF_NAV } from "@/components/layout/nav";
+import { productionRoleLabel } from "@/lib/production-access";
 import { Logo } from "@/components/shared/Logo";
 import { Avatar } from "@/components/ui/avatar";
 import { useAuth } from "@/context/AuthContext";
@@ -10,11 +11,18 @@ import { isAdmin } from "@/lib/scope";
 import { cn } from "@/lib/utils";
 
 export function Sidebar({ collapsed }: { collapsed: boolean }) {
-  const { session, logout } = useAuth();
+  const { session, logout, productionUser } = useAuth();
   const { state } = useCrm();
   const me = state.users.find((user) => user.id === session?.userId);
-  const items = isAdmin(me) ? NAV_ITEMS : STAFF_NAV;
-  const deskLabel = me?.businessUnit === "clinic" ? "Clinic · Perumbavoor" : me?.businessUnit === "institute" ? "Institute · Kochi" : ROLE_LABEL[session?.role ?? "administrator"];
+  const admin = productionUser ? productionUser.roleKey === "super_admin" || productionUser.roleKey === "admin" : isAdmin(me);
+  const items = productionUser ? productionNav(productionUser.roleKey) : admin ? NAV_ITEMS : STAFF_NAV;
+  const deskLabel = productionUser
+    ? productionRoleLabel(productionUser.roleKey)
+    : me?.businessUnit === "clinic"
+      ? "Clinic · Perumbavoor"
+      : me?.businessUnit === "institute"
+        ? "Institute · Kochi"
+        : ROLE_LABEL[session?.role ?? "administrator"];
 
   return (
     <aside className={cn("hidden h-full shrink-0 flex-col bg-sidebar text-slate-300 lg:flex", collapsed ? "w-[72px]" : "w-[248px]")}>

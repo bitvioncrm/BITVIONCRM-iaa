@@ -1,19 +1,24 @@
 import {
   BarChart3,
+  Building2,
   CalendarClock,
   Phone,
   CheckSquare,
   FileText,
+  GraduationCap,
   Kanban,
   LayoutDashboard,
   ContactRound,
   Megaphone,
   MessageCircle,
+  Package,
+  Receipt,
   ScrollText,
   Settings,
   Users,
   UsersRound,
 } from "lucide-react";
+import { pathsForRole } from "@/lib/production-access";
 
 export const NAV_ITEMS = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -37,3 +42,15 @@ export const STAFF_NAV = NAV_ITEMS.filter((item) => ["/", "/leads", "/calls", "/
 export const MOBILE_NAV = [NAV_ITEMS[0], NAV_ITEMS[2], NAV_ITEMS[5], NAV_ITEMS[6]] as const;
 
 export const ADMIN_ONLY_PREFIXES = ["/desk", "/pipeline", "/follow-ups", "/campaigns", "/templates", "/tasks", "/reports", "/team", "/activity", "/settings"];
+
+const MODULE_NAV = [
+  { to: "/clinic", label: "Clinic", icon: Building2, end: false },
+  { to: "/institute", label: "Institute", icon: GraduationCap, end: false },
+  { to: "/inventory", label: "Inventory", icon: Package, end: false },
+  { to: "/billing", label: "Billing", icon: Receipt, end: false },
+] as const;
+
+export function productionNav(roleKey: string) {
+  const allowed = new Set(pathsForRole(roleKey));
+  return [...NAV_ITEMS, ...MODULE_NAV].filter((item) => allowed.has(item.to));
+}

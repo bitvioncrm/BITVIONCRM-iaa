@@ -6,6 +6,8 @@ import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { useAuth } from "@/context/AuthContext";
+import { canOperateWhatsApp } from "@/lib/production-access";
 import { useCrm } from "@/context/CrmContext";
 import { audienceLeads } from "@/services/mutations";
 import { renderTemplate, userName } from "@/lib/template";
@@ -21,6 +23,13 @@ const AUDIENCES: Array<{ id: CampaignAudience; label: string }> = [
 ];
 
 export function CampaignsPage() {
+  const { productionUser } = useAuth();
+  if (productionUser && !canOperateWhatsApp(productionUser.roleKey)) return <p className="text-sm text-muted">WhatsApp campaigns are limited to Admin.</p>;
+  if (productionUser) return <p className="text-sm text-muted">Campaigns send only through the official Cloud API after WhatsApp is configured. This screen does not launch a fake campaign.</p>;
+  return <DemoCampaigns />;
+}
+
+function DemoCampaigns() {
   const { state, createCampaign, tickCampaign, finishCampaign } = useCrm();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");

@@ -13,9 +13,16 @@ import { STATUS_LABEL, STATUS_ORDER } from "@/data/catalog";
 import { deskLeads, isAdmin } from "@/lib/scope";
 import { formatDateTime } from "@/lib/dates";
 import { userName } from "@/lib/template";
+import { ProductionCallTime } from "@/pages/production/ProductionCallTime";
 import { formatTalk } from "@/lib/utils";
 
 export function CallsPage() {
+  const { productionUser } = useAuth();
+  if (productionUser) return <ProductionCallTime />;
+  return <DemoCallsPage />;
+}
+
+function DemoCallsPage() {
   const { session } = useAuth();
   const { state } = useCrm();
   const me = state.users.find((user) => user.id === session?.userId);

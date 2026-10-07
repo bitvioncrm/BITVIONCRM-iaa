@@ -1,5 +1,7 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
-import { DEMO_ACCOUNTS, ROLE_LABEL, USERS } from "@/data/catalog";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { ROLE_LABEL } from "@/data/catalog";
+import { supabase, supabaseConfigured } from "@/lib/supabase";
+import { primaryRoleKey } from "@/services/production-leads";
 import type { Role } from "@/types";
 
 const SESSION_KEY = "recruitflow.session";
@@ -11,59 +13,89 @@ interface Session {
   role: Role;
 }
 
+export interface ProductionUser {
+  userId: string;
+  email: string;
+  roleKey: string;
+}
+
 interface AuthValue {
   session: Session | null;
+  productionUser: ProductionUser | null;
   previewRole: Role;
   roleLabel: string;
-  login: (email: string, password: string, remember: boolean) => string | null;
+  signup: (email: string, password: string) => Promise<string | null>;
+  login: (email: string, password: string) => Promise<string | null>;
+  resetPassword: (email: string) => Promise<string | null>;
   logout: () => void;
   setPreviewRole: (role: Role) => void;
 }
 
 const AuthContext = createContext<AuthValue | null>(null);
 
-function readSession(): Session | null {
-  const raw = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY);
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as Session;
-    if (parsed?.email && parsed.userId && parsed.role) return parsed;
-  } catch {
-    return null;
-  }
-  return null;
+function appRole(key: string): Role {
+  if (key === "super_admin" || key === "admin") return "administrator";
+  return "counsellor";
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session | null>(() => readSession());
+  const [session, setSession] = useState<Session | null>(null);
+  const [productionUser, setProductionUser] = useState<ProductionUser | null>(null);
   const [previewRole, setPreviewRole] = useState<Role>("administrator");
+
+  useEffect(() => {
+    localStorage.removeItem(SESSION_KEY);
+    sessionStorage.removeItem(SESSION_KEY);
+    if (!supabase) return;
+    void supabase.auth.getSession().then(async ({ data }) => {
+      const user = data.session?.user;
+      if (!user?.email) return;
+      const key = await primaryRoleKey().catch(() => "");
+      const next = { email: user.email, userId: user.id, name: user.email, role: appRole(key) };
+      setProductionUser({ userId: user.id, email: user.email, roleKey: key });
+      setSession(next);
+      setPreviewRole(next.role);
+    });
+  }, []);
 
   const value = useMemo<AuthValue>(
     () => ({
       session,
+      productionUser,
       previewRole,
       roleLabel: ROLE_LABEL[previewRole],
-      login: (email, password, remember) => {
-        const account = DEMO_ACCOUNTS.find((item) => item.email === email.trim().toLowerCase() && item.password === password);
-        const user = USERS.find((item) => item.id === account?.userId);
-        if (!account || !user) return "Invalid email or password.";
-        const next = { email: user.email, userId: user.id, name: user.name, role: user.role };
-        localStorage.removeItem(SESSION_KEY);
-        sessionStorage.removeItem(SESSION_KEY);
-        const store = remember ? localStorage : sessionStorage;
-        store.setItem(SESSION_KEY, JSON.stringify(next));
+      signup: async (email, password) => {
+        if (!supabase) return "Configuration Required. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.";
+        const { error } = await supabase.auth.signUp({ email: email.trim().toLowerCase(), password });
+        return error ? error.message : null;
+      },
+      login: async (email, password) => {
+        if (!supabase) return "Configuration Required. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.";
+        const trimmed = email.trim().toLowerCase();
+        const { data, error } = await supabase.auth.signInWithPassword({ email: trimmed, password });
+        if (error || !data.user?.email) return error?.message ?? "Invalid email or password.";
+        const key = await primaryRoleKey().catch(() => "");
+        const next = { email: data.user.email, userId: data.user.id, name: data.user.email, role: appRole(key) };
+        setProductionUser({ userId: data.user.id, email: data.user.email, roleKey: key });
         setSession(next);
-        setPreviewRole(user.role);
+        setPreviewRole(next.role);
         return null;
+      },
+      resetPassword: async (email) => {
+        if (!supabase) return "Configuration Required. Password reset needs Supabase Auth.";
+        const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase());
+        return error ? error.message : null;
       },
       logout: () => {
         localStorage.removeItem(SESSION_KEY);
         sessionStorage.removeItem(SESSION_KEY);
+        setProductionUser(null);
         setSession(null);
+        void supabase?.auth.signOut();
       },
       setPreviewRole,
     }),
-    [previewRole, session],
+    [previewRole, productionUser, session],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -74,3 +106,5 @@ export function useAuth() {
   if (!context) throw new Error("useAuth must be used within AuthProvider");
   return context;
 }
+
+export { supabaseConfigured };

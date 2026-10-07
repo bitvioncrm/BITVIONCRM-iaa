@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { HowItWorks } from "@/components/shared/HowItWorks";
@@ -10,13 +10,40 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAuth } from "@/context/AuthContext";
 import { useCrm } from "@/context/CrmContext";
 import { FOLLOW_UP_LABEL, STATUS_LABEL, STATUS_ORDER } from "@/data/catalog";
 import { followUpBucket, formatDateTime } from "@/lib/dates";
 import { userName } from "@/lib/template";
+import { listFollowUps } from "@/services/production-ops";
+import { listWorkspaces } from "@/services/production-leads";
 import type { AutomationNode, FollowUp, Lead } from "@/types";
 
 export function FollowUpsPage() {
+  const { productionUser } = useAuth();
+  if (productionUser) return <ProductionFollowUps />;
+  return <DemoFollowUps />;
+}
+
+function ProductionFollowUps() {
+  const [rows, setRows] = useState<{ id: string; due_at: string; status: string; notes: string }[]>([]);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    void listWorkspaces()
+      .then((workspaces) => listFollowUps(workspaces[0]?.id ?? ""))
+      .then((items) => setRows(items as typeof rows))
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load follow-ups"));
+  }, []);
+  return (
+    <div className="space-y-3">
+      <h1 className="text-2xl font-semibold">Follow-ups</h1>
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
+      {rows.length === 0 ? <p className="text-sm text-muted">No follow-ups in PostgreSQL for the first workspace.</p> : rows.map((row) => <p key={row.id} className="text-sm">{row.due_at} · {row.status} · {row.notes}</p>)}
+    </div>
+  );
+}
+
+function DemoFollowUps() {
   const { state, completeFollowUp, rescheduleFollowUp, updateAutomation, simulateReply, sendWhatsApp, createFollowUp, saveTask } = useCrm();
   const [lead, setLead] = useState<Lead | null>(null);
   const [reschedule, setReschedule] = useState<{ id: string; value: string } | null>(null);

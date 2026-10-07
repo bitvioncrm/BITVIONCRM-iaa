@@ -19,6 +19,7 @@ import { TasksPage } from "@/pages/TasksPage";
 import { TeamPage } from "@/pages/TeamPage";
 import { TemplatesPage } from "@/pages/TemplatesPage";
 import { WhatsAppPage } from "@/pages/WhatsAppPage";
+import { ProductionModule } from "@/pages/production/ProductionModule";
 
 function RequireAuth() {
   const { session } = useAuth();
@@ -52,6 +53,10 @@ export default function App() {
           <Route path="/team" element={<TeamPage />} />
           <Route path="/activity" element={<ActivityPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/clinic" element={<ProductionModule module="clinic" />} />
+          <Route path="/institute" element={<ProductionModule module="institute" />} />
+          <Route path="/inventory" element={<ProductionModule module="inventory" />} />
+          <Route path="/billing" element={<ProductionModule module="billing" />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

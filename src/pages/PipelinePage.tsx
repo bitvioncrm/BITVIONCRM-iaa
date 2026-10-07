@@ -12,9 +12,16 @@ import { deskLeads } from "@/lib/scope";
 import { formatSmart } from "@/lib/dates";
 import { userName } from "@/lib/template";
 import { cn } from "@/lib/utils";
+import { ProductionPipeline } from "@/pages/production/ProductionOpsPages";
 import type { Lead, LeadStatus } from "@/types";
 
 export function PipelinePage() {
+  const { productionUser } = useAuth();
+  if (productionUser) return <ProductionPipeline />;
+  return <DemoPipeline />;
+}
+
+function DemoPipeline() {
   const { session } = useAuth();
   const { state, setStatus } = useCrm();
   const me = state.users.find((user) => user.id === session?.userId);

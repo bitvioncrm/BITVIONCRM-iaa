@@ -23,6 +23,36 @@ export function saveCrm(state: CrmState) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
+export function idleCrm(): CrmState {
+  return {
+    version: DATA_VERSION,
+    users: [],
+    leads: [],
+    activities: [],
+    followUps: [],
+    tasks: [],
+    conversations: [],
+    messages: [],
+    templates: [],
+    campaigns: [],
+    notifications: [],
+    jobs: [],
+    calls: [],
+    automation: { id: "production", name: "Production", enabled: false, runOnNewLeads: false, nodes: [] },
+    settings: {
+      companyName: "BITVION",
+      companyEmail: "",
+      companyPhone: "",
+      website: "",
+      address: "",
+      timezone: "Asia/Kolkata",
+      whatsapp: { accountName: "", phoneNumber: "", businessId: "", apiStatus: "demo" },
+      meta: { connected: false, accountName: "", adAccountId: "", pageName: "", status: "demo" },
+      notifications: { followUps: true, replies: true, campaigns: true, overdue: true },
+    },
+  };
+}
+
 export function freshCrm() {
   localStorage.removeItem(STORAGE_KEY);
   const next = buildSeed();

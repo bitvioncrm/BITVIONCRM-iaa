@@ -13,15 +13,24 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useCrm } from "@/context/CrmContext";
+import { useAuth } from "@/context/AuthContext";
 import { FOLLOW_UP_LABEL, SOURCE_LABEL, STATUS_LABEL, STATUS_ORDER } from "@/data/catalog";
 import { formatDateTime, toDateTimeLocal, tomorrowAt10 } from "@/lib/dates";
 import { leadTimeline } from "@/lib/timeline";
 import { userName } from "@/lib/template";
 import { PhoneLink } from "@/components/shared/PhoneLink";
+import { ProductionLeadDetail } from "@/pages/ProductionLeadDetail";
 import { formatTalk } from "@/lib/utils";
 import type { FollowUpType, LeadStatus } from "@/types";
 
 export function LeadDetailPage() {
+  const { productionUser } = useAuth();
+  const { id = "" } = useParams();
+  if (productionUser && /^[0-9a-f-]{36}$/i.test(id)) return <ProductionLeadDetail id={id} />;
+  return <DemoLeadDetail />;
+}
+
+function DemoLeadDetail() {
   const { id = "" } = useParams();
   const crm = useCrm();
   const lead = crm.state.leads.find((item) => item.id === id);

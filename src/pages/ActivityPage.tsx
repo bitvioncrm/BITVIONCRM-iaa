@@ -9,8 +9,16 @@ import { Select } from "@/components/ui/select";
 import { useCrm } from "@/context/CrmContext";
 import { formatDateTime } from "@/lib/dates";
 import { userName } from "@/lib/template";
+import { useAuth } from "@/context/AuthContext";
+import { ProductionActivity } from "@/pages/production/ProductionOpsPages";
 
 export function ActivityPage() {
+  const { productionUser } = useAuth();
+  if (productionUser) return <ProductionActivity />;
+  return <DemoActivity />;
+}
+
+function DemoActivity() {
   const { state } = useCrm();
   const [query, setQuery] = useState("");
   const [userId, setUserId] = useState("");

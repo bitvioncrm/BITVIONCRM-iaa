@@ -26,12 +26,19 @@ import { exportLeadSheet } from "@/lib/lead-export";
 import { formatDate, formatDateTime, formatSmart, toDateTimeLocal, tomorrowAt10 } from "@/lib/dates";
 import { deskLeads } from "@/lib/scope";
 import { PhoneLink } from "@/components/shared/PhoneLink";
+import { ProductionLeadsPage } from "@/pages/ProductionLeadsPage";
 import { userName } from "@/lib/template";
 import type { FollowUpType, Lead, LeadStatus } from "@/types";
 
 const PAGE_SIZE = 20;
 
 export function LeadsPage() {
+  const { productionUser } = useAuth();
+  if (productionUser) return <ProductionLeadsPage />;
+  return <DemoLeadsPage />;
+}
+
+function DemoLeadsPage() {
   const { session } = useAuth();
   const { state, removeLeads, assignLeads, changeStatus, tagLeads, createFollowUps } = useCrm();
   const me = state.users.find((user) => user.id === session?.userId);

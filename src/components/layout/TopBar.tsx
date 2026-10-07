@@ -2,7 +2,7 @@ import { Menu, PanelLeft, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { CommandPalette } from "@/components/layout/CommandPalette";
-import { NAV_ITEMS, STAFF_NAV } from "@/components/layout/nav";
+import { NAV_ITEMS, productionNav, STAFF_NAV } from "@/components/layout/nav";
 import { NotificationMenu } from "@/components/layout/NotificationMenu";
 import { Logo } from "@/components/shared/Logo";
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
@@ -15,10 +15,10 @@ import { ROLE_LABEL } from "@/data/catalog";
 export function TopBar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const { session, previewRole } = useAuth();
+  const { session, previewRole, productionUser } = useAuth();
   const { state } = useCrm();
   const me = state.users.find((user) => user.id === session?.userId);
-  const items = isAdmin(me) ? NAV_ITEMS : STAFF_NAV;
+  const items = productionUser ? productionNav(productionUser.roleKey) : isAdmin(me) ? NAV_ITEMS : STAFF_NAV;
 
   return (
     <header className="flex h-14 items-center gap-2 border-b border-line bg-white px-3 sm:px-4">
@@ -37,9 +37,9 @@ export function TopBar({ collapsed, onToggle }: { collapsed: boolean; onToggle: 
         <span className="truncate">Search leads, phone, place</span>
         <kbd className="ml-auto hidden rounded border border-line bg-white px-1.5 py-0.5 text-[10px] text-slate-500 sm:inline">Ctrl K</kbd>
       </button>
-      <span className="hidden rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800 md:inline">Demo Mode</span>
+      {productionUser ? null : <span className="hidden rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800 md:inline">Demo Mode</span>}
       <ThemeToggle />
-      {previewRole !== "administrator" ? (
+      {!productionUser && previewRole !== "administrator" ? (
         <span className="hidden text-xs text-muted xl:inline">Previewing as {ROLE_LABEL[previewRole]}</span>
       ) : null}
       <NotificationMenu />

@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { canWrite } from "@/data/catalog";
-import { freshCrm, loadCrm, saveCrm } from "@/services/storage";
+import { freshCrm, idleCrm, loadCrm, saveCrm } from "@/services/storage";
 import {
   addCampaign,
   addFollowUp,
@@ -85,17 +85,18 @@ interface CrmValue {
 const CrmContext = createContext<CrmValue | null>(null);
 
 export function CrmProvider({ children }: { children: ReactNode }) {
-  const { session, previewRole } = useAuth();
-  const actorId = session?.userId ?? "usr_akhil";
-  const [state, setState] = useState<CrmState>(() => loadCrm());
+  const { session, previewRole, productionUser } = useAuth();
+  const actorId = session?.userId ?? "";
+  const [state, setState] = useState<CrmState>(() => (productionUser ? idleCrm() : loadCrm()));
   const stateRef = useRef(state);
   stateRef.current = state;
   const readonlyMode = !canWrite(previewRole);
 
   useEffect(() => {
+    if (productionUser) return;
     const timer = window.setTimeout(() => saveCrm(state), 150);
     return () => window.clearTimeout(timer);
-  }, [state]);
+  }, [productionUser, state]);
 
   const api = useMemo<CrmValue>(() => {
     const guard = () => {

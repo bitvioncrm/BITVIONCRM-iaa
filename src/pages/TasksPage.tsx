@@ -13,20 +13,27 @@ import { useCrm } from "@/context/CrmContext";
 import { PRIORITY_LABEL } from "@/data/catalog";
 import { followUpBucket, formatDateTime, toDateTimeLocal } from "@/lib/dates";
 import { userName } from "@/lib/template";
+import { useAuth } from "@/context/AuthContext";
+import { ProductionTasks } from "@/pages/production/ProductionOpsPages";
 import type { Priority, Task, TaskStatus } from "@/types";
 
-const empty = {
-  title: "",
-  leadId: "",
-  assignedTo: "",
-  priority: "medium" as Priority,
-  dueAt: "",
-  taskType: "call",
-  description: "",
-  status: "pending" as TaskStatus,
-};
-
 export function TasksPage() {
+  const { productionUser } = useAuth();
+  if (productionUser) return <ProductionTasks />;
+  return <DemoTasks />;
+}
+
+function DemoTasks() {
+  const empty = {
+    title: "",
+    leadId: "",
+    assignedTo: "",
+    priority: "medium" as Priority,
+    dueAt: "",
+    taskType: "call",
+    description: "",
+    status: "pending" as TaskStatus,
+  };
   const { state, actorId, saveTask, removeTask, setTaskStatus } = useCrm();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);

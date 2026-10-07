@@ -7,10 +7,19 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from "@/context/AuthContext";
+import { canOperateWhatsApp } from "@/lib/production-access";
 import { useCrm } from "@/context/CrmContext";
 import { renderTemplate, userName } from "@/lib/template";
 
 export function TemplatesPage() {
+  const { productionUser } = useAuth();
+  if (productionUser && !canOperateWhatsApp(productionUser.roleKey)) return <p className="text-sm text-muted">WhatsApp templates are limited to Admin.</p>;
+  if (productionUser) return <p className="text-sm text-muted">Template names are sent to Meta from the WhatsApp page. This screen does not store a fake template as sent.</p>;
+  return <DemoTemplates />;
+}
+
+function DemoTemplates() {
   const { state, saveTemplate, duplicateTemplate, removeTemplate } = useCrm();
   const [editing, setEditing] = useState<{ id?: string; name: string; key: string; body: string } | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
