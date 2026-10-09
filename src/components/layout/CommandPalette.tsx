@@ -2,9 +2,87 @@ import { Search } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { useAuth } from "@/context/AuthContext";
 import { useCrm } from "@/context/CrmContext";
+import { searchDirectory, type DirectoryHit } from "@/services/production-leads";
 
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { productionUser } = useAuth();
+  if (productionUser) return <ProductionSearch open={open} onOpenChange={onOpenChange} />;
+  return <DemoSearch open={open} onOpenChange={onOpenChange} />;
+}
+
+function ProductionSearch({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const navigate = useNavigate();
+  const [query, setQuery] = useState("");
+  const [active, setActive] = useState(0);
+  const [hits, setHits] = useState<DirectoryHit[]>([]);
+  useEffect(() => {
+    if (!open) {
+      setQuery("");
+      setHits([]);
+      setActive(0);
+    }
+  }, [open]);
+  useEffect(() => {
+    if (!open || query.trim().length < 2) {
+      setHits([]);
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      void searchDirectory(query).then((result) => {
+        setHits([...result.leads, ...result.patients, ...result.students, ...result.courses]);
+        setActive(0);
+      }).catch(() => setHits([]));
+    }, 200);
+    return () => window.clearTimeout(handle);
+  }, [open, query]);
+  const go = (path: string) => {
+    navigate(path);
+    onOpenChange(false);
+  };
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-xl p-0">
+        <DialogTitle className="sr-only">Search BITVION</DialogTitle>
+        <div className="flex items-center gap-2 border-b border-line px-3">
+          <Search className="size-4 text-muted" />
+          <input
+            autoFocus
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                setActive((current) => Math.min(current + 1, Math.max(hits.length - 1, 0)));
+              } else if (event.key === "ArrowUp") {
+                event.preventDefault();
+                setActive((current) => Math.max(current - 1, 0));
+              } else if (event.key === "Enter" && hits[active]) {
+                event.preventDefault();
+                go(hits[active].href);
+              }
+            }}
+            placeholder="Search leads, patients, students, courses"
+            className="h-12 w-full bg-transparent text-sm outline-none"
+          />
+        </div>
+        <div className="max-h-[420px] overflow-y-auto p-2">
+          {query.trim().length < 2 ? <p className="px-2 py-8 text-center text-sm text-muted">Type at least two characters.</p> : null}
+          {hits.map((hit, index) => (
+            <button key={`${hit.href}-${hit.id}`} type="button" className={`flex w-full items-center justify-between gap-3 rounded-md px-2 py-2 text-left text-sm ${index === active ? "bg-slate-100" : "hover:bg-slate-50"}`} onMouseEnter={() => setActive(index)} onClick={() => go(hit.href)}>
+              <span className="truncate font-medium">{hit.title}</span>
+              <span className="shrink-0 text-xs text-muted">{hit.meta}</span>
+            </button>
+          ))}
+          {query.trim().length >= 2 && hits.length === 0 ? <p className="px-2 py-8 text-center text-sm text-muted">No authorized records match.</p> : null}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DemoSearch({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { state } = useCrm();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");

@@ -1,4 +1,4 @@
-const ADMIN = ["/", "/desk", "/leads", "/pipeline", "/follow-ups", "/calls", "/whatsapp", "/campaigns", "/templates", "/tasks", "/reports", "/team", "/activity", "/settings", "/clinic", "/institute", "/inventory", "/billing"];
+const ADMIN = ["/", "/desk", "/leads", "/pipeline", "/follow-ups", "/calls", "/whatsapp", "/campaigns", "/templates", "/tasks", "/reports", "/team", "/activity", "/settings", "/clinic", "/institute", "/inventory", "/billing", "/meta"];
 
 export function canOperateWhatsApp(roleKey: string) {
   return roleKey === "super_admin" || roleKey === "admin";

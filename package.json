@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "node --experimental-strip-types scripts/phase2-lead-rules.test.ts && node --experimental-strip-types scripts/phase3-rules.test.ts && node --experimental-strip-types scripts/production-boundary.test.ts && node --experimental-strip-types scripts/production-rules.test.ts",
+    "test": "node --experimental-strip-types scripts/phase2-lead-rules.test.ts && node --experimental-strip-types scripts/phase3-rules.test.ts && node --experimental-strip-types scripts/production-boundary.test.ts && node --experimental-strip-types scripts/production-rules.test.ts && node --experimental-strip-types scripts/meta-route.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {

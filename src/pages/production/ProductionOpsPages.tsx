@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { listLeads, listWorkspaces, updateLeadStatus, type ProductionLead, type WorkspaceOption } from "@/services/production-leads";
 import { createTask, listAudit, listTasks, revenueSummary } from "@/services/production-ops";
 import { useAuth } from "@/context/AuthContext";
@@ -149,7 +150,8 @@ export function ProductionSettings() {
   return (
     <div className="space-y-2">
       <h1 className="text-2xl font-semibold">Settings</h1>
-      <p className="text-sm text-muted">Meta and WhatsApp stay Configuration Required until the server secrets are set. This screen cannot mark them connected.</p>
+      <p className="text-sm text-muted">Meta and WhatsApp stay unconnected until server secrets are set. This screen cannot mark them connected.</p>
+      <p className="text-sm"><Link className="font-medium text-accent" to="/meta">Open Meta Lead Centre</Link></p>
     </div>
   );
 }

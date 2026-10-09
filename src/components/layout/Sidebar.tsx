@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { NavLink } from "react-router-dom";
-import { LogOut } from "lucide-react";
-import { NAV_ITEMS, productionNav, STAFF_NAV } from "@/components/layout/nav";
+import { ChevronDown, LogOut } from "lucide-react";
+import { NAV_ITEMS, productionGroups, STAFF_NAV } from "@/components/layout/nav";
 import { productionRoleLabel } from "@/lib/production-access";
 import { Logo } from "@/components/shared/Logo";
 import { Avatar } from "@/components/ui/avatar";
@@ -15,7 +16,9 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
   const { state } = useCrm();
   const me = state.users.find((user) => user.id === session?.userId);
   const admin = productionUser ? productionUser.roleKey === "super_admin" || productionUser.roleKey === "admin" : isAdmin(me);
-  const items = productionUser ? productionNav(productionUser.roleKey) : admin ? NAV_ITEMS : STAFF_NAV;
+  const groups = productionUser ? productionGroups(productionUser.roleKey) : null;
+  const items = groups ? groups.flatMap((group) => group.items) : admin ? NAV_ITEMS : STAFF_NAV;
+  const [closed, setClosed] = useState<Record<string, boolean>>({});
   const deskLabel = productionUser
     ? productionRoleLabel(productionUser.roleKey)
     : me?.businessUnit === "clinic"
@@ -29,25 +32,26 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
       <div className={cn("flex items-center border-b border-white/10", collapsed ? "h-16 justify-center px-2" : "h-[76px] px-4")}>
         <Logo mark={collapsed} className={collapsed ? "h-8 w-8" : "h-11 w-auto max-w-[168px]"} />
       </div>
-      <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
-        {items.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.end}
-            title={item.label}
-            className={({ isActive }) =>
-              cn(
-                "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13.5px] font-medium text-slate-300 hover:bg-white/5 hover:text-white",
-                collapsed && "justify-center px-0",
-                isActive && "bg-white/10 text-white",
-              )
-            }
-          >
-            <item.icon className="size-4 shrink-0" />
-            {collapsed ? null : item.label}
-          </NavLink>
-        ))}
+      <nav className="flex-1 space-y-3 overflow-y-auto px-2 py-3">
+        {groups && !collapsed
+          ? groups.map((group) => {
+              const hidden = closed[group.label];
+              return (
+                <div key={group.label}>
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between px-2.5 py-1 text-[10px] font-semibold tracking-wider text-slate-500 uppercase"
+                    onClick={() => setClosed((current) => ({ ...current, [group.label]: !current[group.label] }))}
+                    aria-expanded={!hidden}
+                  >
+                    {group.label}
+                    <ChevronDown className={cn("size-3 transition", hidden && "-rotate-90")} />
+                  </button>
+                  {hidden ? null : group.items.map((item) => <SideLink key={item.to} item={item} collapsed={false} />)}
+                </div>
+              );
+            })
+          : items.map((item) => <SideLink key={item.to} item={item} collapsed={collapsed} />)}
       </nav>
       <div className={cn("flex items-center gap-2 border-t border-white/10 p-3", collapsed && "flex-col")}>
         <Avatar name={session?.name ?? "Akhil Shijo"} />
@@ -62,5 +66,25 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
         </button>
       </div>
     </aside>
+  );
+}
+
+function SideLink({ item, collapsed }: { item: { to: string; label: string; end: boolean; icon: typeof NAV_ITEMS[number]["icon"] }; collapsed: boolean }) {
+  return (
+    <NavLink
+      to={item.to}
+      end={item.end}
+      title={item.label}
+      className={({ isActive }) =>
+        cn(
+          "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13.5px] font-medium text-slate-300 hover:bg-white/5 hover:text-white",
+          collapsed && "justify-center px-0",
+          isActive && "bg-white/10 text-white shadow-[inset_2px_0_0_#60a5fa]",
+        )
+      }
+    >
+      <item.icon className="size-4 shrink-0" />
+      {collapsed ? null : item.label}
+    </NavLink>
   );
 }

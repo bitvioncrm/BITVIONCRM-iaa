@@ -143,6 +143,10 @@ export interface LeadQuery {
   status?: string;
   search?: string;
   assignedTo?: string;
+  unassigned?: boolean;
+  source?: string;
+  createdFrom?: string;
+  createdTo?: string;
 }
 
 export async function listLeads(query: LeadQuery) {
@@ -151,7 +155,11 @@ export async function listLeads(query: LeadQuery) {
   let request = client().from("leads").select("*", { count: "exact" }).is("deleted_at", null);
   if (query.workspaceId) request = request.eq("workspace_id", query.workspaceId);
   if (query.status) request = request.eq("status", query.status);
-  if (query.assignedTo) request = request.eq("assigned_to", query.assignedTo);
+  if (query.unassigned) request = request.is("assigned_to", null);
+  else if (query.assignedTo) request = request.eq("assigned_to", query.assignedTo);
+  if (query.source) request = request.eq("source", query.source);
+  if (query.createdFrom) request = request.gte("created_at", query.createdFrom);
+  if (query.createdTo) request = request.lt("created_at", query.createdTo);
   const search = sanitizeSearch(query.search ?? "");
   if (search) {
     const phone = normalizePhone(search);
@@ -434,7 +442,7 @@ export async function importLeadBatches(workspace: WorkspaceOption, rows: Import
   return report;
 }
 
-export async function downloadWorkspaceCsv(workspaceId: string) {
+export async function downloadWorkspaceCsv(workspaceId: string, range?: { from?: string; to?: string }) {
   const header = "Full name,Phone,Email,Location,Position,Source,Stage,Created";
   const lines = [header];
   const size = 500;
@@ -446,6 +454,8 @@ export async function downloadWorkspaceCsv(workspaceId: string) {
       .select("full_name, phone, email, location, position, source, status, created_at", { count: "exact" })
       .eq("workspace_id", workspaceId)
       .is("deleted_at", null)
+      .gte("created_at", range?.from ?? "1970-01-01")
+      .lt("created_at", range?.to ?? "2999-12-31")
       .order("created_at", { ascending: false })
       .range(from, from + size - 1);
     if (error) throw new Error(error.message);
@@ -457,4 +467,31 @@ export async function downloadWorkspaceCsv(workspaceId: string) {
     from += size;
   }
   return lines.join("\n");
+}
+
+export interface DirectoryHit {
+  id: string;
+  title: string;
+  meta: string;
+  href: string;
+}
+
+export async function searchDirectory(query: string) {
+  const search = sanitizeSearch(query);
+  if (search.length < 2) return { leads: [] as DirectoryHit[], patients: [] as DirectoryHit[], students: [] as DirectoryHit[], courses: [] as DirectoryHit[] };
+  const phone = normalizePhone(search);
+  const leadParts = [`full_name.ilike.%${search}%`, `email_normalized.ilike.%${search.toLowerCase()}%`];
+  if (phone) leadParts.push(`phone_digits.ilike.%${phone}%`);
+  const [leads, patients, students, courses] = await Promise.all([
+    client().from("leads").select("id, full_name, phone").is("deleted_at", null).or(leadParts.join(",")).limit(6),
+    client().from("patients").select("id, full_name, patient_code, mobile").is("deleted_at", null).or(`full_name.ilike.%${search}%,patient_code.ilike.%${search}%,mobile.ilike.%${search}%`).limit(5),
+    client().from("students").select("id, full_name, student_code, mobile").is("deleted_at", null).or(`full_name.ilike.%${search}%,student_code.ilike.%${search}%,mobile.ilike.%${search}%`).limit(5),
+    client().from("courses").select("id, name").ilike("name", `%${search}%`).limit(5),
+  ]);
+  return {
+    leads: leads.error ? [] : (leads.data ?? []).map((row) => ({ id: String(row.id), title: String(row.full_name), meta: String(row.phone || "Lead"), href: `/leads/${row.id}` })),
+    patients: patients.error ? [] : (patients.data ?? []).map((row) => ({ id: String(row.id), title: String(row.full_name), meta: String(row.patient_code || row.mobile || "Patient"), href: "/clinic" })),
+    students: students.error ? [] : (students.data ?? []).map((row) => ({ id: String(row.id), title: String(row.full_name), meta: String(row.student_code || row.mobile || "Student"), href: "/institute" })),
+    courses: courses.error ? [] : (courses.data ?? []).map((row) => ({ id: String(row.id), title: String(row.name), meta: "Course", href: "/institute" })),
+  };
 }

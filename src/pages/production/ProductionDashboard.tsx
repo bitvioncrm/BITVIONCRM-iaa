@@ -1,8 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { BusinessBoard } from "@/components/dashboard/BusinessBoard";
 import { useAuth } from "@/context/AuthContext";
+import { useDesk } from "@/context/DeskContext";
 import { listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
-import { callSummary, countRows, listAppointments, listFollowUps, listProducts, revenueSummary } from "@/services/production-ops";
+import { callSummary, countRows, listAppointments, listFollowUps, listProducts } from "@/services/production-ops";
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -49,53 +51,8 @@ function useWorkspaces() {
 }
 
 function AdminDashboard() {
-  const { workspaces, error } = useWorkspaces();
-  const [counts, setCounts] = useState({ leads: 0, patients: 0, appointments: 0, students: 0 });
-  const [money, setMoney] = useState("—");
-  useEffect(() => {
-    if (!workspaces.length) return;
-    void Promise.all(workspaces.map(async (workspace) => ({
-      leads: await countRows("leads", workspace.id),
-      patients: workspace.workspaceType === "clinic" ? await countRows("patients", workspace.id) : 0,
-      appointments: workspace.workspaceType === "clinic" ? await countRows("appointments", workspace.id) : 0,
-      students: workspace.workspaceType === "institute" ? await countRows("students", workspace.id) : 0,
-      revenue: workspace.workspaceType === "clinic" || workspace.workspaceType === "institute" ? revenueSummary(workspace.id).catch(() => null) : null,
-    }))).then(async (rows) => {
-      const settled = await Promise.all(rows.map(async (row) => ({ ...row, revenue: await row.revenue })));
-      setCounts(settled.reduce((sum, row) => ({
-        leads: sum.leads + row.leads,
-        patients: sum.patients + row.patients,
-        appointments: sum.appointments + row.appointments,
-        students: sum.students + row.students,
-      }), { leads: 0, patients: 0, appointments: 0, students: 0 }));
-      const net = settled.reduce((sum, row) => sum + (row.revenue?.net ?? 0), 0);
-      setMoney(`₹${net.toLocaleString("en-IN")}`);
-    });
-  }, [workspaces]);
-  return (
-    <Shell title="Admin" detail="Clinic and Institute in one desk. Only Admin can send, automate, or configure WhatsApp.">
-      {error ? <p className="text-sm text-danger">{error}</p> : null}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <Stat label="Leads" value={String(counts.leads)} />
-        <Stat label="Patients" value={String(counts.patients)} />
-        <Stat label="Appointments" value={String(counts.appointments)} />
-        <Stat label="Students" value={String(counts.students)} />
-        <Stat label="Net collected" value={money} />
-      </div>
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold">Clinic</h2>
-        <div className="flex flex-wrap gap-2"><Tile to="/clinic" label="Patients and appointments" /><Tile to="/inventory" label="Inventory" /><Tile to="/billing" label="Billing and revenue" /><Tile to="/reports" label="Reports" /></div>
-      </section>
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold">Institute</h2>
-        <div className="flex flex-wrap gap-2"><Tile to="/leads" label="Leads" /><Tile to="/institute" label="Students, courses, certificates" /><Tile to="/reports" label="Admissions" /></div>
-      </section>
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold">WhatsApp control</h2>
-        <div className="flex flex-wrap gap-2"><Tile to="/whatsapp" label="Inbox and send" /><Tile to="/templates" label="Templates" /><Tile to="/campaigns" label="Campaigns" /><Tile to="/settings" label="Connection and settings" /></div>
-      </section>
-    </Shell>
-  );
+  const { desk } = useDesk();
+  return <BusinessBoard desk={desk} />;
 }
 
 function DoctorDashboard() {

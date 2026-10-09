@@ -6,6 +6,7 @@ import { MobileNav } from "@/components/layout/MobileNav";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
 import { useAuth } from "@/context/AuthContext";
+import { DeskProvider } from "@/context/DeskContext";
 import { useCrm } from "@/context/CrmContext";
 import { ROLE_LABEL } from "@/data/catalog";
 import { isAdmin } from "@/lib/scope";
@@ -21,6 +22,7 @@ export function AppShell() {
   const blocked = productionUser ? !roleAllowsPath(productionUser.roleKey, pathname) : !admin && ADMIN_ONLY_PREFIXES.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 
   return (
+    <DeskProvider>
     <div className="flex h-dvh overflow-hidden bg-canvas text-ink">
       <Sidebar collapsed={collapsed} />
       <div className="flex min-w-0 flex-1 flex-col">
@@ -52,5 +54,6 @@ export function AppShell() {
       </div>
       <MobileNav />
     </div>
+    </DeskProvider>
   );
 }

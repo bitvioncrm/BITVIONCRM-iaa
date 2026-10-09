@@ -89,8 +89,14 @@ export async function listPatients(workspaceId: string, search: string) {
   return data ?? [];
 }
 
+async function serverCode(fn: "next_patient_code" | "next_student_code", fallback: string) {
+  const { data, error } = await client().rpc(fn);
+  if (!error && typeof data === "string" && data) return data;
+  return fallback;
+}
+
 export async function createPatient(input: { organizationId: string; workspaceId: string; fullName: string; mobile: string; place: string; email?: string; gender?: string; dateOfBirth?: string | null; address?: string; emergencyContact?: string; notes?: string; leadId?: string | null }) {
-  const code = `PT-${Date.now().toString(36).toUpperCase()}`;
+  const code = await serverCode("next_patient_code", `DKC-P-${Date.now().toString(36).toUpperCase()}`);
   const dob = input.dateOfBirth || null;
   const age = dob ? Math.max(0, new Date().getFullYear() - new Date(dob).getFullYear()) : null;
   const { error } = await client().from("patients").insert({
@@ -283,7 +289,7 @@ export async function createCourse(input: { organizationId: string; workspaceId:
 }
 
 export async function createStudent(input: { organizationId: string; workspaceId: string; fullName: string; mobile: string; courseId: string | null; leadId?: string | null; batchName?: string; admissionDate?: string | null; status?: string }) {
-  const code = `ST-${Date.now().toString(36).toUpperCase()}`;
+  const code = await serverCode("next_student_code", `IAA-S-${Date.now().toString(36).toUpperCase()}`);
   let batchId: string | null = null;
   if (input.batchName?.trim() && input.courseId) {
     const batch = await client().from("batches").insert({ organization_id: input.organizationId, workspace_id: input.workspaceId, course_id: input.courseId, name: input.batchName.trim() }).select("id").single();

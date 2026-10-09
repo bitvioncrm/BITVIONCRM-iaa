@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { useDesk } from "@/context/DeskContext";
 import { ProductionImportDialog } from "@/components/leads/ProductionImportDialog";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Pagination } from "@/components/shared/Pagination";
@@ -29,11 +30,15 @@ import type { LeadStatus } from "@/types";
 
 export function ProductionLeadsPage() {
   const { productionUser } = useAuth();
+  const { desk, setDesk, bounds } = useDesk();
+  const [params] = useSearchParams();
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
   const [members, setMembers] = useState<MemberOption[]>([]);
   const [workspaceId, setWorkspaceId] = useState("");
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState(params.get("status") ?? "");
+  const [source, setSource] = useState(params.get("source") ?? "");
+  const [unassigned, setUnassigned] = useState(params.get("assigned") === "unassigned");
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -45,13 +50,20 @@ export function ProductionLeadsPage() {
   const [draft, setDraft] = useState({ fullName: "", phone: "", email: "", location: "", position: "" });
 
   useEffect(() => {
+    const requested = params.get("desk");
+    if (requested === "all" || requested === "clinic" || requested === "institute") setDesk(requested);
+  }, [params, setDesk]);
+
+  useEffect(() => {
     void listWorkspaces()
-      .then((rows) => {
-        setWorkspaces(rows);
-        setWorkspaceId((current) => current || rows[0]?.id || "");
-      })
+      .then((rows) => setWorkspaces(rows))
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Configuration Required"));
   }, []);
+
+  useEffect(() => {
+    const visible = desk === "all" ? workspaces : workspaces.filter((item) => item.workspaceType === desk);
+    setWorkspaceId((current) => visible.some((item) => item.id === current) ? current : desk === "all" ? "" : visible[0]?.id ?? "");
+  }, [desk, workspaces]);
 
   useEffect(() => {
     if (!workspaceId) return;
@@ -59,9 +71,10 @@ export function ProductionLeadsPage() {
   }, [workspaceId]);
 
   useEffect(() => {
-    if (!workspaceId) return;
+    if (!workspaces.length) return;
+    if (desk !== "all" && !workspaceId) return;
     setLoading(true);
-    void listLeads({ page, workspaceId, status, search })
+    void listLeads({ page, workspaceId: workspaceId || undefined, status, search, source, unassigned, createdFrom: bounds.from, createdTo: bounds.to })
       .then((result) => {
         setLeads(result.leads);
         setPages(result.pages);
@@ -70,7 +83,7 @@ export function ProductionLeadsPage() {
       })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load leads"))
       .finally(() => setLoading(false));
-  }, [page, reload, search, status, workspaceId]);
+  }, [bounds.from, bounds.to, desk, page, reload, search, source, status, unassigned, workspaceId, workspaces.length]);
 
   const workspace = workspaces.find((item) => item.id === workspaceId);
 
@@ -78,7 +91,7 @@ export function ProductionLeadsPage() {
     <div className="space-y-4">
       <PageHeader
         title="Leads"
-        description={loading ? "Loading this page from PostgreSQL." : `${total.toLocaleString("en-IN")} leads in this workspace. The list is one page at a time.`}
+        description={loading ? "Loading this page from PostgreSQL." : `${total.toLocaleString("en-IN")} leads created in ${bounds.label}. The list is one page at a time.`}
         actions={
           <>
             <Button type="button" variant="secondary" disabled={!workspace} onClick={() => setImportOpen(true)}>Import</Button>
@@ -87,7 +100,7 @@ export function ProductionLeadsPage() {
               variant="secondary"
               disabled={!workspaceId}
               onClick={() => {
-                void downloadWorkspaceCsv(workspaceId).then((csv) => downloadText("bitvion-leads.csv", `\uFEFF${csv}`)).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Export failed"));
+                void downloadWorkspaceCsv(workspaceId, { from: bounds.from, to: bounds.to }).then((csv) => downloadText("bitvion-leads.csv", `\uFEFF${csv}`)).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Export failed"));
               }}
             >
               Export
@@ -95,11 +108,17 @@ export function ProductionLeadsPage() {
           </>
         }
       />
+      {source || unassigned ? (
+        <p className="text-sm text-muted">
+          Filters: {source || "any source"}{unassigned ? " · unassigned" : ""}{" "}
+          <button type="button" className="font-medium text-accent" onClick={() => { setSource(""); setUnassigned(false); setPage(1); }}>Clear</button>
+        </p>
+      ) : null}
       {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
       <div className="grid gap-2 rounded-lg border border-line bg-white p-3 md:grid-cols-4">
         <Select value={workspaceId} onChange={(event) => { setWorkspaceId(event.target.value); setPage(1); }}>
-          {workspaces.length === 0 ? <option value="">No workspace</option> : null}
-          {workspaces.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          {desk === "all" ? <option value="">All authorized desks</option> : null}
+          {(desk === "all" ? workspaces : workspaces.filter((item) => item.workspaceType === desk)).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </Select>
         <Input placeholder="Search name, phone, email" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} />
         <Select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>
@@ -128,7 +147,7 @@ export function ProductionLeadsPage() {
               .then(() => {
                 setDraft({ fullName: "", phone: "", email: "", location: "", position: "" });
                 setPage(1);
-                return listLeads({ page: 1, workspaceId, status, search });
+                return listLeads({ page: 1, workspaceId, status, search, source, unassigned, createdFrom: bounds.from, createdTo: bounds.to });
               })
               .then((result) => {
                 setLeads(result.leads);

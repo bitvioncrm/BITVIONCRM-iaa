@@ -19,6 +19,7 @@ import { TasksPage } from "@/pages/TasksPage";
 import { TeamPage } from "@/pages/TeamPage";
 import { TemplatesPage } from "@/pages/TemplatesPage";
 import { WhatsAppPage } from "@/pages/WhatsAppPage";
+import { MetaLeadCentre } from "@/pages/production/MetaLeadCentre";
 import { ProductionModule } from "@/pages/production/ProductionModule";
 
 function RequireAuth() {
@@ -57,6 +58,7 @@ export default function App() {
           <Route path="/institute" element={<ProductionModule module="institute" />} />
           <Route path="/inventory" element={<ProductionModule module="inventory" />} />
           <Route path="/billing" element={<ProductionModule module="billing" />} />
+          <Route path="/meta" element={<MetaLeadCentre />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

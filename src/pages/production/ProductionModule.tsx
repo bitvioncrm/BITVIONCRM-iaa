@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { BusinessBoard } from "@/components/dashboard/BusinessBoard";
 import { useAuth } from "@/context/AuthContext";
 import { canOperateWhatsApp } from "@/lib/production-access";
 import { listDoctors, listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
@@ -13,14 +14,17 @@ export function ProductionModule({ module }: { module: "clinic" | "institute" | 
 
   useEffect(() => {
     void listWorkspaces().then((rows) => {
-      setWorkspaces(rows);
-      setWorkspaceId((current) => current || rows[0]?.id || "");
+      const visible = module === "clinic" || module === "institute" ? rows.filter((item) => item.workspaceType === module) : rows;
+      setWorkspaces(visible);
+      setWorkspaceId((current) => visible.some((item) => item.id === current) ? current : visible[0]?.id || "");
     }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Configuration Required"));
-  }, []);
+  }, [module]);
 
+  const admin = canOperateWhatsApp(useAuth().productionUser?.roleKey ?? "");
+  const showBoard = admin && (module === "clinic" || module === "institute");
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold capitalize">{module}</h1>
+      {showBoard ? <BusinessBoard desk={module} variant="operations" /> : <h1 className="text-2xl font-semibold capitalize">{module}</h1>}
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {notice ? <p className="text-sm">{notice}</p> : null}
       <select className="rounded-md border border-line px-2 py-2" value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}>
