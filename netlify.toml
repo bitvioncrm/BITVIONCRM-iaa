@@ -5,9 +5,6 @@
 
 [build.environment]
   NODE_VERSION = "22"
-  VITE_SUPABASE_URL = "https://natavrwljlohujgqpbff.supabase.co"
-  SECRETS_SCAN_OMIT_KEYS = "SUPABASE_ANON_KEY,VITE_SUPABASE_ANON_KEY"
-  SECRETS_SCAN_SMART_DETECTION_ENABLED = "false"
 
 [[redirects]]
   from = "/*"
