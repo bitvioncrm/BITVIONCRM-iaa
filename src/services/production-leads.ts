@@ -242,7 +242,7 @@ export async function updateLeadStatus(lead: ProductionLead, status: LeadStatus)
   if (historyError) throw new Error(historyError.message);
 }
 
-export async function assignLead(lead: ProductionLead, assignedTo: string) {
+export async function assignLead(lead: Pick<ProductionLead, "id" | "organizationId" | "workspaceId">, assignedTo: string) {
   const userId = await currentUserId();
   const { error } = await client().from("leads").update({ assigned_to: assignedTo, updated_by: userId, updated_at: new Date().toISOString() }).eq("id", lead.id);
   if (error) throw new Error(error.message);

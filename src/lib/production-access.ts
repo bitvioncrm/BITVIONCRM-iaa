@@ -17,6 +17,12 @@ export function roleAllowsPath(roleKey: string, pathname: string) {
   return pathsForRole(roleKey).some((path) => pathname === path || (path !== "/" && pathname.startsWith(`${path}/`)));
 }
 
+export function deskCallerRoles(workspaceType: string) {
+  if (workspaceType === "clinic") return ["clinic_telecaller", "clinic_bde"];
+  if (workspaceType === "institute") return ["institute_telecaller", "institute_bde", "institute_user"];
+  return [];
+}
+
 export function productionRoleLabel(roleKey: string) {
   if (roleKey === "super_admin" || roleKey === "admin") return "Admin";
   if (roleKey === "doctor") return "Doctor";

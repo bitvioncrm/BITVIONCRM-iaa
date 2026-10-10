@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useDesk } from "@/context/DeskContext";
-import { loadMetaCentre, retryMetaImport, saveFormMapping, setMappingActive, type MetaCentre } from "@/services/meta-admin";
+import { productionRoleLabel } from "@/lib/production-access";
+import { assignMetaLead, listDeskTelecallers, loadMetaCentre, retryMetaImport, saveFormMapping, setMappingActive, type DeskCaller, type MetaCentre } from "@/services/meta-admin";
 import { listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
 
 const EMPTY: MetaCentre = {
@@ -30,6 +31,8 @@ function Count({ label, value }: { label: string; value: number | null | undefin
 export function MetaLeadCentre() {
   const { desk, bounds } = useDesk();
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
+  const [callers, setCallers] = useState<DeskCaller[]>([]);
+  const [savingId, setSavingId] = useState("");
   const [centre, setCentre] = useState<MetaCentre>(EMPTY);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -47,6 +50,11 @@ export function MetaLeadCentre() {
       .then((rows) => {
         if (!active) return;
         setWorkspaces(rows);
+        void listDeskTelecallers(rows).then((people) => {
+          if (active) setCallers(people);
+        }).catch((reason: unknown) => {
+          if (active) setError(reason instanceof Error ? reason.message : "Telecallers could not be loaded");
+        });
         const selected = desk === "all" ? rows : rows.filter((item) => item.workspaceType === desk);
         return loadMetaCentre(rows, selected.map((item) => item.id), bounds.from, bounds.to, { campaign, form, status, assignedTo: assigned });
       })
@@ -68,6 +76,8 @@ export function MetaLeadCentre() {
   const configured = connected || centre.mappings.some((item) => item.active);
   const showCounts = connected || centre.leads.length > 0 || centre.failed > 0;
   const workspaceName = (id: string) => workspaces.find((item) => item.id === id)?.name ?? "Desk";
+  const clinicCallers = callers.filter((item) => item.desk === "clinic");
+  const instituteCallers = callers.filter((item) => item.desk === "institute");
 
   const onSave = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -165,6 +175,7 @@ export function MetaLeadCentre() {
 
       <section className="space-y-3">
         <h2 className="text-sm font-semibold">Imported leads</h2>
+        <p className="text-sm text-muted">Clinic leads can be assigned only to a clinic telecaller. Institute leads can be assigned only to an institute telecaller.</p>
         <div className="grid gap-2 md:grid-cols-4">
           <input value={campaign} onChange={(event) => setCampaign(event.target.value)} placeholder="Campaign" className="rounded-md border border-line bg-white px-2 py-2" />
           <input value={form} onChange={(event) => setForm(event.target.value)} placeholder="Form" className="rounded-md border border-line bg-white px-2 py-2" />
@@ -175,24 +186,69 @@ export function MetaLeadCentre() {
           <select value={assigned} onChange={(event) => setAssigned(event.target.value)} className="rounded-md border border-line bg-white px-2 py-2">
             <option value="">Assignment</option>
             <option value="unassigned">Unassigned</option>
+            <optgroup label="Clinic telecallers">
+              {clinicCallers.map((caller) => <option key={`${caller.workspaceId}:${caller.userId}`} value={caller.userId}>{caller.name}</option>)}
+            </optgroup>
+            <optgroup label="Institute telecallers">
+              {instituteCallers.map((caller) => <option key={`${caller.workspaceId}:${caller.userId}`} value={caller.userId}>{caller.name}</option>)}
+            </optgroup>
           </select>
         </div>
         {loading ? <p className="text-sm text-muted">Loading Meta records…</p> : null}
         <div className="overflow-x-auto rounded-lg border border-line bg-white">
           {centre.leads.length === 0 ? <p className="px-4 py-8 text-sm text-muted">No Meta leads in this desk and date range.</p> : (
-            <table className="w-full min-w-[760px] text-left text-[13px]">
-              <thead className="text-xs text-muted"><tr>{["Name", "Desk", "Status", "Campaign", "Form", "Assignment"].map((heading) => <th key={heading} className="px-3 py-2 font-medium">{heading}</th>)}</tr></thead>
+            <table className="w-full min-w-[880px] text-left text-[13px]">
+              <thead className="text-xs text-muted"><tr>{["Name", "Desk", "Status", "Campaign", "Form", "Telecaller"].map((heading) => <th key={heading} className="px-3 py-2 font-medium">{heading}</th>)}</tr></thead>
               <tbody>
-                {centre.leads.map((lead) => (
-                  <tr key={lead.id} className="border-t border-line">
-                    <td className="px-3 py-2 font-medium"><Link to={`/leads/${lead.id}`} className="hover:text-accent">{lead.name}</Link></td>
-                    <td className="px-3 py-2">{workspaceName(lead.workspaceId)}</td>
-                    <td className="px-3 py-2">{lead.status}</td>
-                    <td className="px-3 py-2">{lead.campaign || "—"}</td>
-                    <td className="px-3 py-2">{lead.form || "—"}</td>
-                    <td className="px-3 py-2">{lead.assignedTo ? "Assigned" : "Unassigned"}</td>
-                  </tr>
-                ))}
+                {centre.leads.map((lead) => {
+                  const workspace = workspaces.find((item) => item.id === lead.workspaceId);
+                  const deskCallers = callers.filter((item) => item.workspaceId === lead.workspaceId);
+                  const known = deskCallers.some((item) => item.userId === lead.assignedTo);
+                  return (
+                    <tr key={lead.id} className="border-t border-line">
+                      <td className="px-3 py-2 font-medium"><Link to={`/leads/${lead.id}`} className="hover:text-accent">{lead.name}</Link></td>
+                      <td className="px-3 py-2">{workspaceName(lead.workspaceId)}</td>
+                      <td className="px-3 py-2">{lead.status}</td>
+                      <td className="px-3 py-2">{lead.campaign || "—"}</td>
+                      <td className="px-3 py-2">{lead.form || "—"}</td>
+                      <td className="px-3 py-2">
+                        <select
+                          aria-label={`Assign ${lead.name}`}
+                          className="w-full min-w-44 rounded-md border border-line bg-white px-2 py-1.5"
+                          value={lead.assignedTo ?? ""}
+                          disabled={savingId === lead.id || !workspace}
+                          onChange={(event) => {
+                            const assignedTo = event.target.value;
+                            if (!assignedTo || !workspace) return;
+                            setSavingId(lead.id);
+                            setError("");
+                            void assignMetaLead({
+                              leadId: lead.id,
+                              organizationId: workspace.organizationId,
+                              workspaceId: lead.workspaceId,
+                              workspaceType: workspace.workspaceType,
+                              assignedTo,
+                            })
+                              .then(() => {
+                                const caller = deskCallers.find((item) => item.userId === assignedTo);
+                                setNotice(`${lead.name} assigned to ${caller?.name ?? "the telecaller"}.`);
+                                setCentre((current) => ({
+                                  ...current,
+                                  leads: current.leads.map((item) => (item.id === lead.id ? { ...item, assignedTo } : item)),
+                                }));
+                              })
+                              .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not assign the lead"))
+                              .finally(() => setSavingId(""));
+                          }}
+                        >
+                          <option value="">{lead.assignedTo && !known ? "Assigned" : workspace?.workspaceType === "institute" ? "Choose an institute telecaller" : "Choose a clinic telecaller"}</option>
+                          {lead.assignedTo && !known ? <option value={lead.assignedTo}>Current assignee</option> : null}
+                          {deskCallers.map((caller) => <option key={caller.userId} value={caller.userId}>{caller.name} · {productionRoleLabel(caller.role)}</option>)}
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

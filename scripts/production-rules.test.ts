@@ -1,5 +1,5 @@
 import { automationDecision, rangeForPreset } from "../src/lib/production-rules.ts";
-import { pathsForRole, roleAllowsPath, canOperateWhatsApp } from "../src/lib/production-access.ts";
+import { pathsForRole, roleAllowsPath, canOperateWhatsApp, deskCallerRoles } from "../src/lib/production-access.ts";
 
 const today = rangeForPreset("today", new Date("2026-10-07T12:00:00+05:30"));
 if (today.from !== today.to) throw new Error("today range");
@@ -19,5 +19,13 @@ if (!canOperateWhatsApp("admin") || canOperateWhatsApp("doctor") || canOperateWh
 }
 if (!roleAllowsPath("institute_telecaller", "/institute")) throw new Error("institute desk");
 if (roleAllowsPath("clinic_telecaller", "/clinic")) throw new Error("clinic caller patients");
+const clinicCallers = deskCallerRoles("clinic");
+const instituteCallers = deskCallerRoles("institute");
+if (!clinicCallers.includes("clinic_telecaller") || clinicCallers.some((role) => instituteCallers.includes(role))) {
+  throw new Error("clinic callers must stay separate from institute callers");
+}
+if (!instituteCallers.includes("institute_telecaller") || deskCallerRoles("billing").length) {
+  throw new Error("institute callers");
+}
 
 console.log("production rules ok");

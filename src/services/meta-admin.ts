@@ -1,5 +1,6 @@
+import { deskCallerRoles } from "@/lib/production-access";
 import { supabase } from "@/lib/supabase";
-import type { WorkspaceOption } from "@/services/production-leads";
+import { assignLead, type WorkspaceOption } from "@/services/production-leads";
 
 function db() {
   if (!supabase) throw new Error("Configuration Required");
@@ -23,6 +24,14 @@ export interface MetaEvent {
   status: string;
   errorCode: string;
   updatedAt: string;
+}
+
+export interface DeskCaller {
+  userId: string;
+  name: string;
+  role: string;
+  workspaceId: string;
+  desk: "clinic" | "institute";
 }
 
 export interface MetaLeadRow {
@@ -169,6 +178,50 @@ export async function loadMetaCentre(workspaces: WorkspaceOption[], workspaceIds
     assignedTo: (row.assigned_to as string | null) ?? null,
   }));
   return centre;
+}
+
+function roleKey(value: { key: string } | { key: string }[] | null) {
+  return Array.isArray(value) ? value[0]?.key : value?.key;
+}
+
+function profileName(value: { full_name: string } | { full_name: string }[] | null) {
+  const name = Array.isArray(value) ? value[0]?.full_name : value?.full_name;
+  return name?.trim() || "Telecaller";
+}
+
+export async function listDeskTelecallers(workspaces: WorkspaceOption[]) {
+  const ids = workspaces.map((item) => item.id);
+  if (!ids.length) return [];
+  const { data, error } = await db().from("user_roles").select("user_id, workspace_id, roles(key), profiles(full_name)").in("workspace_id", ids);
+  if (error) throw new Error(error.message);
+  return (data ?? []).flatMap((row) => {
+    const workspace = workspaces.find((item) => item.id === row.workspace_id);
+    const desk = workspace?.workspaceType === "clinic" || workspace?.workspaceType === "institute" ? workspace.workspaceType : null;
+    const role = roleKey(row.roles as { key: string } | { key: string }[] | null);
+    if (!desk || !role || !deskCallerRoles(desk).includes(role)) return [];
+    return [{
+      userId: String(row.user_id),
+      name: profileName(row.profiles as { full_name: string } | { full_name: string }[] | null),
+      role,
+      workspaceId: String(row.workspace_id),
+      desk,
+    }] satisfies DeskCaller[];
+  });
+}
+
+export async function assignMetaLead(input: { leadId: string; organizationId: string; workspaceId: string; workspaceType: string; assignedTo: string }) {
+  const allowed = deskCallerRoles(input.workspaceType);
+  if (!allowed.length) throw new Error("This lead is not on the clinic or institute desk.");
+  const members = await db().from("user_roles").select("roles(key)").eq("workspace_id", input.workspaceId).eq("user_id", input.assignedTo);
+  if (members.error) throw new Error(members.error.message);
+  const match = (members.data ?? []).some((row) => {
+    const role = roleKey(row.roles as { key: string } | { key: string }[] | null);
+    return Boolean(role && allowed.includes(role));
+  });
+  if (!match) {
+    throw new Error(input.workspaceType === "clinic" ? "Assign clinic leads only to a clinic telecaller." : "Assign institute leads only to an institute telecaller.");
+  }
+  await assignLead({ id: input.leadId, organizationId: input.organizationId, workspaceId: input.workspaceId }, input.assignedTo);
 }
 
 export async function saveFormMapping(input: { organizationId: string; workspaceId: string; pageId: string; formId: string; formName: string }) {
