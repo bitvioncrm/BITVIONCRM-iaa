@@ -1,3 +1,4 @@
+import { Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useDesk } from "@/context/DeskContext";
@@ -94,7 +95,9 @@ export function ProductionLeadsPage() {
         description={loading ? "Loading this page from PostgreSQL." : `${total.toLocaleString("en-IN")} leads created in ${bounds.label}. The list is one page at a time.`}
         actions={
           <>
-            <Button type="button" variant="secondary" disabled={!workspace} onClick={() => setImportOpen(true)}>Import</Button>
+            <Button type="button" disabled={!workspaces.length} onClick={() => setImportOpen(true)}>
+              <Upload className="size-4" /> Import CSV
+            </Button>
             <Button
               type="button"
               variant="secondary"
@@ -234,10 +237,23 @@ export function ProductionLeadsPage() {
             ))}
           </tbody>
         </table>
-        {leads.length === 0 && !loading ? <p className="px-4 py-8 text-sm text-muted">No leads on this page.</p> : null}
+        {leads.length === 0 && !loading ? (
+          <div className="px-4 py-10 text-center">
+            <p className="text-sm text-muted">No leads on this page.</p>
+            <Button className="mt-3" type="button" disabled={!workspaces.length} onClick={() => setImportOpen(true)}>
+              <Upload className="size-4" /> Import CSV
+            </Button>
+          </div>
+        ) : null}
         <Pagination page={page} pages={pages} onPage={setPage} />
       </div>
-      {workspace ? <ProductionImportDialog open={importOpen} workspace={workspace} members={members} onOpenChange={setImportOpen} onImported={() => setReload((value) => value + 1)} /> : null}
+      <ProductionImportDialog
+        open={importOpen}
+        workspaces={desk === "all" ? workspaces : workspaces.filter((item) => item.workspaceType === desk)}
+        workspaceId={workspaceId}
+        onOpenChange={setImportOpen}
+        onImported={() => setReload((value) => value + 1)}
+      />
     </div>
   );
 }
