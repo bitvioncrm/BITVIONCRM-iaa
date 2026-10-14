@@ -16,9 +16,10 @@ import {
   addFollowUp,
   addLeadNote,
   assignLead,
-  assignUnassignedLeads,
+  assignLeadCount,
   createLead,
   downloadWorkspaceCsv,
+  leadAssignmentTotals,
   listAssignableMembers,
   listLeads,
   listWorkspaces,
@@ -51,8 +52,9 @@ export function ProductionLeadsPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [reload, setReload] = useState(0);
   const [draft, setDraft] = useState({ fullName: "", phone: "", email: "", location: "", position: "" });
-  const [bulkAssignee, setBulkAssignee] = useState("");
-  const [assigning, setAssigning] = useState(false);
+  const [assignCounts, setAssignCounts] = useState<Record<string, string>>({});
+  const [assigningId, setAssigningId] = useState("");
+  const [totals, setTotals] = useState({ unassigned: 0, assigned: {} as Record<string, number> });
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
@@ -72,16 +74,20 @@ export function ProductionLeadsPage() {
   }, [desk, workspaces]);
 
   useEffect(() => {
-    const visible = (desk === "all" ? workspaces : workspaces.filter((item) => item.workspaceType === desk))
-      .filter((item) => !workspaceId || item.id === workspaceId);
-    if (!visible.length) {
+    if (!workspaces.length) {
       setMembers([]);
       return;
     }
-    void Promise.all(visible.map((item) => listAssignableMembers(item.id, item.workspaceType)))
+    void Promise.all(workspaces.map((item) => listAssignableMembers(item.id, item.workspaceType)))
       .then((groups) => setMembers(groups.flat()))
       .catch(() => setMembers([]));
-  }, [desk, workspaceId, workspaces]);
+  }, [workspaces]);
+
+  useEffect(() => {
+    void leadAssignmentTotals()
+      .then(setTotals)
+      .catch(() => setTotals({ unassigned: 0, assigned: {} }));
+  }, [reload]);
 
   useEffect(() => {
     if (!workspaces.length) return;
@@ -142,38 +148,57 @@ export function ProductionLeadsPage() {
           {STATUS_ORDER.map((item) => <option key={item} value={item}>{STATUS_LABEL[item]}</option>)}
         </Select>
       </div>
-      {workspace ? (
-        <form
-          className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-white p-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const assignee = members.find((member) => member.userId === bulkAssignee && member.workspaceId === workspace.id);
-            if (!assignee) return;
-            if (!window.confirm(`Assign every unassigned lead on ${workspace.name} to ${assignee.name}?`)) return;
-            setAssigning(true);
-            void assignUnassignedLeads(workspace.id, assignee.userId)
-              .then((count) => {
-                setError("");
-                setNotice(`Assigned ${count.toLocaleString("en-IN")} leads to ${assignee.name}.`);
-                setPage(1);
-                setReload((value) => value + 1);
-              })
-              .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not assign the leads"))
-              .finally(() => setAssigning(false));
-          }}
-        >
-          <p className="text-sm">Assign every unassigned lead on {workspace.name}</p>
-          <Select value={bulkAssignee} onChange={(event) => setBulkAssignee(event.target.value)}>
-            <option value="">Choose a telecaller</option>
-            {members.filter((member) => member.workspaceId === workspace.id).map((member) => (
-              <option key={member.userId} value={member.userId}>{member.name} · {productionRoleLabel(member.role)}</option>
-            ))}
-          </Select>
-          <Button type="submit" disabled={!bulkAssignee || assigning}>{assigning ? "Assigning…" : "Assign"}</Button>
-        </form>
-      ) : (
-        <p className="text-sm text-muted">Choose Dr. K&apos;s Aesthetic Clinic or IAA Kochi above. Clinic leads go to the clinic telecaller. The institute telecaller only sees leads on IAA Kochi.</p>
-      )}
+      <section className="space-y-2 rounded-lg border border-line bg-white p-3">
+        <p className="text-sm">{totals.unassigned.toLocaleString("en-IN")} unassigned leads can be assigned. Enter how many each telecaller should receive. Institute leads are placed on IAA Kochi.</p>
+        {[...members].sort((left, right) => {
+          const leftDesk = workspaces.find((item) => item.id === left.workspaceId)?.workspaceType;
+          const rightDesk = workspaces.find((item) => item.id === right.workspaceId)?.workspaceType;
+          return leftDesk === rightDesk ? left.name.localeCompare(right.name) : leftDesk === "clinic" ? -1 : 1;
+        }).map((member) => {
+          const deskName = workspaces.find((item) => item.id === member.workspaceId)?.name ?? "";
+          const held = Number(totals.assigned[member.userId] ?? 0);
+          return (
+            <form
+              key={member.userId}
+              className="flex flex-wrap items-center gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const limit = Number(assignCounts[member.userId] ?? "");
+                if (!Number.isInteger(limit) || limit < 1) {
+                  setError("Enter how many leads to assign.");
+                  return;
+                }
+                if (!window.confirm(`Assign ${limit.toLocaleString("en-IN")} leads to ${member.name} on ${deskName}?`)) return;
+                setAssigningId(member.userId);
+                void assignLeadCount(member.userId, limit)
+                  .then((count) => {
+                    setError("");
+                    setNotice(`Assigned ${count.toLocaleString("en-IN")} leads to ${member.name}.`);
+                    setAssignCounts((current) => ({ ...current, [member.userId]: "" }));
+                    setPage(1);
+                    setReload((value) => value + 1);
+                  })
+                  .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not assign the leads"))
+                  .finally(() => setAssigningId(""));
+              }}
+            >
+              <p className="min-w-64 text-sm">{member.name} · {productionRoleLabel(member.role)} · {held.toLocaleString("en-IN")} assigned</p>
+              <Input
+                type="number"
+                min={1}
+                max={Math.max(totals.unassigned, 1)}
+                required
+                placeholder="How many"
+                className="w-32"
+                value={assignCounts[member.userId] ?? ""}
+                onChange={(event) => setAssignCounts((current) => ({ ...current, [member.userId]: event.target.value }))}
+              />
+              <Button type="submit" disabled={Boolean(assigningId) || totals.unassigned < 1}>{assigningId === member.userId ? "Assigning…" : "Assign"}</Button>
+              <span className="text-xs text-muted">{deskName}</span>
+            </form>
+          );
+        })}
+      </section>
       {workspace ? (
         <form
           className="grid gap-2 rounded-lg border border-line bg-white p-3 md:grid-cols-6"

@@ -256,6 +256,22 @@ export async function assignUnassignedLeads(workspaceId: string, assigneeId: str
   return Number(data ?? 0);
 }
 
+export async function leadAssignmentTotals() {
+  const { data, error } = await client().rpc("lead_assignment_totals");
+  if (error) throw new Error(error.message);
+  const payload = (data ?? {}) as { unassigned?: number; assigned?: Record<string, number> };
+  return {
+    unassigned: Number(payload.unassigned ?? 0),
+    assigned: payload.assigned ?? {},
+  };
+}
+
+export async function assignLeadCount(assigneeId: string, limit: number) {
+  const { data, error } = await client().rpc("assign_lead_count", { p_assignee_id: assigneeId, p_limit: limit });
+  if (error) throw new Error(error.message);
+  return Number(data ?? 0);
+}
+
 export async function assignLead(lead: Pick<ProductionLead, "id" | "organizationId" | "workspaceId">, assignedTo: string) {
   const userId = await currentUserId();
   const { error } = await client().from("leads").update({ assigned_to: assignedTo, updated_by: userId, updated_at: new Date().toISOString() }).eq("id", lead.id);
