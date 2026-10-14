@@ -4,7 +4,8 @@ import { BusinessBoard } from "@/components/dashboard/BusinessBoard";
 import { useAuth } from "@/context/AuthContext";
 import { useDesk } from "@/context/DeskContext";
 import { listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
-import { callSummary, countRows, listAppointments, listFollowUps, listProducts } from "@/services/production-ops";
+import { formatClock } from "@/lib/call-time";
+import { callDeskReport, countRows, listAppointments, listFollowUps, listProducts } from "@/services/production-ops";
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -112,20 +113,28 @@ function CallerDashboard({ title, detail, institute }: { title: string; detail: 
   const workspace = workspaces.find((item) => item.workspaceType === (institute ? "institute" : "clinic")) ?? workspaces[0];
   const [leads, setLeads] = useState(0);
   const [followups, setFollowups] = useState(0);
-  const [calls, setCalls] = useState("—");
+  const [calls, setCalls] = useState({ dials: "0", connected: "0", rejected: "0", talk: "0:00" });
   useEffect(() => {
     if (!workspace) return;
     void countRows("leads", workspace.id).then(setLeads);
     void listFollowUps(workspace.id).then((rows) => setFollowups(rows.filter((row) => row.status === "pending").length)).catch(() => setFollowups(0));
-    void callSummary(workspace.id).then((row) => setCalls(`${Math.round(row.today / 60)} min`)).catch(() => setCalls("—"));
+    void callDeskReport(workspace.id, false).then((row) => setCalls({
+      dials: String(row.dials),
+      connected: String(row.connected),
+      rejected: String(row.rejected),
+      talk: formatClock(row.talkSeconds),
+    })).catch(() => setCalls({ dials: "—", connected: "—", rejected: "—", talk: "—" }));
   }, [workspace]);
   return (
     <Shell title={title} detail={detail}>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Stat label="Leads" value={String(leads)} />
         <Stat label="Pending follow-ups" value={String(followups)} />
-        <Stat label="Today's call time" value={calls} />
+        <Stat label="Today's dials" value={calls.dials} />
+        <Stat label="Connected" value={calls.connected} />
+        <Stat label="Rejected" value={calls.rejected} />
+        <Stat label="Talk time" value={calls.talk} />
       </div>
       <div className="flex flex-wrap gap-2">
         <Tile to="/leads" label="Leads" />
@@ -140,9 +149,9 @@ function CallerDashboard({ title, detail, institute }: { title: string; detail: 
 }
 
 function ClinicCallerDashboard() {
-  return <CallerDashboard title="Clinic telecaller" detail="Assigned clinic leads, follow-ups, and call time. WhatsApp is view only. Admin sends messages." institute={false} />;
+  return <CallerDashboard title="Clinic telecaller" detail="Your clinic leads and today's dials. Connected calls save the time you spoke. Institute calls stay on the institute telecaller." institute={false} />;
 }
 
 function InstituteCallerDashboard() {
-  return <CallerDashboard title="Institute telecaller" detail="Institute leads, admissions, documents, and certificates. WhatsApp is view only. Admin sends messages." institute />;
+  return <CallerDashboard title="Institute telecaller" detail="Your institute leads and today's dials. Connected calls save the time you spoke. Clinic calls stay on the clinic telecaller." institute />;
 }

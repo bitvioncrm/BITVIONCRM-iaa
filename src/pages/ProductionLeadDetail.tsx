@@ -5,7 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { STATUS_LABEL, STATUS_ORDER } from "@/data/catalog";
 import { addFollowUp, addLeadNote, getLead, listFollowUps, listNotes, listWorkspaces, updateLeadStatus, type ProductionLead } from "@/services/production-leads";
-import { createCourse, createPatient, createStudent, endCall, startCall } from "@/services/production-ops";
+import { CallResultButtons } from "@/components/calls/CallResultButtons";
+import { formatClock, type CallOutcome, type CallTotals } from "@/lib/call-time";
+import { createCourse, createPatient, createStudent, endCall, leadCallStats, startCall } from "@/services/production-ops";
 import type { LeadStatus } from "@/types";
 
 export function ProductionLeadDetail({ id }: { id: string }) {
@@ -16,6 +18,8 @@ export function ProductionLeadDetail({ id }: { id: string }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState<string | null>(null);
   const [now, setNow] = useState(0);
+  const [callTotals, setCallTotals] = useState<CallTotals | null>(null);
+  const [ending, setEnding] = useState(false);
   const [note, setNote] = useState("");
   const [followAt, setFollowAt] = useState("");
   const [notice, setNotice] = useState("");
@@ -30,6 +34,8 @@ export function ProductionLeadDetail({ id }: { id: string }) {
         setWorkspaceType(workspaces.find((item) => item.id === row.workspaceId)?.workspaceType ?? "clinic");
         setNotes(await listNotes(row.id));
         setFollowups(await listFollowUps(row.id));
+        const stats = await leadCallStats([row.id]);
+        setCallTotals(stats[row.id] ?? null);
       })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load the lead"));
   }, [id]);
@@ -68,22 +74,30 @@ export function ProductionLeadDetail({ id }: { id: string }) {
         {STATUS_ORDER.map((item) => <option key={item} value={item}>{STATUS_LABEL[item]}</option>)}
       </Select>
       <section className="rounded-lg border border-line bg-white p-4">
-        <h2 className="font-semibold">Call time</h2>
-        <p className="mt-1 text-sm text-muted">The timer on screen is not saved. Only End call stores the elapsed time.</p>
-        <p className="mt-3 text-3xl font-semibold tabular">{sessionId ? `${Math.floor(live / 60)}:${String(live % 60).padStart(2, "0")}` : "0:00"}</p>
+        <h2 className="font-semibold">Call time on this lead</h2>
+        <p className="mt-1 text-sm text-muted">
+          Talk time {formatClock(callTotals?.talkSeconds ?? 0)} · {callTotals?.dials ?? 0} dials · {callTotals?.connected ?? 0} connected · {callTotals?.rejected ?? 0} rejected · {callTotals?.noAnswer ?? 0} no answer
+        </p>
+        <p className="mt-3 text-3xl font-semibold tabular">{sessionId ? formatClock(live) : formatClock(callTotals?.talkSeconds ?? 0)}</p>
         {sessionId ? (
-          <Button type="button" className="mt-3" onClick={() => {
-            void endCall(sessionId).then((seconds) => {
-              setSessionId(null);
-              setStartedAt(null);
-              setNotice(`Call saved: ${seconds} seconds.`);
-            }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "End call failed"));
-          }}>End call</Button>
+          <div className="mt-3 space-y-2">
+            <p className="text-sm text-muted">Choose the result. Only Connected stores this speaking time.</p>
+            <CallResultButtons busy={ending} onResult={(outcome: CallOutcome) => {
+              setEnding(true);
+              void endCall(sessionId, outcome).then(async (seconds) => {
+                setSessionId(null);
+                setStartedAt(null);
+                const stats = await leadCallStats([lead.id]);
+                setCallTotals(stats[lead.id] ?? null);
+                setNotice(outcome === "connected" ? `Connected call saved: ${formatClock(seconds)}.` : "Dial saved. No talk time was added.");
+              }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "End call failed")).finally(() => setEnding(false));
+            }} />
+          </div>
         ) : (
           <Button type="button" className="mt-3" onClick={() => {
-            void startCall(lead.organizationId, lead.workspaceId).then((row) => {
+            void startCall(lead.organizationId, lead.workspaceId, lead.id).then((row) => {
               setSessionId(row.id);
-              setStartedAt(row.started_at);
+              setStartedAt(row.startedAt);
               setNotice("");
             }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Start call failed"));
           }}>Start call</Button>

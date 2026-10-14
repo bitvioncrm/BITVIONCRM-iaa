@@ -1,71 +1,186 @@
 import { useEffect, useState } from "react";
-import { listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
-import { endCall, startCall, callSummary } from "@/services/production-ops";
+import { Link } from "react-router-dom";
+import { CallResultButtons } from "@/components/calls/CallResultButtons";
+import { useAuth } from "@/context/AuthContext";
+import { formatClock, type CallOutcome } from "@/lib/call-time";
+import { canOperateWhatsApp, whatsAppDesk } from "@/lib/production-access";
+import { listLeads, listWorkspaces, type ProductionLead, type WorkspaceOption } from "@/services/production-leads";
+import { activeCall, callDeskReport, endCall, startCall, type LiveCall } from "@/services/production-ops";
+
+const outcomeLabel: Record<CallOutcome, string> = {
+  connected: "Connected",
+  rejected: "Rejected",
+  no_answer: "No answer",
+};
 
 export function ProductionCallTime() {
+  const { productionUser } = useAuth();
+  const desk = whatsAppDesk(productionUser?.roleKey ?? "");
+  const seesEveryone = canOperateWhatsApp(productionUser?.roleKey ?? "");
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
   const [workspaceId, setWorkspaceId] = useState("");
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [startedAt, setStartedAt] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [leads, setLeads] = useState<ProductionLead[]>([]);
+  const [live, setLive] = useState<LiveCall | null>(null);
   const [now, setNow] = useState(0);
-  const [summary, setSummary] = useState<{ today: number; week: number; month: number; target: number; remaining: number } | null>(null);
+  const [report, setReport] = useState<Awaited<ReturnType<typeof callDeskReport>> | null>(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    void listWorkspaces().then((rows) => {
-      setWorkspaces(rows);
-      setWorkspaceId(rows[0]?.id ?? "");
-    }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Configuration Required"));
+    void listWorkspaces()
+      .then((rows) => {
+        const visible = desk === "clinic" || desk === "institute" ? rows.filter((item) => item.workspaceType === desk) : rows;
+        setWorkspaces(visible);
+        setWorkspaceId(visible[0]?.id ?? "");
+      })
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Configuration Required"));
+  }, [desk]);
+
+  useEffect(() => {
+    void activeCall().then(setLive).catch(() => setLive(null));
   }, []);
 
   useEffect(() => {
-    if (!workspaceId) return;
-    void callSummary(workspaceId).then(setSummary).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load call time"));
-  }, [workspaceId, sessionId]);
+    if (!live) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [live]);
 
   useEffect(() => {
-    if (!sessionId) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    setNow(Date.now());
-    return () => window.clearInterval(timer);
-  }, [sessionId]);
+    if (!workspaceId) return;
+    void callDeskReport(workspaceId, seesEveryone)
+      .then(setReport)
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load call time"));
+  }, [workspaceId, seesEveryone, live]);
 
-  const live = startedAt ? Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000)) : 0;
+  useEffect(() => {
+    if (!workspaceId) return;
+    void listLeads({ workspaceId, search, page: 1 })
+      .then((result) => setLeads(result.leads))
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load leads"));
+  }, [workspaceId, search]);
+
   const workspace = workspaces.find((item) => item.id === workspaceId);
+  const speaking = live ? leads.find((lead) => lead.id === live.leadId) : undefined;
+  const elapsed = live ? Math.max(0, Math.floor((now - new Date(live.startedAt).getTime()) / 1000)) : 0;
+  const title = desk === "institute" ? "Institute call time" : desk === "clinic" ? "Clinic call time" : "Call time";
+
+  function finish(outcome: CallOutcome) {
+    if (!live) return;
+    setBusy(true);
+    void endCall(live.id, outcome)
+      .then(() => {
+        setLive(null);
+        setError("");
+      })
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "End call failed"))
+      .finally(() => setBusy(false));
+  }
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Call time</h1>
-      <p className="text-sm text-muted">Only a completed Start and End is stored. An interrupted timer is not counted.</p>
+      <div>
+        <h1 className="text-2xl font-semibold">{title}</h1>
+        <p className="mt-1 text-sm text-muted">
+          {seesEveryone
+            ? "Admin sees both desks. Clinic calls stay on the clinic telecaller. Institute calls stay on the institute telecaller."
+            : "You see only your own dials on this desk. Talk time is saved when you mark the call Connected."}
+        </p>
+      </div>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
-      <select className="rounded-md border border-line px-2 py-2" value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}>
-        {workspaces.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-      </select>
-      <p className="text-4xl font-semibold tabular">{sessionId ? format(live) : format(summary?.today ?? 0)}</p>
-      <p className="text-sm text-muted">Today {format(summary?.today ?? 0)} · Target {format(summary?.target ?? 0)} · Remaining {format(summary?.remaining ?? 0)}</p>
-      <p className="text-sm text-muted">Week {format(summary?.week ?? 0)} · Month {format(summary?.month ?? 0)}</p>
-      {sessionId ? (
-        <button type="button" className="rounded-md bg-navy px-4 py-2 text-sm text-white" onClick={() => {
-          void endCall(sessionId).then(() => {
-            setSessionId(null);
-            setStartedAt(null);
-          }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "End call failed"));
-        }}>End call</button>
+      {workspaces.length > 1 ? (
+        <select className="rounded-md border border-line px-2 py-2" value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}>
+          {workspaces.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </select>
       ) : (
-        <button type="button" className="rounded-md bg-navy px-4 py-2 text-sm text-white" disabled={!workspace} onClick={() => {
-          if (!workspace) return;
-          void startCall(workspace.organizationId, workspace.id).then((row) => {
-            setSessionId(row.id);
-            setStartedAt(row.started_at);
-          }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Start call failed"));
-        }}>Start call</button>
+        <p className="text-sm font-medium">{workspace?.name}</p>
       )}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <Stat label="Total dials" value={String(report?.dials ?? 0)} />
+        <Stat label="Connected" value={String(report?.connected ?? 0)} />
+        <Stat label="Rejected" value={String(report?.rejected ?? 0)} />
+        <Stat label="No answer" value={String(report?.noAnswer ?? 0)} />
+        <Stat label="Talk time" value={formatClock(report?.talkSeconds ?? 0)} />
+      </div>
+      <section className="rounded-lg border border-line bg-white p-4">
+        <h2 className="font-semibold">While calling</h2>
+        {live ? (
+          <div className="mt-3 space-y-3">
+            <p className="text-sm">{speaking?.fullName ?? "Lead"} · {workspace?.name}</p>
+            <p className="text-4xl font-semibold tabular">{formatClock(elapsed)}</p>
+            <p className="text-sm text-muted">This time is stored only if you choose Connected.</p>
+            <CallResultButtons busy={busy} onResult={finish} />
+          </div>
+        ) : (
+          <div className="mt-3 space-y-3">
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search a lead by name or phone"
+              className="w-full max-w-md rounded-md border border-line px-2 py-2"
+            />
+            <div className="max-h-64 space-y-2 overflow-auto">
+              {leads.map((lead) => (
+                <div key={lead.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-line py-2 last:border-0">
+                  <div>
+                    <Link className="font-medium" to={`/leads/${lead.id}`}>{lead.fullName}</Link>
+                    <p className="text-xs text-muted">{lead.phone}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded-md bg-navy px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                    disabled={busy || !workspace}
+                    onClick={() => {
+                      if (!workspace) return;
+                      setBusy(true);
+                      void startCall(workspace.organizationId, workspace.id, lead.id)
+                        .then((row) => {
+                          setLive(row);
+                          setError("");
+                        })
+                        .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Start call failed"))
+                        .finally(() => setBusy(false));
+                    }}
+                  >
+                    Start call
+                  </button>
+                </div>
+              ))}
+              {leads.length === 0 ? <p className="text-sm text-muted">No leads on this desk.</p> : null}
+            </div>
+          </div>
+        )}
+      </section>
+      <section className="overflow-x-auto rounded-lg border border-line bg-white">
+        <table className="w-full min-w-[640px] text-left text-sm">
+          <thead className="border-b border-line text-xs text-muted">
+            <tr>
+              {["Lead", "Result", "Talk time"].map((heading) => <th key={heading} className="px-3 py-2 font-medium">{heading}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {(report?.calls ?? []).map((call, index) => (
+              <tr key={`${call.leadId}-${call.startedAt}-${index}`} className="border-b border-line last:border-0">
+                <td className="px-3 py-2">{call.leadId ? <Link to={`/leads/${call.leadId}`}>{call.leadName}</Link> : call.leadName}</td>
+                <td className="px-3 py-2">{outcomeLabel[call.outcome]}</td>
+                <td className="px-3 py-2 tabular">{call.outcome === "connected" ? formatClock(call.talkSeconds) : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {(report?.calls.length ?? 0) === 0 ? <p className="px-3 py-6 text-sm text-muted">No completed dials today.</p> : null}
+      </section>
     </div>
   );
 }
 
-function format(seconds: number) {
-  const minutes = Math.floor(seconds / 60);
-  const rest = seconds % 60;
-  return `${minutes}:${String(rest).padStart(2, "0")}`;
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-line bg-white px-4 py-3">
+      <p className="text-xs font-medium tracking-wide text-muted uppercase">{label}</p>
+      <p className="mt-1 text-2xl font-semibold tabular">{value}</p>
+    </div>
+  );
 }

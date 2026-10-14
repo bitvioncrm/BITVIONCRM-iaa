@@ -28,12 +28,17 @@ import {
   type ProductionLead,
   type WorkspaceOption,
 } from "@/services/production-leads";
+import { CallResultButtons } from "@/components/calls/CallResultButtons";
 import { useAuth } from "@/context/AuthContext";
-import { productionRoleLabel } from "@/lib/production-access";
+import { formatClock, type CallOutcome, type CallTotals } from "@/lib/call-time";
+import { canOperateWhatsApp, productionRoleLabel, whatsAppDesk } from "@/lib/production-access";
+import { activeCall, endCall, leadCallStats, startCall, type LiveCall } from "@/services/production-ops";
 import type { LeadStatus } from "@/types";
 
 export function ProductionLeadsPage() {
   const { productionUser } = useAuth();
+  const callerDesk = whatsAppDesk(productionUser?.roleKey ?? "");
+  const canAssign = canOperateWhatsApp(productionUser?.roleKey ?? "");
   const { desk, setDesk, bounds } = useDesk();
   const [params] = useSearchParams();
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
@@ -56,11 +61,19 @@ export function ProductionLeadsPage() {
   const [assigningId, setAssigningId] = useState("");
   const [totals, setTotals] = useState({ unassigned: 0, assigned: {} as Record<string, number> });
   const [notice, setNotice] = useState("");
+  const [callStats, setCallStats] = useState<Record<string, CallTotals>>({});
+  const [live, setLive] = useState<LiveCall | null>(null);
+  const [now, setNow] = useState(0);
+  const [callBusy, setCallBusy] = useState(false);
 
   useEffect(() => {
+    if (callerDesk === "clinic" || callerDesk === "institute") {
+      setDesk(callerDesk);
+      return;
+    }
     const requested = params.get("desk");
     if (requested === "all" || requested === "clinic" || requested === "institute") setDesk(requested);
-  }, [params, setDesk]);
+  }, [callerDesk, params, setDesk]);
 
   useEffect(() => {
     void listWorkspaces()
@@ -104,7 +117,60 @@ export function ProductionLeadsPage() {
       .finally(() => setLoading(false));
   }, [bounds.from, bounds.to, desk, page, reload, search, source, status, unassigned, workspaceId, workspaces.length]);
 
+  useEffect(() => {
+    void activeCall().then(setLive).catch(() => setLive(null));
+  }, []);
+
+  useEffect(() => {
+    if (!live) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [live]);
+
+  useEffect(() => {
+    const ids = leads.map((lead) => lead.id);
+    if (!ids.length) {
+      setCallStats({});
+      return;
+    }
+    void leadCallStats(ids).then(setCallStats).catch(() => setCallStats({}));
+  }, [leads]);
+
+  const deskWorkspaces = callerDesk === "clinic" || callerDesk === "institute"
+    ? workspaces.filter((item) => item.workspaceType === callerDesk)
+    : desk === "all"
+      ? workspaces
+      : workspaces.filter((item) => item.workspaceType === desk);
   const workspace = workspaces.find((item) => item.id === workspaceId);
+  const elapsed = live ? Math.max(0, Math.floor((now - new Date(live.startedAt).getTime()) / 1000)) : 0;
+  const liveLead = leads.find((lead) => lead.id === live?.leadId);
+
+  function beginCall(lead: ProductionLead) {
+    setCallBusy(true);
+    void startCall(lead.organizationId, lead.workspaceId, lead.id)
+      .then((row) => {
+        setLive(row);
+        setError("");
+      })
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Start call failed"))
+      .finally(() => setCallBusy(false));
+  }
+
+  function finishCall(outcome: CallOutcome) {
+    if (!live) return;
+    setCallBusy(true);
+    const sessionId = live.id;
+    void endCall(sessionId, outcome)
+      .then(async () => {
+        setLive(null);
+        const ids = leads.map((lead) => lead.id);
+        if (ids.length) setCallStats(await leadCallStats(ids));
+        setNotice(outcome === "connected" ? "Connected call saved on this lead." : "Dial saved. Talk time was not added.");
+      })
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "End call failed"))
+      .finally(() => setCallBusy(false));
+  }
 
   return (
     <div className="space-y-4">
@@ -139,8 +205,8 @@ export function ProductionLeadsPage() {
       {notice ? <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</p> : null}
       <div className="grid gap-2 rounded-lg border border-line bg-white p-3 md:grid-cols-4">
         <Select value={workspaceId} onChange={(event) => { setWorkspaceId(event.target.value); setPage(1); }}>
-          {desk === "all" ? <option value="">All authorized desks</option> : null}
-          {(desk === "all" ? workspaces : workspaces.filter((item) => item.workspaceType === desk)).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          {canAssign && desk === "all" ? <option value="">All authorized desks</option> : null}
+          {deskWorkspaces.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </Select>
         <Input placeholder="Search name, phone, email" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} />
         <Select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>
@@ -148,7 +214,7 @@ export function ProductionLeadsPage() {
           {STATUS_ORDER.map((item) => <option key={item} value={item}>{STATUS_LABEL[item]}</option>)}
         </Select>
       </div>
-      <section className="space-y-2 rounded-lg border border-line bg-white p-3">
+      {canAssign ? <section className="space-y-2 rounded-lg border border-line bg-white p-3">
         <p className="text-sm">{totals.unassigned.toLocaleString("en-IN")} unassigned leads can be assigned. Enter how many each telecaller should receive. Institute leads are placed on IAA Kochi.</p>
         {[...members].sort((left, right) => {
           const leftDesk = workspaces.find((item) => item.id === left.workspaceId)?.workspaceType;
@@ -198,7 +264,7 @@ export function ProductionLeadsPage() {
             </form>
           );
         })}
-      </section>
+      </section> : null}
       {workspace ? (
         <form
           className="grid gap-2 rounded-lg border border-line bg-white p-3 md:grid-cols-6"
@@ -238,10 +304,20 @@ export function ProductionLeadsPage() {
           <Button type="submit">Add lead</Button>
         </form>
       ) : null}
+      {live ? (
+        <section className="rounded-lg border border-line bg-white p-4">
+          <p className="text-sm text-muted">Calling now</p>
+          <p className="text-3xl font-semibold tabular">{formatClock(elapsed)}</p>
+          <p className="mt-1 text-sm">{liveLead ? <Link to={`/leads/${liveLead.id}`}>{liveLead.fullName}</Link> : "This lead"} · only Connected stores this speaking time</p>
+          <div className="mt-3">
+            <CallResultButtons busy={callBusy} onResult={finishCall} />
+          </div>
+        </section>
+      ) : null}
       <div className="overflow-x-auto rounded-lg border border-line bg-white">
-        <table className="w-full min-w-[760px] text-left text-[13px]">
+        <table className="w-full min-w-[920px] text-left text-[13px]">
           <thead className="border-b border-line text-xs text-muted">
-            <tr>{["Name", "Phone", "Stage", "Assign", "Follow-up"].map((heading) => <th key={heading} className="px-3 py-2 font-medium">{heading}</th>)}</tr>
+            <tr>{["Name", "Phone", "Stage", "Assign", "Call", "Follow-up"].map((heading) => <th key={heading} className="px-3 py-2 font-medium">{heading}</th>)}</tr>
           </thead>
           <tbody>
             {leads.map((lead) => (
@@ -276,6 +352,15 @@ export function ProductionLeadsPage() {
                     <option value="">Unassigned</option>
                     {members.filter((member) => member.workspaceId === lead.workspaceId).map((member) => <option key={member.userId} value={member.userId}>{member.name} · {productionRoleLabel(member.role)}</option>)}
                   </Select>
+                </td>
+                <td className="px-3 py-2">
+                  <p className="tabular">{formatClock(callStats[lead.id]?.talkSeconds ?? 0)}</p>
+                  <p className="text-xs text-muted">{callStats[lead.id]?.dials ?? 0} dials · {callStats[lead.id]?.connected ?? 0} connected · {callStats[lead.id]?.rejected ?? 0} rejected</p>
+                  {live?.leadId === lead.id ? (
+                    <p className="mt-1 font-semibold tabular">{formatClock(elapsed)}</p>
+                  ) : (
+                    <Button type="button" size="sm" className="mt-1" disabled={callBusy || Boolean(live)} onClick={() => beginCall(lead)}>Call</Button>
+                  )}
                 </td>
                 <td className="px-3 py-2">
                   <Button

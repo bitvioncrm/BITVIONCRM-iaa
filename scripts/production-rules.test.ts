@@ -1,3 +1,4 @@
+import { summarizeCalls } from "../src/lib/call-time.ts";
 import { automationDecision, rangeForPreset } from "../src/lib/production-rules.ts";
 import { pathsForRole, roleAllowsPath, canOperateWhatsApp, canSendBulk, canWriteWhatsApp, deskCallerRoles, WHATSAPP_BULK_ADMIN_LIMIT } from "../src/lib/production-access.ts";
 
@@ -32,6 +33,16 @@ if (!canWriteWhatsApp("clinic_telecaller") || !canWriteWhatsApp("institute_telec
 }
 if (!canSendBulk("clinic_telecaller", WHATSAPP_BULK_ADMIN_LIMIT) || canSendBulk("institute_telecaller", WHATSAPP_BULK_ADMIN_LIMIT + 1) || !canSendBulk("admin", WHATSAPP_BULK_ADMIN_LIMIT + 1)) {
   throw new Error("bulk over 50 is admin only");
+}
+
+const calls = summarizeCalls([
+  { status: "completed", outcome: "connected", duration_seconds: 90 },
+  { status: "completed", outcome: "rejected", duration_seconds: 0 },
+  { status: "completed", outcome: "no_answer", duration_seconds: 0 },
+  { status: "interrupted", outcome: null, duration_seconds: null },
+]);
+if (calls.dials !== 3 || calls.connected !== 1 || calls.rejected !== 1 || calls.noAnswer !== 1 || calls.talkSeconds !== 90) {
+  throw new Error("call totals");
 }
 
 console.log("production rules ok");

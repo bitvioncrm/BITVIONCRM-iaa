@@ -1,4 +1,4 @@
-import { elapsedSeconds, remainingSeconds, sumCompleted } from "@/lib/call-time";
+import { elapsedSeconds, emptyCallTotals, formatClock, remainingSeconds, sumCompleted, summarizeCalls, type CallOutcome, type CallTotals } from "@/lib/call-time";
 import { balance, invoiceTotal } from "@/lib/money";
 import { optimizeImage, sha256 } from "@/lib/files";
 import { supabase } from "@/lib/supabase";
@@ -38,29 +38,135 @@ export async function createTask(input: { organizationId: string; workspaceId: s
   if (error) throw new Error(error.message);
 }
 
-export async function startCall(organizationId: string, workspaceId: string) {
+export type { CallOutcome, CallTotals };
+export { emptyCallTotals, formatClock };
+
+export interface LiveCall {
+  id: string;
+  leadId: string;
+  workspaceId: string;
+  startedAt: string;
+}
+
+export async function startCall(organizationId: string, workspaceId: string, leadId: string) {
+  if (!leadId) throw new Error("Choose the lead you are calling.");
   const uid = await userId();
   const { data: active, error: activeError } = await client().from("call_time_sessions").select("id").eq("user_id", uid).eq("status", "active");
   if (activeError) throw new Error(activeError.message);
   if (active?.length) {
-    const { error } = await client().from("call_time_sessions").update({ status: "interrupted", ended_at: new Date().toISOString(), duration_seconds: null }).in("id", active.map((row) => row.id as string));
+    const { error } = await client().from("call_time_sessions").update({ status: "interrupted", ended_at: new Date().toISOString(), duration_seconds: null, outcome: null }).in("id", active.map((row) => row.id as string));
     if (error) throw new Error(error.message);
   }
-  const { data, error } = await client().from("call_time_sessions").insert({ organization_id: organizationId, workspace_id: workspaceId, user_id: uid, status: "active" }).select("id, started_at").single();
+  const { data, error } = await client().from("call_time_sessions").insert({
+    organization_id: organizationId,
+    workspace_id: workspaceId,
+    user_id: uid,
+    lead_id: leadId,
+    status: "active",
+  }).select("id, started_at, lead_id, workspace_id").single();
   if (error) throw new Error(error.message);
-  return data as { id: string; started_at: string };
+  return {
+    id: data.id as string,
+    startedAt: data.started_at as string,
+    leadId: data.lead_id as string,
+    workspaceId: data.workspace_id as string,
+  } satisfies LiveCall;
 }
 
-export async function endCall(sessionId: string) {
+export async function endCall(sessionId: string, outcome: CallOutcome) {
   const endedAt = new Date().toISOString();
   const { data, error } = await client().from("call_time_sessions").select("started_at, status").eq("id", sessionId).single();
   if (error) throw new Error(error.message);
   if (data.status !== "active") throw new Error("This timing session is not active.");
-  const duration = elapsedSeconds(data.started_at as string, endedAt);
-  if (duration === null) throw new Error("The timer could not be calculated. It was not added to call time.");
-  const { error: updateError } = await client().from("call_time_sessions").update({ status: "completed", ended_at: endedAt, duration_seconds: duration }).eq("id", sessionId).eq("status", "active");
+  const elapsed = elapsedSeconds(data.started_at as string, endedAt);
+  if (elapsed === null) throw new Error("The timer could not be calculated. It was not added to call time.");
+  const duration = outcome === "connected" ? elapsed : 0;
+  const { error: updateError } = await client().from("call_time_sessions").update({
+    status: "completed",
+    outcome,
+    ended_at: endedAt,
+    duration_seconds: duration,
+  }).eq("id", sessionId).eq("status", "active");
   if (updateError) throw new Error(updateError.message);
   return duration;
+}
+
+export async function activeCall() {
+  const uid = await userId();
+  const { data, error } = await client()
+    .from("call_time_sessions")
+    .select("id, lead_id, workspace_id, started_at")
+    .eq("user_id", uid)
+    .eq("status", "active")
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data?.lead_id) return null;
+  return {
+    id: data.id as string,
+    leadId: data.lead_id as string,
+    workspaceId: data.workspace_id as string,
+    startedAt: data.started_at as string,
+  } satisfies LiveCall;
+}
+
+export async function leadCallStats(leadIds: string[]) {
+  const unique = [...new Set(leadIds.filter(Boolean))];
+  const grouped: Record<string, CallTotals> = {};
+  for (const id of unique) grouped[id] = emptyCallTotals();
+  if (!unique.length) return grouped;
+  const { data, error } = await client()
+    .from("call_time_sessions")
+    .select("lead_id, status, outcome, duration_seconds")
+    .in("lead_id", unique)
+    .eq("status", "completed");
+  if (error) throw new Error(error.message);
+  const buckets = new Map<string, Array<{ status: string; outcome: string | null; duration_seconds: number | null }>>();
+  for (const row of data ?? []) {
+    const leadId = row.lead_id as string | null;
+    if (!leadId) continue;
+    const list = buckets.get(leadId) ?? [];
+    list.push({ status: row.status as string, outcome: row.outcome as string | null, duration_seconds: row.duration_seconds as number | null });
+    buckets.set(leadId, list);
+  }
+  for (const [leadId, rows] of buckets) grouped[leadId] = summarizeCalls(rows);
+  return grouped;
+}
+
+export async function callDeskReport(workspaceId: string, everyone: boolean) {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  let request = client()
+    .from("call_time_sessions")
+    .select("status, outcome, duration_seconds, started_at, lead_id, leads(full_name)")
+    .eq("workspace_id", workspaceId)
+    .gte("started_at", start.toISOString())
+    .order("started_at", { ascending: false })
+    .limit(200);
+  if (!everyone) request = request.eq("user_id", await userId());
+  const { data, error } = await request;
+  if (error) throw new Error(error.message);
+  const rows = data ?? [];
+  const totals = summarizeCalls(rows.map((row) => ({
+    status: row.status as string,
+    outcome: row.outcome as string | null,
+    duration_seconds: row.duration_seconds as number | null,
+  })));
+  const calls = rows
+    .filter((row) => row.status === "completed" && row.outcome)
+    .map((row) => {
+      const lead = row.leads as { full_name?: string } | { full_name?: string }[] | null;
+      const name = Array.isArray(lead) ? lead[0]?.full_name : lead?.full_name;
+      return {
+        leadId: (row.lead_id as string | null) ?? "",
+        leadName: name || "Lead",
+        outcome: row.outcome as CallOutcome,
+        talkSeconds: row.outcome === "connected" ? Number(row.duration_seconds ?? 0) : 0,
+        startedAt: row.started_at as string,
+      };
+    });
+  return { ...totals, calls };
 }
 
 export async function callSummary(workspaceId: string) {
