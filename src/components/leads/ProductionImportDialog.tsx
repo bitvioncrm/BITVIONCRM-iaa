@@ -185,7 +185,7 @@ export function ProductionImportDialog({
               </Select>
             </label>
             <label className="text-[13px] font-medium">
-              Assign BDE
+              Assign telecaller
               <Select className="mt-1" value={assignedTo} onChange={(event) => setAssignedTo(event.target.value)}>
                 <option value="">Unassigned</option>
                 {members.map((member) => <option key={member.userId} value={member.userId}>{member.name}</option>)}

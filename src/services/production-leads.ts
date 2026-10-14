@@ -1,5 +1,6 @@
 import { stageFromText } from "@/data/catalog";
 import { chunk, duplicateKind, normalizeEmail, normalizePhone, phoneKey, sanitizeSearch, type DuplicateKind } from "@/lib/lead-normalize";
+import { deskCallerRoles } from "@/lib/production-access";
 import { supabase } from "@/lib/supabase";
 import type { LeadStatus } from "@/types";
 
@@ -105,7 +106,14 @@ export async function listWorkspaces() {
   })) satisfies WorkspaceOption[];
 }
 
-export async function listAssignableMembers(workspaceId: string) {
+export async function listAssignableMembers(workspaceId: string, workspaceType?: string) {
+  let desk = workspaceType;
+  if (!desk) {
+    const workspace = await client().from("workspaces").select("workspace_type").eq("id", workspaceId).maybeSingle();
+    if (workspace.error) throw new Error(workspace.error.message);
+    desk = (workspace.data?.workspace_type as string | undefined) ?? "";
+  }
+  const allowed = new Set(deskCallerRoles(desk));
   const { data, error } = await client()
     .from("user_roles")
     .select("user_id, workspace_id, roles(key), profiles(full_name)")
@@ -114,10 +122,10 @@ export async function listAssignableMembers(workspaceId: string) {
   return (data ?? []).flatMap((row) => {
     const roles = row.roles as { key: string } | { key: string }[] | null;
     const role = Array.isArray(roles) ? roles[0]?.key : roles?.key;
-    if (role !== "clinic_bde" && role !== "institute_bde") return [];
+    if (!role || !allowed.has(role)) return [];
     const profiles = row.profiles as { full_name: string } | { full_name: string }[] | null;
     const name = Array.isArray(profiles) ? profiles[0]?.full_name : profiles?.full_name;
-    return [{ userId: row.user_id as string, name: name ?? "BDE", role: role ?? "", workspaceId: row.workspace_id as string }];
+    return [{ userId: row.user_id as string, name: name ?? "Telecaller", role, workspaceId: row.workspace_id as string }];
   }) satisfies MemberOption[];
 }
 
@@ -240,6 +248,12 @@ export async function updateLeadStatus(lead: ProductionLead, status: LeadStatus)
     changed_by: userId,
   });
   if (historyError) throw new Error(historyError.message);
+}
+
+export async function assignUnassignedLeads(workspaceId: string, assigneeId: string) {
+  const { data, error } = await client().rpc("assign_unassigned_leads", { p_workspace_id: workspaceId, p_assignee_id: assigneeId });
+  if (error) throw new Error(error.message);
+  return Number(data ?? 0);
 }
 
 export async function assignLead(lead: Pick<ProductionLead, "id" | "organizationId" | "workspaceId">, assignedTo: string) {

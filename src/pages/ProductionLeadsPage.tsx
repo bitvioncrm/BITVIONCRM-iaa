@@ -16,6 +16,7 @@ import {
   addFollowUp,
   addLeadNote,
   assignLead,
+  assignUnassignedLeads,
   createLead,
   downloadWorkspaceCsv,
   listAssignableMembers,
@@ -27,6 +28,7 @@ import {
   type WorkspaceOption,
 } from "@/services/production-leads";
 import { useAuth } from "@/context/AuthContext";
+import { productionRoleLabel } from "@/lib/production-access";
 import type { LeadStatus } from "@/types";
 
 export function ProductionLeadsPage() {
@@ -49,6 +51,9 @@ export function ProductionLeadsPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [reload, setReload] = useState(0);
   const [draft, setDraft] = useState({ fullName: "", phone: "", email: "", location: "", position: "" });
+  const [bulkAssignee, setBulkAssignee] = useState("");
+  const [assigning, setAssigning] = useState(false);
+  const [notice, setNotice] = useState("");
 
   useEffect(() => {
     const requested = params.get("desk");
@@ -67,9 +72,16 @@ export function ProductionLeadsPage() {
   }, [desk, workspaces]);
 
   useEffect(() => {
-    if (!workspaceId) return;
-    void listAssignableMembers(workspaceId).then(setMembers).catch(() => setMembers([]));
-  }, [workspaceId]);
+    const visible = (desk === "all" ? workspaces : workspaces.filter((item) => item.workspaceType === desk))
+      .filter((item) => !workspaceId || item.id === workspaceId);
+    if (!visible.length) {
+      setMembers([]);
+      return;
+    }
+    void Promise.all(visible.map((item) => listAssignableMembers(item.id, item.workspaceType)))
+      .then((groups) => setMembers(groups.flat()))
+      .catch(() => setMembers([]));
+  }, [desk, workspaceId, workspaces]);
 
   useEffect(() => {
     if (!workspaces.length) return;
@@ -118,6 +130,7 @@ export function ProductionLeadsPage() {
         </p>
       ) : null}
       {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
+      {notice ? <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</p> : null}
       <div className="grid gap-2 rounded-lg border border-line bg-white p-3 md:grid-cols-4">
         <Select value={workspaceId} onChange={(event) => { setWorkspaceId(event.target.value); setPage(1); }}>
           {desk === "all" ? <option value="">All authorized desks</option> : null}
@@ -129,6 +142,38 @@ export function ProductionLeadsPage() {
           {STATUS_ORDER.map((item) => <option key={item} value={item}>{STATUS_LABEL[item]}</option>)}
         </Select>
       </div>
+      {workspace ? (
+        <form
+          className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-white p-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const assignee = members.find((member) => member.userId === bulkAssignee && member.workspaceId === workspace.id);
+            if (!assignee) return;
+            if (!window.confirm(`Assign every unassigned lead on ${workspace.name} to ${assignee.name}?`)) return;
+            setAssigning(true);
+            void assignUnassignedLeads(workspace.id, assignee.userId)
+              .then((count) => {
+                setError("");
+                setNotice(`Assigned ${count.toLocaleString("en-IN")} leads to ${assignee.name}.`);
+                setPage(1);
+                setReload((value) => value + 1);
+              })
+              .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not assign the leads"))
+              .finally(() => setAssigning(false));
+          }}
+        >
+          <p className="text-sm">Assign every unassigned lead on {workspace.name}</p>
+          <Select value={bulkAssignee} onChange={(event) => setBulkAssignee(event.target.value)}>
+            <option value="">Choose a telecaller</option>
+            {members.filter((member) => member.workspaceId === workspace.id).map((member) => (
+              <option key={member.userId} value={member.userId}>{member.name} · {productionRoleLabel(member.role)}</option>
+            ))}
+          </Select>
+          <Button type="submit" disabled={!bulkAssignee || assigning}>{assigning ? "Assigning…" : "Assign"}</Button>
+        </form>
+      ) : (
+        <p className="text-sm text-muted">Choose Dr. K&apos;s Aesthetic Clinic or IAA Kochi above. Clinic leads go to the clinic telecaller. The institute telecaller only sees leads on IAA Kochi.</p>
+      )}
       {workspace ? (
         <form
           className="grid gap-2 rounded-lg border border-line bg-white p-3 md:grid-cols-6"
@@ -204,7 +249,7 @@ export function ProductionLeadsPage() {
                     }}
                   >
                     <option value="">Unassigned</option>
-                    {members.map((member) => <option key={member.userId} value={member.userId}>{member.name} · {member.role === "clinic_bde" ? "Clinic BDE" : "Institute BDE"}</option>)}
+                    {members.filter((member) => member.workspaceId === lead.workspaceId).map((member) => <option key={member.userId} value={member.userId}>{member.name} · {productionRoleLabel(member.role)}</option>)}
                   </Select>
                 </td>
                 <td className="px-3 py-2">
