@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { CallResultButtons } from "@/components/calls/CallResultButtons";
+import { useDialEndedAt } from "@/components/calls/useDialEndedAt";
 import { useAuth } from "@/context/AuthContext";
-import { formatClock, type CallOutcome } from "@/lib/call-time";
+import { formatClock, outcomeFromPhoneReturn, type CallOutcome } from "@/lib/call-time";
+import { phoneTel } from "@/lib/phone";
 import { canOperateWhatsApp, whatsAppDesk } from "@/lib/production-access";
 import { listLeads, listWorkspaces, type ProductionLead, type WorkspaceOption } from "@/services/production-leads";
 import { activeCall, callDeskReport, endCall, startCall, type LiveCall } from "@/services/production-ops";
@@ -26,6 +28,8 @@ export function ProductionCallTime() {
   const [report, setReport] = useState<Awaited<ReturnType<typeof callDeskReport>> | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const returnedAt = useDialEndedAt(Boolean(live));
+  const savedDial = useRef("");
 
   useEffect(() => {
     void listWorkspaces()
@@ -64,20 +68,30 @@ export function ProductionCallTime() {
 
   const workspace = workspaces.find((item) => item.id === workspaceId);
   const speaking = live ? leads.find((lead) => lead.id === live.leadId) : undefined;
-  const elapsed = live ? Math.max(0, Math.floor((now - new Date(live.startedAt).getTime()) / 1000)) : 0;
+  const elapsed = live ? Math.max(0, Math.floor(((returnedAt ? new Date(returnedAt).getTime() : now) - new Date(live.startedAt).getTime()) / 1000)) : 0;
   const title = desk === "institute" ? "Institute call time" : desk === "clinic" ? "Clinic call time" : "Call time";
 
-  function finish(outcome: CallOutcome) {
-    if (!live) return;
+  function finish(outcome: CallOutcome, endedAt?: string) {
+    if (!live || savedDial.current === live.id) return;
+    savedDial.current = live.id;
     setBusy(true);
-    void endCall(live.id, outcome)
+    void endCall(live.id, outcome, endedAt)
       .then(() => {
         setLive(null);
         setError("");
       })
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "End call failed"))
+      .catch((reason: unknown) => {
+        savedDial.current = "";
+        setError(reason instanceof Error ? reason.message : "End call failed");
+      })
       .finally(() => setBusy(false));
   }
+
+  useEffect(() => {
+    if (!live || !returnedAt) return;
+    const seconds = Math.max(0, Math.floor((new Date(returnedAt).getTime() - new Date(live.startedAt).getTime()) / 1000));
+    finish(outcomeFromPhoneReturn(seconds), returnedAt);
+  }, [live, returnedAt]);
 
   return (
     <div className="space-y-4">
@@ -110,7 +124,7 @@ export function ProductionCallTime() {
           <div className="mt-3 space-y-3">
             <p className="text-sm">{speaking?.fullName ?? "Lead"} · {workspace?.name}</p>
             <p className="text-4xl font-semibold tabular">{formatClock(elapsed)}</p>
-            <p className="text-sm text-muted">This time is stored only if you choose Connected.</p>
+            <p className="text-sm text-muted">The phone dialer is open. Coming back after 15 seconds saves this time as connected. A shorter return is saved as rejected.</p>
             <CallResultButtons busy={busy} onResult={finish} />
           </div>
         ) : (
@@ -128,12 +142,16 @@ export function ProductionCallTime() {
                     <Link className="font-medium" to={`/leads/${lead.id}`}>{lead.fullName}</Link>
                     <p className="text-xs text-muted">{lead.phone}</p>
                   </div>
-                  <button
-                    type="button"
-                    className="rounded-md bg-navy px-3 py-1.5 text-sm text-white disabled:opacity-50"
-                    disabled={busy || !workspace}
-                    onClick={() => {
-                      if (!workspace) return;
+                  <a
+                    href={phoneTel(lead.phone) || undefined}
+                    className="rounded-md bg-navy px-3 py-1.5 text-sm text-white aria-disabled:opacity-50"
+                    aria-disabled={busy || !workspace || !phoneTel(lead.phone)}
+                    onClick={(event) => {
+                      if (!workspace || busy || !phoneTel(lead.phone)) {
+                        event.preventDefault();
+                        if (!phoneTel(lead.phone)) setError("This lead has no phone number to dial.");
+                        return;
+                      }
                       setBusy(true);
                       void startCall(workspace.organizationId, workspace.id, lead.id)
                         .then((row) => {
@@ -144,8 +162,8 @@ export function ProductionCallTime() {
                         .finally(() => setBusy(false));
                     }}
                   >
-                    Start call
-                  </button>
+                    Call
+                  </a>
                 </div>
               ))}
               {leads.length === 0 ? <p className="text-sm text-muted">No leads on this desk.</p> : null}

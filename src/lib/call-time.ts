@@ -15,6 +15,12 @@ export function sumCompleted(durations: Array<number | null | undefined>) {
 
 export type CallOutcome = "connected" | "rejected" | "no_answer";
 
+export const CONNECTED_AFTER_SECONDS = 15;
+
+export function outcomeFromPhoneReturn(seconds: number): CallOutcome {
+  return seconds >= CONNECTED_AFTER_SECONDS ? "connected" : "rejected";
+}
+
 export interface CallTotals {
   dials: number;
   connected: number;

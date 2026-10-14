@@ -1,4 +1,4 @@
-import { summarizeCalls } from "../src/lib/call-time.ts";
+import { outcomeFromPhoneReturn, summarizeCalls } from "../src/lib/call-time.ts";
 import { automationDecision, rangeForPreset } from "../src/lib/production-rules.ts";
 import { pathsForRole, roleAllowsPath, canOperateWhatsApp, canSendBulk, canWriteWhatsApp, deskCallerRoles, WHATSAPP_BULK_ADMIN_LIMIT } from "../src/lib/production-access.ts";
 
@@ -44,5 +44,6 @@ const calls = summarizeCalls([
 if (calls.dials !== 3 || calls.connected !== 1 || calls.rejected !== 1 || calls.noAnswer !== 1 || calls.talkSeconds !== 90) {
   throw new Error("call totals");
 }
+if (outcomeFromPhoneReturn(14) !== "rejected" || outcomeFromPhoneReturn(15) !== "connected") throw new Error("phone return");
 
 console.log("production rules ok");

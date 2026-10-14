@@ -1,5 +1,5 @@
 import { Upload } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useDesk } from "@/context/DeskContext";
 import { ProductionImportDialog } from "@/components/leads/ProductionImportDialog";
@@ -30,7 +30,9 @@ import {
 } from "@/services/production-leads";
 import { CallResultButtons } from "@/components/calls/CallResultButtons";
 import { useAuth } from "@/context/AuthContext";
-import { formatClock, type CallOutcome, type CallTotals } from "@/lib/call-time";
+import { useDialEndedAt } from "@/components/calls/useDialEndedAt";
+import { formatClock, outcomeFromPhoneReturn, type CallOutcome, type CallTotals } from "@/lib/call-time";
+import { phoneTel } from "@/lib/phone";
 import { canOperateWhatsApp, productionRoleLabel, whatsAppDesk } from "@/lib/production-access";
 import { activeCall, endCall, leadCallStats, startCall, type LiveCall } from "@/services/production-ops";
 import type { LeadStatus } from "@/types";
@@ -143,10 +145,16 @@ export function ProductionLeadsPage() {
       ? workspaces
       : workspaces.filter((item) => item.workspaceType === desk);
   const workspace = workspaces.find((item) => item.id === workspaceId);
-  const elapsed = live ? Math.max(0, Math.floor((now - new Date(live.startedAt).getTime()) / 1000)) : 0;
+  const returnedAt = useDialEndedAt(Boolean(live));
+  const elapsed = live ? Math.max(0, Math.floor(((returnedAt ? new Date(returnedAt).getTime() : now) - new Date(live.startedAt).getTime()) / 1000)) : 0;
   const liveLead = leads.find((lead) => lead.id === live?.leadId);
+  const savedDial = useRef("");
 
   function beginCall(lead: ProductionLead) {
+    if (!phoneTel(lead.phone)) {
+      setError("This lead has no phone number to dial.");
+      return;
+    }
     setCallBusy(true);
     void startCall(lead.organizationId, lead.workspaceId, lead.id)
       .then((row) => {
@@ -157,20 +165,30 @@ export function ProductionLeadsPage() {
       .finally(() => setCallBusy(false));
   }
 
-  function finishCall(outcome: CallOutcome) {
-    if (!live) return;
+  function finishCall(outcome: CallOutcome, endedAt?: string) {
+    if (!live || savedDial.current === live.id) return;
+    savedDial.current = live.id;
     setCallBusy(true);
     const sessionId = live.id;
-    void endCall(sessionId, outcome)
+    void endCall(sessionId, outcome, endedAt)
       .then(async () => {
         setLive(null);
         const ids = leads.map((lead) => lead.id);
         if (ids.length) setCallStats(await leadCallStats(ids));
         setNotice(outcome === "connected" ? "Connected call saved on this lead." : "Dial saved. Talk time was not added.");
       })
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "End call failed"))
+      .catch((reason: unknown) => {
+        savedDial.current = "";
+        setError(reason instanceof Error ? reason.message : "End call failed");
+      })
       .finally(() => setCallBusy(false));
   }
+
+  useEffect(() => {
+    if (!live || !returnedAt) return;
+    const seconds = Math.max(0, Math.floor((new Date(returnedAt).getTime() - new Date(live.startedAt).getTime()) / 1000));
+    finishCall(outcomeFromPhoneReturn(seconds), returnedAt);
+  }, [live, returnedAt]);
 
   return (
     <div className="space-y-4">
@@ -308,7 +326,7 @@ export function ProductionLeadsPage() {
         <section className="rounded-lg border border-line bg-white p-4">
           <p className="text-sm text-muted">Calling now</p>
           <p className="text-3xl font-semibold tabular">{formatClock(elapsed)}</p>
-          <p className="mt-1 text-sm">{liveLead ? <Link to={`/leads/${liveLead.id}`}>{liveLead.fullName}</Link> : "This lead"} · only Connected stores this speaking time</p>
+          <p className="mt-1 text-sm">{liveLead ? <Link to={`/leads/${liveLead.id}`}>{liveLead.fullName}</Link> : "This lead"} is on the phone. Coming back after 15 seconds saves this time as connected. A shorter return is saved as rejected.</p>
           <div className="mt-3">
             <CallResultButtons busy={callBusy} onResult={finishCall} />
           </div>
@@ -323,7 +341,7 @@ export function ProductionLeadsPage() {
             {leads.map((lead) => (
               <tr key={lead.id} className="border-b border-line last:border-0">
                 <td className="px-3 py-2 font-medium"><Link to={`/leads/${lead.id}`}>{lead.fullName}</Link></td>
-                <td className="px-3 py-2"><PhoneLink phone={lead.phone} /></td>
+                <td className="px-3 py-2"><PhoneLink phone={lead.phone} onClick={() => { if (!live && !callBusy) beginCall(lead); }} /></td>
                 <td className="px-3 py-2">
                   <Select
                     value={lead.status}
@@ -359,7 +377,21 @@ export function ProductionLeadsPage() {
                   {live?.leadId === lead.id ? (
                     <p className="mt-1 font-semibold tabular">{formatClock(elapsed)}</p>
                   ) : (
-                    <Button type="button" size="sm" className="mt-1" disabled={callBusy || Boolean(live)} onClick={() => beginCall(lead)}>Call</Button>
+                    <Button asChild size="sm" className="mt-1" disabled={callBusy || Boolean(live)}>
+                      <a
+                        href={phoneTel(lead.phone) || undefined}
+                        onClick={(event) => {
+                          if (callBusy || live || !phoneTel(lead.phone)) {
+                            event.preventDefault();
+                            if (!phoneTel(lead.phone)) setError("This lead has no phone number to dial.");
+                            return;
+                          }
+                          beginCall(lead);
+                        }}
+                      >
+                        Call
+                      </a>
+                    </Button>
                   )}
                 </td>
                 <td className="px-3 py-2">

@@ -73,8 +73,7 @@ export async function startCall(organizationId: string, workspaceId: string, lea
   } satisfies LiveCall;
 }
 
-export async function endCall(sessionId: string, outcome: CallOutcome) {
-  const endedAt = new Date().toISOString();
+export async function endCall(sessionId: string, outcome: CallOutcome, endedAt = new Date().toISOString()) {
   const { data, error } = await client().from("call_time_sessions").select("started_at, status").eq("id", sessionId).single();
   if (error) throw new Error(error.message);
   if (data.status !== "active") throw new Error("This timing session is not active.");
