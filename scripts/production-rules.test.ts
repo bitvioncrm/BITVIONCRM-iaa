@@ -1,5 +1,5 @@
 import { automationDecision, rangeForPreset } from "../src/lib/production-rules.ts";
-import { pathsForRole, roleAllowsPath, canOperateWhatsApp, deskCallerRoles } from "../src/lib/production-access.ts";
+import { pathsForRole, roleAllowsPath, canOperateWhatsApp, canSendBulk, canWriteWhatsApp, deskCallerRoles, WHATSAPP_BULK_ADMIN_LIMIT } from "../src/lib/production-access.ts";
 
 const today = rangeForPreset("today", new Date("2026-10-07T12:00:00+05:30"));
 if (today.from !== today.to) throw new Error("today range");
@@ -26,6 +26,12 @@ if (!clinicCallers.includes("clinic_telecaller") || clinicCallers.some((role) =>
 }
 if (!instituteCallers.includes("institute_telecaller") || deskCallerRoles("billing").length) {
   throw new Error("institute callers");
+}
+if (!canWriteWhatsApp("clinic_telecaller") || !canWriteWhatsApp("institute_telecaller") || canWriteWhatsApp("doctor") || canWriteWhatsApp("receptionist")) {
+  throw new Error("whatsapp write");
+}
+if (!canSendBulk("clinic_telecaller", WHATSAPP_BULK_ADMIN_LIMIT) || canSendBulk("institute_telecaller", WHATSAPP_BULK_ADMIN_LIMIT + 1) || !canSendBulk("admin", WHATSAPP_BULK_ADMIN_LIMIT + 1)) {
+  throw new Error("bulk over 50 is admin only");
 }
 
 console.log("production rules ok");

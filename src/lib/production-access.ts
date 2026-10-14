@@ -4,6 +4,25 @@ export function canOperateWhatsApp(roleKey: string) {
   return roleKey === "super_admin" || roleKey === "admin";
 }
 
+export const WHATSAPP_BULK_ADMIN_LIMIT = 50;
+
+export function canWriteWhatsApp(roleKey: string) {
+  return canOperateWhatsApp(roleKey) || deskCallerRoles("clinic").includes(roleKey) || deskCallerRoles("institute").includes(roleKey);
+}
+
+export function whatsAppDesk(roleKey: string) {
+  if (canOperateWhatsApp(roleKey)) return "both";
+  if (roleKey === "doctor" || roleKey === "receptionist" || deskCallerRoles("clinic").includes(roleKey)) return "clinic";
+  if (deskCallerRoles("institute").includes(roleKey)) return "institute";
+  return "none";
+}
+
+export function canSendBulk(roleKey: string, count: number) {
+  if (count < 1) return false;
+  if (count > WHATSAPP_BULK_ADMIN_LIMIT) return canOperateWhatsApp(roleKey);
+  return canWriteWhatsApp(roleKey);
+}
+
 export function pathsForRole(roleKey: string) {
   if (canOperateWhatsApp(roleKey)) return ADMIN;
   if (roleKey === "doctor") return ["/", "/clinic", "/inventory", "/whatsapp"];
