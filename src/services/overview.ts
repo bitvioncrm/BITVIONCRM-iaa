@@ -217,7 +217,7 @@ export async function loadOverview(workspaces: WorkspaceOption[], desk: DeskKey,
       expiring = 0;
       inventoryAlerts = 0;
     } else {
-      const { data, error, count } = await db().from("inventory_products").select("id, current_stock, minimum_stock, expires_on", { count: "exact" }).in("workspace_id", clinicIds).limit(500);
+      const { data, error, count } = await db().from("inventory_products").select("id, current_stock, minimum_stock, expires_on", { count: "exact" }).in("workspace_id", clinicIds).is("deleted_at", null).limit(500);
       if (error) throw new Error(error.message);
       if ((count ?? 0) > (data ?? []).length) throw new Error("Product list is larger than this screen can total");
       const low = (data ?? []).filter((row) => Number(row.current_stock) <= Number(row.minimum_stock));
@@ -389,7 +389,7 @@ export async function loadLiveAlerts(workspaces: WorkspaceOption[]) {
   const overdue = await countRows("followups", all, (query) => query.eq("status", "pending").lt("due_at", new Date().toISOString())).catch(() => null);
   if (overdue) alerts.push({ title: "Overdue follow-ups", body: `${overdue} follow-ups are past due`, href: "/follow-ups" });
   if (clinicIds.length) {
-    const products = await db().from("inventory_products").select("id, name, current_stock, minimum_stock, expires_on").in("workspace_id", clinicIds).limit(100);
+    const products = await db().from("inventory_products").select("id, name, current_stock, minimum_stock, expires_on").in("workspace_id", clinicIds).is("deleted_at", null).limit(100);
     const low = (products.data ?? []).filter((row) => Number(row.current_stock) <= Number(row.minimum_stock));
     if (low.length) alerts.push({ title: "Low stock", body: `${low.length} products are at or below minimum`, href: "/inventory" });
   }

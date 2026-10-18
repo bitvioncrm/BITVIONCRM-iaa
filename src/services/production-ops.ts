@@ -285,22 +285,24 @@ export interface InventoryProduct {
   category: string;
   current_stock: number;
   minimum_stock: number;
-  purchase_price: number;
-  selling_price: number;
+  purchase_price: number | null;
+  selling_price: number | null;
   expires_on: string | null;
   unit: string;
   supplier: string;
+  sku?: string;
+  is_active?: boolean;
 }
 
 export async function listProducts(workspaceId: string) {
   const { data, error } = await client()
     .from("inventory_products")
-    .select("id, name, category, current_stock, minimum_stock, purchase_price, selling_price, expires_on, unit, supplier")
+    .select("id, name, category, current_stock, minimum_stock, purchase_price, selling_price, expires_on, unit, supplier, sku, is_active")
     .eq("workspace_id", workspaceId)
     .is("deleted_at", null)
     .order("category")
     .order("name")
-    .limit(200);
+    .limit(500);
   if (error) throw new Error(error.message);
   return (data ?? []) as InventoryProduct[];
 }

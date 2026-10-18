@@ -19,6 +19,7 @@ import { TasksPage } from "@/pages/TasksPage";
 import { TeamPage } from "@/pages/TeamPage";
 import { TemplatesPage } from "@/pages/TemplatesPage";
 import { WhatsAppPage } from "@/pages/WhatsAppPage";
+import { ClinicInventoryPage } from "@/pages/production/ClinicInventoryPage";
 import { MetaLeadCentre } from "@/pages/production/MetaLeadCentre";
 import { ProductionModule } from "@/pages/production/ProductionModule";
 
@@ -56,7 +57,7 @@ export default function App() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/clinic" element={<ProductionModule module="clinic" />} />
           <Route path="/institute" element={<ProductionModule module="institute" />} />
-          <Route path="/inventory" element={<ProductionModule module="inventory" />} />
+          <Route path="/inventory" element={<ClinicInventoryPage />} />
           <Route path="/billing" element={<ProductionModule module="billing" />} />
           <Route path="/meta" element={<MetaLeadCentre />} />
         </Route>
