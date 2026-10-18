@@ -279,18 +279,38 @@ export async function saveConsultation(input: { organizationId: string; workspac
   }
 }
 
+export interface InventoryProduct {
+  id: string;
+  name: string;
+  category: string;
+  current_stock: number;
+  minimum_stock: number;
+  purchase_price: number;
+  selling_price: number;
+  expires_on: string | null;
+  unit: string;
+  supplier: string;
+}
+
 export async function listProducts(workspaceId: string) {
-  const { data, error } = await client().from("inventory_products").select("id, name, current_stock, minimum_stock, expires_on, unit").eq("workspace_id", workspaceId).order("name").limit(50);
+  const { data, error } = await client()
+    .from("inventory_products")
+    .select("id, name, category, current_stock, minimum_stock, purchase_price, selling_price, expires_on, unit, supplier")
+    .eq("workspace_id", workspaceId)
+    .is("deleted_at", null)
+    .order("category")
+    .order("name")
+    .limit(200);
   if (error) throw new Error(error.message);
-  return data ?? [];
+  return (data ?? []) as InventoryProduct[];
 }
 
 export async function createProduct(input: { organizationId: string; workspaceId: string; name: string; stock: number; minimum: number; category?: string; batch?: string; expiresOn?: string | null; purchasePrice?: number; sellingPrice?: number; supplier?: string }) {
   const { data, error } = await client().from("inventory_products").insert({
     organization_id: input.organizationId,
     workspace_id: input.workspaceId,
-    name: input.name,
-    category: input.category ?? "",
+    name: input.name.trim(),
+    category: (input.category ?? "").trim(),
     batch: input.batch ?? "",
     expires_on: input.expiresOn || null,
     purchase_price: input.purchasePrice ?? 0,
@@ -300,7 +320,31 @@ export async function createProduct(input: { organizationId: string; workspaceId
     supplier: input.supplier ?? "",
   }).select("id").single();
   if (error) throw new Error(error.message);
-  if (input.stock > 0) await changeStock(data.id as string, "purchase", input.stock);
+  if (input.stock > 0) await changeStock(data.id as string, "purchase", input.stock, "Opening stock");
+}
+
+export async function updateProductPricing(input: { productId: string; sellingPrice: number; purchasePrice: number; minimumStock: number }) {
+  const { error } = await client()
+    .from("inventory_products")
+    .update({
+      selling_price: Math.max(0, input.sellingPrice),
+      purchase_price: Math.max(0, input.purchasePrice),
+      minimum_stock: Math.max(0, input.minimumStock),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", input.productId)
+    .is("deleted_at", null);
+  if (error) throw new Error(error.message);
+}
+
+export async function removeProduct(productId: string) {
+  const userId = (await client().auth.getUser()).data.user?.id ?? null;
+  const { error } = await client()
+    .from("inventory_products")
+    .update({ deleted_at: new Date().toISOString(), deleted_by: userId, updated_at: new Date().toISOString() })
+    .eq("id", productId)
+    .is("deleted_at", null);
+  if (error) throw new Error(error.message);
 }
 
 export async function changeStock(productId: string, kind: "purchase" | "sale" | "adjustment" | "return" | "damaged" | "expired" | "treatment", quantity: number, note = "") {
@@ -310,9 +354,15 @@ export async function changeStock(productId: string, kind: "purchase" | "sale" |
 }
 
 export async function listStockMoves(workspaceId: string) {
-  const { data, error } = await client().from("inventory_transactions").select("id, product_id, transaction_type, quantity, note, created_at").eq("workspace_id", workspaceId).order("created_at", { ascending: false }).limit(30);
+  const { data, error } = await client().from("inventory_transactions").select("id, product_id, transaction_type, quantity, note, created_at").eq("workspace_id", workspaceId).order("created_at", { ascending: false }).limit(40);
   if (error) throw new Error(error.message);
   return data ?? [];
+}
+
+export async function seedClinicSkincareStock() {
+  const { data, error } = await client().rpc("seed_clinic_skincare_stock");
+  if (error) throw new Error(error.message);
+  return Number(data ?? 0);
 }
 
 export async function createInvoice(input: { organizationId: string; workspaceId: string; patientId: string | null; description: string; quantity: number; unitPrice: number; discount: number }) {

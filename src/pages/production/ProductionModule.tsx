@@ -3,7 +3,8 @@ import { BusinessBoard } from "@/components/dashboard/BusinessBoard";
 import { useAuth } from "@/context/AuthContext";
 import { canOperateWhatsApp } from "@/lib/production-access";
 import { listDoctors, listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
-import { changeStock, createAppointment, createCourse, createExam, createInvoice, createPatient, createProduct, createStudent, issueCertificate, listAppointments, listCertificates, listDocuments, listExams, listPatients, listProducts, listStockMoves, listStudents, recordMark, recordPayment, recordRefund, saveConsultation, setDocumentStatus, signedDocumentUrl, updateAppointmentStatus, uploadPrivateFile } from "@/services/production-ops";
+import { inr } from "@/lib/money";
+import { changeStock, createAppointment, createCourse, createExam, createInvoice, createPatient, createProduct, createStudent, issueCertificate, listAppointments, listCertificates, listDocuments, listExams, listPatients, listProducts, listStockMoves, listStudents, recordMark, recordPayment, recordRefund, removeProduct, saveConsultation, seedClinicSkincareStock, setDocumentStatus, signedDocumentUrl, updateAppointmentStatus, updateProductPricing, uploadPrivateFile, type InventoryProduct } from "@/services/production-ops";
 
 export function ProductionModule({ module }: { module: "clinic" | "institute" | "inventory" | "billing" }) {
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
@@ -14,7 +15,11 @@ export function ProductionModule({ module }: { module: "clinic" | "institute" | 
 
   useEffect(() => {
     void listWorkspaces().then((rows) => {
-      const visible = module === "clinic" || module === "institute" ? rows.filter((item) => item.workspaceType === module) : rows;
+      const visible = module === "clinic" || module === "institute"
+        ? rows.filter((item) => item.workspaceType === module)
+        : module === "inventory"
+          ? rows.filter((item) => item.workspaceType === "clinic")
+          : rows;
       setWorkspaces(visible);
       setWorkspaceId((current) => visible.some((item) => item.id === current) ? current : visible[0]?.id || "");
     }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Configuration Required"));
@@ -288,80 +293,245 @@ function AcademicPanel({ workspace, students, onError, onNotice }: PanelProps & 
   );
 }
 
+const INVENTORY_CATEGORIES = ["Face wash", "Moisturizer", "Sunscreen", "Other"];
+
 function InventoryPanel({ workspace, onError, onNotice }: PanelProps) {
   const { productionUser } = useAuth();
   const admin = canOperateWhatsApp(productionUser?.roleKey ?? "");
-  const [products, setProducts] = useState<Array<{ id: string; name: string; current_stock: number; minimum_stock: number }>>([]);
+  const [products, setProducts] = useState<InventoryProduct[]>([]);
   const [moves, setMoves] = useState<Array<{ id: string; product_id: string; transaction_type: string; quantity: number; note: string; created_at: string }>>([]);
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [busyId, setBusyId] = useState("");
+  const [seeding, setSeeding] = useState(false);
+
   const load = () => {
-    void listProducts(workspace.id).then((rows) => setProducts(rows as typeof products)).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load stock"));
+    void listProducts(workspace.id).then(setProducts).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load stock"));
     void listStockMoves(workspace.id).then((rows) => setMoves(rows as typeof moves)).catch(() => setMoves([]));
   };
+
   useEffect(() => {
-    void listProducts(workspace.id).then((rows) => setProducts(rows as typeof products)).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load stock"));
+    void listProducts(workspace.id).then(setProducts).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load stock"));
     void listStockMoves(workspace.id).then((rows) => setMoves(rows as typeof moves)).catch(() => setMoves([]));
   }, [onError, workspace.id]);
+
+  const visible = categoryFilter === "all" ? products : products.filter((item) => item.category === categoryFilter);
+  const byCategory = INVENTORY_CATEGORIES.map((category) => ({
+    category,
+    count: products.filter((item) => item.category === category).length,
+    units: products.filter((item) => item.category === category).reduce((sum, item) => sum + Number(item.current_stock), 0),
+  })).filter((item) => item.count > 0 || item.category !== "Other");
+  const totalUnits = products.reduce((sum, item) => sum + Number(item.current_stock), 0);
+  const productName = (id: string) => products.find((item) => item.id === id)?.name ?? "Product";
+
   const adjust = (productId: string, kind: "purchase" | "adjustment" | "treatment", quantity: number, note: string) => {
-    void changeStock(productId, kind, quantity, note).then(load).then(() => onNotice("Stock updated.")).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Stock change failed"));
+    if (!quantity || quantity < 1) {
+      onError("Enter how many units to change.");
+      return;
+    }
+    setBusyId(productId);
+    void changeStock(productId, kind, quantity, note)
+      .then(load)
+      .then(() => onNotice("Stock updated."))
+      .catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Stock change failed"))
+      .finally(() => setBusyId(""));
   };
+
   return (
     <div className="space-y-4">
+      <section className="rounded-lg border border-line bg-white p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Clinic inventory</h2>
+            <p className="mt-1 text-sm text-muted">Add or remove products, change the unit count, and keep a selling price on each item. Opening stock from the 5 Oct 2026 sheet can be loaded once.</p>
+          </div>
+          {admin ? (
+            <button
+              type="button"
+              disabled={seeding}
+              className="rounded-md border border-line px-3 py-2 text-sm font-medium hover:border-accent"
+              onClick={() => {
+                setSeeding(true);
+                void seedClinicSkincareStock()
+                  .then((count) => {
+                    onNotice(count > 0 ? `${count} products loaded from the clinic stock sheet.` : "Those products are already in inventory.");
+                    load();
+                  })
+                  .catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load the stock sheet"))
+                  .finally(() => setSeeding(false));
+              }}
+            >
+              {seeding ? "Loading sheet…" : "Load sheet stock"}
+            </button>
+          ) : null}
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-md border border-line px-3 py-2">
+            <p className="text-[11px] font-medium tracking-wide text-muted uppercase">Products</p>
+            <p className="mt-1 text-2xl font-semibold tabular">{products.length}</p>
+          </div>
+          <div className="rounded-md border border-line px-3 py-2">
+            <p className="text-[11px] font-medium tracking-wide text-muted uppercase">Total units</p>
+            <p className="mt-1 text-2xl font-semibold tabular">{totalUnits}</p>
+          </div>
+          {byCategory.slice(0, 2).map((item) => (
+            <div key={item.category} className="rounded-md border border-line px-3 py-2">
+              <p className="text-[11px] font-medium tracking-wide text-muted uppercase">{item.category}</p>
+              <p className="mt-1 text-2xl font-semibold tabular">{item.units}</p>
+              <p className="text-xs text-muted">{item.count} products</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {admin ? (
-        <form className="space-y-2 rounded-lg border border-line bg-white p-4" onSubmit={(event) => submit(event, async (data) => {
+        <form className="space-y-3 rounded-lg border border-line bg-white p-4" onSubmit={(event) => submit(event, async (data) => {
           await createProduct({
             organizationId: workspace.organizationId,
             workspaceId: workspace.id,
             name: data.get("name") as string,
-            stock: Number(data.get("stock")),
-            minimum: Number(data.get("minimum")),
+            stock: Number(data.get("stock") || 0),
+            minimum: Number(data.get("minimum") || 5),
             category: data.get("category") as string,
-            batch: data.get("batch") as string,
-            expiresOn: (data.get("expiry") as string) || null,
             purchasePrice: Number(data.get("purchase") || 0),
             sellingPrice: Number(data.get("selling") || 0),
             supplier: data.get("supplier") as string,
           });
-          onNotice("Product saved. Opening stock was stored as a purchase transaction.");
+          (event.target as HTMLFormElement).reset();
+          onNotice("Product saved with opening stock and price.");
           load();
         }, onError)}>
-          <h2 className="font-semibold">Product</h2>
-          <input name="name" required placeholder="Name" className="w-full rounded-md border border-line px-2 py-2" />
-          <input name="category" placeholder="Category" className="w-full rounded-md border border-line px-2 py-2" />
-          <input name="batch" placeholder="Batch" className="w-full rounded-md border border-line px-2 py-2" />
-          <input name="expiry" type="date" className="w-full rounded-md border border-line px-2 py-2" />
-          <input name="purchase" type="number" placeholder="Purchase price" className="w-full rounded-md border border-line px-2 py-2" />
-          <input name="selling" type="number" placeholder="Selling price" className="w-full rounded-md border border-line px-2 py-2" />
-          <input name="supplier" placeholder="Supplier" className="w-full rounded-md border border-line px-2 py-2" />
-          <input name="stock" type="number" defaultValue={0} className="w-full rounded-md border border-line px-2 py-2" />
-          <input name="minimum" type="number" defaultValue={1} className="w-full rounded-md border border-line px-2 py-2" />
-          <button className="rounded-md bg-navy px-3 py-2 text-sm text-white" type="submit">Save product</button>
-        </form>
-      ) : <p className="text-sm text-muted">View stock, add, reduce, and record usage. Creating a product stays with Admin.</p>}
-      {products.map((product) => (
-        <form key={product.id} className="space-y-2 rounded-lg border border-line bg-white px-4 py-3 text-sm" onSubmit={(event) => event.preventDefault()}>
-          <p>{product.name} · {product.current_stock} in stock{Number(product.current_stock) <= Number(product.minimum_stock) ? " · low" : ""}</p>
-          <div className="flex flex-wrap gap-2">
-            <input name="qty" type="number" min={1} defaultValue={1} className="w-24 rounded-md border border-line px-2 py-1" />
-            <input name="note" placeholder="Reason" className="min-w-40 flex-1 rounded-md border border-line px-2 py-1" />
-            <button type="button" className="rounded-md border border-line px-2 py-1" onClick={(event) => {
-              const form = new FormData((event.currentTarget.form as HTMLFormElement));
-              adjust(product.id, "purchase", Number(form.get("qty") || 1), String(form.get("note") || ""));
-            }}>Add stock</button>
-            <button type="button" className="rounded-md border border-line px-2 py-1" onClick={(event) => {
-              const form = new FormData((event.currentTarget.form as HTMLFormElement));
-              adjust(product.id, "adjustment", Number(form.get("qty") || 1), String(form.get("note") || ""));
-            }}>Reduce</button>
-            <button type="button" className="rounded-md border border-line px-2 py-1" onClick={(event) => {
-              const form = new FormData((event.currentTarget.form as HTMLFormElement));
-              adjust(product.id, "treatment", Number(form.get("qty") || 1), String(form.get("note") || "Treatment usage"));
-            }}>Record usage</button>
+          <h2 className="font-semibold">Add product</h2>
+          <div className="grid gap-2 md:grid-cols-2">
+            <input name="name" required placeholder="Product name" className="rounded-md border border-line px-2 py-2" />
+            <select name="category" defaultValue="Face wash" className="rounded-md border border-line px-2 py-2">
+              {INVENTORY_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
+            </select>
+            <input name="stock" type="number" min={0} defaultValue={0} placeholder="Opening stock" className="rounded-md border border-line px-2 py-2" />
+            <input name="minimum" type="number" min={0} defaultValue={5} placeholder="Low-stock alert" className="rounded-md border border-line px-2 py-2" />
+            <input name="selling" type="number" min={0} step="0.01" defaultValue={0} placeholder="Selling price ₹" className="rounded-md border border-line px-2 py-2" />
+            <input name="purchase" type="number" min={0} step="0.01" defaultValue={0} placeholder="Purchase price ₹" className="rounded-md border border-line px-2 py-2" />
+            <input name="supplier" placeholder="Supplier" className="rounded-md border border-line px-2 py-2 md:col-span-2" />
           </div>
+          <button className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-white" type="submit">Save product</button>
         </form>
-      ))}
+      ) : <p className="text-sm text-muted">You can add stock, reduce stock, and record usage. Adding or removing a product stays with Admin.</p>}
+
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className={`rounded-md border px-3 py-1.5 text-sm ${categoryFilter === "all" ? "border-accent text-accent" : "border-line"}`} onClick={() => setCategoryFilter("all")}>All</button>
+        {INVENTORY_CATEGORIES.map((category) => (
+          <button key={category} type="button" className={`rounded-md border px-3 py-1.5 text-sm ${categoryFilter === category ? "border-accent text-accent" : "border-line"}`} onClick={() => setCategoryFilter(category)}>
+            {category}
+          </button>
+        ))}
+      </div>
+
+      {visible.length === 0 ? <p className="rounded-lg border border-line bg-white px-4 py-8 text-sm text-muted">No products in this category yet.</p> : null}
+
+      <div className="space-y-3">
+        {visible.map((product) => {
+          const low = Number(product.current_stock) <= Number(product.minimum_stock);
+          return (
+            <form key={product.id} className="space-y-3 rounded-lg border border-line bg-white p-4" onSubmit={(event) => event.preventDefault()}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium tracking-wide text-muted uppercase">{product.category || "Uncategorised"}</p>
+                  <h3 className="mt-1 text-base font-semibold">{product.name}</h3>
+                  <p className="mt-1 text-sm text-muted">
+                    <span className="font-semibold text-ink tabular">{product.current_stock}</span> in stock
+                    {low ? " · low stock" : ""}
+                    {product.supplier ? ` · ${product.supplier}` : ""}
+                  </p>
+                </div>
+                <div className="text-right text-sm">
+                  <p className="text-muted">Selling price</p>
+                  <p className="font-semibold tabular">{Number(product.selling_price) > 0 ? inr(Number(product.selling_price)) : "Not set"}</p>
+                </div>
+              </div>
+
+              {admin ? (
+                <div className="grid gap-2 md:grid-cols-4">
+                  <label className="text-xs font-medium text-muted">
+                    Selling price ₹
+                    <input name="selling" type="number" min={0} step="0.01" defaultValue={Number(product.selling_price)} className="mt-1 w-full rounded-md border border-line px-2 py-1.5 text-sm text-ink" />
+                  </label>
+                  <label className="text-xs font-medium text-muted">
+                    Purchase price ₹
+                    <input name="purchase" type="number" min={0} step="0.01" defaultValue={Number(product.purchase_price)} className="mt-1 w-full rounded-md border border-line px-2 py-1.5 text-sm text-ink" />
+                  </label>
+                  <label className="text-xs font-medium text-muted">
+                    Low-stock alert
+                    <input name="minimum" type="number" min={0} defaultValue={Number(product.minimum_stock)} className="mt-1 w-full rounded-md border border-line px-2 py-1.5 text-sm text-ink" />
+                  </label>
+                  <div className="flex items-end gap-2">
+                    <button
+                      type="button"
+                      disabled={busyId === product.id}
+                      className="rounded-md border border-line px-3 py-1.5 text-sm"
+                      onClick={(event) => {
+                        const form = new FormData(event.currentTarget.form as HTMLFormElement);
+                        setBusyId(product.id);
+                        void updateProductPricing({
+                          productId: product.id,
+                          sellingPrice: Number(form.get("selling") || 0),
+                          purchasePrice: Number(form.get("purchase") || 0),
+                          minimumStock: Number(form.get("minimum") || 0),
+                        })
+                          .then(load)
+                          .then(() => onNotice(`Price saved for ${product.name}.`))
+                          .catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not save the price"))
+                          .finally(() => setBusyId(""));
+                      }}
+                    >
+                      Save price
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busyId === product.id}
+                      className="rounded-md border border-red-200 px-3 py-1.5 text-sm text-danger"
+                      onClick={() => {
+                        if (!window.confirm(`Remove ${product.name} from inventory?`)) return;
+                        setBusyId(product.id);
+                        void removeProduct(product.id)
+                          .then(load)
+                          .then(() => onNotice(`${product.name} removed.`))
+                          .catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not remove the product"))
+                          .finally(() => setBusyId(""));
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="flex flex-wrap gap-2 border-t border-line pt-3">
+                <input name="qty" type="number" min={1} defaultValue={1} className="w-24 rounded-md border border-line px-2 py-1.5 text-sm" />
+                <input name="note" placeholder="Reason" className="min-w-40 flex-1 rounded-md border border-line px-2 py-1.5 text-sm" />
+                <button type="button" disabled={busyId === product.id} className="rounded-md border border-line px-3 py-1.5 text-sm" onClick={(event) => {
+                  const form = new FormData(event.currentTarget.form as HTMLFormElement);
+                  adjust(product.id, "purchase", Number(form.get("qty") || 1), String(form.get("note") || "Stock added"));
+                }}>Add units</button>
+                <button type="button" disabled={busyId === product.id} className="rounded-md border border-line px-3 py-1.5 text-sm" onClick={(event) => {
+                  const form = new FormData(event.currentTarget.form as HTMLFormElement);
+                  adjust(product.id, "adjustment", Number(form.get("qty") || 1), String(form.get("note") || "Stock reduced"));
+                }}>Reduce units</button>
+                <button type="button" disabled={busyId === product.id} className="rounded-md border border-line px-3 py-1.5 text-sm" onClick={(event) => {
+                  const form = new FormData(event.currentTarget.form as HTMLFormElement);
+                  adjust(product.id, "treatment", Number(form.get("qty") || 1), String(form.get("note") || "Treatment usage"));
+                }}>Record usage</button>
+              </div>
+            </form>
+          );
+        })}
+      </div>
+
       <section className="rounded-lg border border-line bg-white p-4">
         <h2 className="text-sm font-semibold">Stock history</h2>
         {moves.length === 0 ? <p className="mt-2 text-sm text-muted">No stock movements yet.</p> : moves.map((move) => (
-          <p key={move.id} className="mt-2 text-sm">{move.created_at} · {move.transaction_type} · {move.quantity} · {move.note}</p>
+          <p key={move.id} className="mt-2 text-sm">
+            {new Date(move.created_at).toLocaleString("en-IN")} · {productName(move.product_id)} · {move.transaction_type} · {move.quantity}
+            {move.note ? ` · ${move.note}` : ""}
+          </p>
         ))}
       </section>
     </div>
