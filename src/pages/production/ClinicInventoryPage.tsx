@@ -36,7 +36,7 @@ function canManageInventory(roleKey: string) {
   return canOperateWhatsApp(roleKey) || roleKey === "doctor";
 }
 
-function ProductImage({ path, name }: { path: string; name: string }) {
+function ProductImage({ path, name, size = "card" }: { path: string; name: string; size?: "card" | "thumb" | "preview" }) {
   const [url, setUrl] = useState("");
   useEffect(() => {
     let active = true;
@@ -55,14 +55,29 @@ function ProductImage({ path, name }: { path: string; name: string }) {
       active = false;
     };
   }, [path]);
+
+  const frame =
+    size === "thumb"
+      ? "size-14 shrink-0 rounded-lg"
+      : size === "preview"
+        ? "h-28 w-28 rounded-lg"
+        : "size-[4.75rem] shrink-0 rounded-xl sm:size-[5.25rem]";
+
   if (!url) {
     return (
-      <div className="flex aspect-square items-center justify-center rounded-md bg-canvas text-xs font-medium text-muted">
-        No image
+      <div className={`flex items-center justify-center border border-line/80 bg-[linear-gradient(160deg,#f8fafc_0%,#eef2f7_100%)] text-[10px] font-medium tracking-wide text-muted uppercase ${frame}`}>
+        <Package className="size-4 text-slate-300" aria-hidden />
+        <span className="sr-only">No image for {name}</span>
       </div>
     );
   }
-  return <img src={url} alt={name} className="aspect-square w-full rounded-md object-cover" />;
+  return <img src={url} alt={name} className={`object-cover shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] ${frame}`} />;
+}
+
+function stockBadgeClass(status: ReturnType<typeof stockStatus>) {
+  if (status === "out_of_stock") return "bg-red-50 text-danger ring-red-100";
+  if (status === "low_stock") return "bg-amber-50 text-warning ring-amber-100";
+  return "bg-emerald-50 text-success ring-emerald-100";
 }
 
 export function ClinicInventoryPage() {
@@ -281,52 +296,69 @@ function InventoryShell() {
               No products match these filters.
             </div>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               {pageRows.map((product) => {
                 const status = stockStatus(product);
                 return (
-                  <article key={product.id} className="flex flex-col rounded-lg border border-line bg-white p-3">
+                  <article
+                    key={product.id}
+                    className="group flex gap-3 rounded-xl border border-line/90 bg-white p-3 shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition hover:border-slate-300 hover:shadow-[0_8px_24px_rgba(16,24,40,0.06)]"
+                  >
                     <ProductImage path={product.imagePath} name={product.name} />
-                    <div className="mt-3 flex-1 space-y-2">
-                      <p className="text-[11px] font-medium tracking-wide text-muted uppercase">{product.category}</p>
-                      <h2 className="text-base font-semibold leading-snug">{product.name}</h2>
-                      <p className="text-xs text-muted">SKU {product.sku || "—"}</p>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="truncate text-[10px] font-semibold tracking-[0.08em] text-muted uppercase">{product.category}</p>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${stockBadgeClass(status)}`}>
+                          {stockStatusLabel(status)}
+                        </span>
+                      </div>
+                      <h2 className="mt-1 line-clamp-2 text-[15px] font-semibold leading-snug tracking-tight text-ink">{product.name}</h2>
+                      <p className="mt-1 font-mono text-[11px] text-muted">{product.sku || "No SKU"}</p>
                       {product.requiresNameVerification ? (
-                        <p className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800">
-                          <AlertTriangle className="size-3.5" /> Name needs verification
+                        <p className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-800">
+                          <AlertTriangle className="size-3" /> Verify name
                         </p>
                       ) : null}
-                      <p className="text-lg font-semibold tabular">{formatInr(product.sellingPrice)}</p>
-                      <p className="text-sm text-muted">{product.currentStock} available · {stockStatusLabel(status)}</p>
-                      {!product.isActive ? <p className="text-xs font-medium text-danger">Inactive</p> : null}
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={!product.isActive || product.currentStock <= 0}
-                        onClick={() => {
-                          try {
-                            cart.addProduct(product, 1);
-                            setNotice(`${product.name} added to cart. Stock is unchanged until you confirm stock-out.`);
-                            setError("");
-                          } catch (reason: unknown) {
-                            setError(reason instanceof Error ? reason.message : "Could not add to cart");
-                          }
-                        }}
-                      >
-                        Add to cart
-                      </Button>
-                      {manager ? (
-                        <>
-                          <Button type="button" size="sm" variant="secondary" onClick={() => { setEditing(product); setEditorOpen(true); }}>
-                            <Pencil className="size-3.5" /> Edit
-                          </Button>
-                          <Button type="button" size="sm" variant="secondary" onClick={() => setStockProduct(product)}>
-                            Adjust stock
-                          </Button>
-                        </>
-                      ) : null}
+                      <div className="mt-2 flex items-end justify-between gap-2">
+                        <div>
+                          <p className={`text-base font-semibold tracking-tight tabular ${product.sellingPrice == null ? "text-muted" : "text-navy"}`}>
+                            {formatInr(product.sellingPrice)}
+                          </p>
+                          <p className="mt-0.5 text-[12px] text-muted">
+                            <span className="font-medium tabular text-ink">{product.currentStock}</span> in stock
+                            {!product.isActive ? <span className="text-danger"> · Inactive</span> : null}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="mt-2.5 flex flex-wrap gap-1.5 border-t border-line/70 pt-2.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-7 px-2.5 text-[12px]"
+                          disabled={!product.isActive || product.currentStock <= 0}
+                          onClick={() => {
+                            try {
+                              cart.addProduct(product, 1);
+                              setNotice(`${product.name} added to cart. Stock is unchanged until you confirm stock-out.`);
+                              setError("");
+                            } catch (reason: unknown) {
+                              setError(reason instanceof Error ? reason.message : "Could not add to cart");
+                            }
+                          }}
+                        >
+                          Add to cart
+                        </Button>
+                        {manager ? (
+                          <>
+                            <Button type="button" size="sm" variant="secondary" className="h-7 px-2 text-[12px]" onClick={() => { setEditing(product); setEditorOpen(true); }}>
+                              <Pencil className="size-3" /> Edit
+                            </Button>
+                            <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-[12px] text-muted" onClick={() => setStockProduct(product)}>
+                              Stock
+                            </Button>
+                          </>
+                        ) : null}
+                      </div>
                     </div>
                   </article>
                 );
@@ -442,8 +474,8 @@ function CartPanel({
       {cart.lines.length === 0 ? <p className="py-8 text-sm text-muted">Cart is empty.</p> : (
         <div className="space-y-3">
           {cart.lines.map((line) => (
-            <div key={line.productId} className="grid gap-3 rounded-md border border-line p-3 md:grid-cols-[88px_1fr_auto]">
-              <div className="w-22"><ProductImage path={line.imagePath} name={line.name} /></div>
+            <div key={line.productId} className="grid gap-3 rounded-xl border border-line/90 bg-white p-3 shadow-[0_1px_2px_rgba(16,24,40,0.04)] md:grid-cols-[auto_1fr_auto]">
+              <ProductImage path={line.imagePath} name={line.name} size="thumb" />
               <div>
                 <p className="font-medium">{line.name}</p>
                 <p className="text-xs text-muted">SKU {line.sku || "—"}</p>
@@ -634,8 +666,8 @@ function ProductEditorDialog({
             />
           </label>
           {(preview || product?.imagePath) ? (
-            <div className="md:col-span-2 max-w-40">
-              {preview ? <img src={preview} alt="Preview" className="rounded-md object-cover" /> : <ProductImage path={product?.imagePath ?? ""} name={product?.name ?? "Product"} />}
+            <div className="md:col-span-2">
+              {preview ? <img src={preview} alt="Preview" className="h-28 w-28 rounded-lg object-cover shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)]" /> : <ProductImage path={product?.imagePath ?? ""} name={product?.name ?? "Product"} size="preview" />}
             </div>
           ) : null}
           <div className="flex flex-wrap justify-between gap-2 md:col-span-2">
