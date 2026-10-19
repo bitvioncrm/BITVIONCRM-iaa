@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useDesk } from "@/context/DeskContext";
 import { productionRoleLabel } from "@/lib/production-access";
+import { ChannelSettings } from "@/pages/production/ChannelSettings";
 import { assignMetaLead, listDeskTelecallers, loadMetaCentre, retryMetaImport, saveFormMapping, setMappingActive, type DeskCaller, type MetaCentre } from "@/services/meta-admin";
 import { listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
 
@@ -105,8 +106,9 @@ export function MetaLeadCentre() {
       <header>
         <p className="text-xs font-medium tracking-wide text-accent uppercase">Meta Lead Centre · {bounds.label}</p>
         <h1 className="mt-1 text-[26px] font-semibold tracking-tight">Meta leads</h1>
-        <p className="mt-1 max-w-3xl text-sm text-muted">Leads are routed by the Facebook Page and lead form you map here. Campaign names are stored when Meta sends them, and they are not used to choose a desk.</p>
+        <p className="mt-1 max-w-3xl text-sm text-muted">Enter the clinic and institute connection keys in the columns below. Every campaign in a desk’s ads account stays on that desk.</p>
       </header>
+      <ChannelSettings embedded />
       {error ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
       {notice ? <p className="rounded-md border border-line bg-white px-3 py-2 text-sm">{notice}</p> : null}
       <section className={`rounded-lg border px-4 py-3 ${connected ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
@@ -124,7 +126,7 @@ export function MetaLeadCentre() {
       {!centre.schemaReady ? <p className="text-sm text-muted">{centre.detail}</p> : (
         <section className="rounded-lg border border-line bg-white p-4">
           <h2 className="text-sm font-semibold">Form to desk</h2>
-          <p className="mt-1 text-sm text-muted">Use the Page ID and Lead Form ID from Meta. One active mapping per form and page. Tokens stay in server environment variables and are not entered here.</p>
+          <p className="mt-1 text-sm text-muted">Optional. Leave this empty when each desk already has its own ads account. Use it only to force one lead form onto a desk.</p>
           <form className="mt-3 grid gap-2 md:grid-cols-5" onSubmit={onSave}>
             <input name="page" required placeholder="Page ID" className="rounded-md border border-line px-2 py-2" />
             <input name="form" required placeholder="Form ID" className="rounded-md border border-line px-2 py-2" />
@@ -158,7 +160,8 @@ export function MetaLeadCentre() {
           <div className="mt-4 rounded-md bg-canvas px-3 py-3 text-xs text-muted">
             <p className="font-medium text-ink">Server setup</p>
             <p className="mt-1">Webhook: <span className="font-mono">/.netlify/functions/meta-leadgen</span></p>
-            <p className="mt-1">Required environment variables: META_VERIFY_TOKEN, META_APP_SECRET, META_PAGE_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, META_ORGANIZATION_ID. Do not put these in the frontend.</p>
+            <p className="mt-1">Enter App ID, App secret, Page access token, and verify token under Settings for each desk. Server environment variables remain a fallback when a desk has no saved token.</p>
+            <p className="mt-2"><Link className="font-medium text-accent" to="/settings">Open connection settings</Link></p>
             {!configured ? <p className="mt-2">Meta integration is not configured.</p> : null}
           </div>
         </section>

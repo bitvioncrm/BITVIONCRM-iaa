@@ -11,6 +11,7 @@ import { useCrm } from "@/context/CrmContext";
 import { accessFor, ROLE_LABEL } from "@/data/catalog";
 import { PhoneLink } from "@/components/shared/PhoneLink";
 import { formatTalk } from "@/lib/utils";
+import { ProductionTeamPage } from "@/pages/production/ProductionTeamDesk";
 import type { AccessRights, BusinessUnit, Role, User } from "@/types";
 
 const ACCESS_FIELDS: Array<{ key: keyof AccessRights; label: string }> = [
@@ -36,6 +37,12 @@ const emptyMember = (): Partial<User> => ({
 });
 
 export function TeamPage() {
+  const { productionUser } = useAuth();
+  if (productionUser) return <ProductionTeamPage />;
+  return <DemoTeamPage />;
+}
+
+function DemoTeamPage() {
   const { state, saveUser, removeUser, assignLeads } = useCrm();
   const { previewRole, setPreviewRole } = useAuth();
   const [editing, setEditing] = useState<Partial<User> | null>(null);

@@ -10,9 +10,16 @@ import { useAuth } from "@/context/AuthContext";
 import { useCrm } from "@/context/CrmContext";
 import { PhoneLink } from "@/components/shared/PhoneLink";
 import { formatTalk } from "@/lib/utils";
+import { ProductionDeskPage } from "@/pages/production/ProductionTeamDesk";
 import type { Lead } from "@/types";
 
 export function DeskPage() {
+  const { productionUser } = useAuth();
+  if (productionUser) return <ProductionDeskPage />;
+  return <DemoDeskPage />;
+}
+
+function DemoDeskPage() {
   const { session } = useAuth();
   const { state, logCall } = useCrm();
   const me = state.users.find((user) => user.id === session?.userId);

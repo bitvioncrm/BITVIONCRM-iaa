@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { resolveFormMapping, type FormMapping } from "../../src/lib/meta-route.ts";
+import { resolveLeadDesk, type FormMapping } from "../../src/lib/meta-route.ts";
+import { loadChannelSecrets, uniqueSecrets } from "./channel-secrets.ts";
 
 function env(name: string) {
   return process.env[name]?.trim() ?? "";
@@ -114,18 +115,26 @@ async function loadMappings(supabaseUrl: string, serviceKey: string, formId: str
   };
 }
 
+async function metaTokenForPage(supabaseUrl: string, serviceKey: string, pageId: string) {
+  const rows = await loadChannelSecrets(supabaseUrl, serviceKey, "meta");
+  const match = rows.find((row) => row.page_id && row.page_id === pageId && row.access_token)
+    ?? rows.find((row) => row.access_token);
+  return { token: match?.access_token || env("META_PAGE_TOKEN"), organizationId: match?.organization_id || env("META_ORGANIZATION_ID") };
+}
+
 export async function processLeadgen(input: {
   leadgenId: string;
   formId: string;
   pageId: string;
   adId: string;
 }) {
-  const secretReady = env("META_APP_SECRET") && env("META_PAGE_TOKEN") && env("SUPABASE_URL") && env("SUPABASE_SERVICE_ROLE_KEY");
   const supabaseUrl = env("SUPABASE_URL");
   const serviceKey = env("SUPABASE_SERVICE_ROLE_KEY");
-  const token = env("META_PAGE_TOKEN");
-  const fallbackOrg = env("META_ORGANIZATION_ID");
-  if (!secretReady) return json(503, { status: "configuration_required" });
+  if (!supabaseUrl || !serviceKey) return json(503, { status: "configuration_required" });
+  const resolved = await metaTokenForPage(supabaseUrl, serviceKey, input.pageId);
+  const token = resolved.token;
+  const fallbackOrg = resolved.organizationId;
+  if (!token) return json(503, { status: "configuration_required" });
   if (!/^\d{5,32}$/.test(input.leadgenId)) return json(400, { status: "invalid" });
 
   const existing = await fetch(
@@ -158,7 +167,26 @@ export async function processLeadgen(input: {
   const pageId = input.pageId;
   const mappings = await loadMappings(supabaseUrl, serviceKey, formId);
   if (mappings.missing) return json(503, { status: "schema_required" });
-  const mapping = resolveFormMapping(formId, pageId, mappings.rows);
+  let adAccountId = "";
+  if (lead.campaign_id) {
+    const campaign = await fetch(
+      `https://graph.facebook.com/v21.0/${encodeURIComponent(lead.campaign_id)}?fields=account_id&access_token=${encodeURIComponent(token)}`,
+    );
+    if (campaign.ok) {
+      const campaignRow = (await campaign.json()) as { account_id?: string };
+      adAccountId = campaignRow.account_id ?? "";
+    }
+  }
+  const secrets = await loadChannelSecrets(supabaseUrl, serviceKey, "meta");
+  const mapping = resolveLeadDesk({
+    formId,
+    pageId,
+    adAccountId,
+    mappings: mappings.rows,
+    accounts: secrets
+      .filter((row) => row.ad_account_id)
+      .map((row) => ({ adAccountId: row.ad_account_id, workspaceId: row.workspace_id, organizationId: row.organization_id })),
+  });
   const organizationId = mapping?.organizationId || fallbackOrg;
   if (!mapping) {
     await saveEvent({
@@ -169,9 +197,9 @@ export async function processLeadgen(input: {
       pageId,
       formId,
       status: "unmapped",
-      errorCode: mappings.rows.length > 1 ? "ambiguous_mapping" : "unmapped_form",
+      errorCode: mappings.rows.length > 1 ? "ambiguous_mapping" : "unmapped_account",
     });
-    await touchIntegration(supabaseUrl, serviceKey, organizationId, "error", "A lead form is not mapped to a desk", false);
+    await touchIntegration(supabaseUrl, serviceKey, organizationId, "error", "Lead ads account is not assigned to clinic or institute", false);
     return json(200, { status: "unmapped" });
   }
 
@@ -279,22 +307,25 @@ function readChanges(payload: unknown) {
 }
 
 export async function handleMetaRequest(request: Request) {
-  const verify = env("META_VERIFY_TOKEN");
+  const supabaseUrl = env("SUPABASE_URL");
+  const serviceKey = env("SUPABASE_SERVICE_ROLE_KEY");
+  const stored = supabaseUrl && serviceKey ? await loadChannelSecrets(supabaseUrl, serviceKey, "meta") : [];
   if (request.method === "GET") {
     const url = new URL(request.url);
-    if (!verify) return json(503, { status: "configuration_required" });
-    if (url.searchParams.get("hub.mode") === "subscribe" && url.searchParams.get("hub.verify_token") === verify) {
+    const verifyTokens = uniqueSecrets([env("META_VERIFY_TOKEN"), ...stored.map((row) => row.verify_token)]);
+    if (!verifyTokens.length) return json(503, { status: "configuration_required" });
+    const provided = url.searchParams.get("hub.verify_token") ?? "";
+    if (url.searchParams.get("hub.mode") === "subscribe" && verifyTokens.includes(provided)) {
       return new Response(url.searchParams.get("hub.challenge") ?? "", { status: 200 });
     }
     return json(403, { status: "rejected" });
   }
   if (request.method !== "POST") return json(405, { status: "rejected" });
-  const secret = env("META_APP_SECRET");
-  if (!secret || !env("META_PAGE_TOKEN") || !env("SUPABASE_URL") || !env("SUPABASE_SERVICE_ROLE_KEY")) {
-    return json(503, { status: "configuration_required" });
-  }
+  if (!supabaseUrl || !serviceKey) return json(503, { status: "configuration_required" });
+  const secrets = uniqueSecrets([env("META_APP_SECRET"), ...stored.map((row) => row.app_secret)]);
   const raw = await request.text();
-  if (!signatureOk(raw, request.headers.get("x-hub-signature-256") ?? "", secret)) return json(401, { status: "invalid_signature" });
+  const signature = request.headers.get("x-hub-signature-256") ?? "";
+  if (!secrets.length || !secrets.some((secret) => signatureOk(raw, signature, secret))) return json(401, { status: "invalid_signature" });
   let payload: unknown;
   try {
     payload = JSON.parse(raw);
@@ -331,7 +362,7 @@ export async function handleMetaRetry(request: Request) {
   if (request.method !== "POST") return json(405, { status: "rejected" });
   const supabaseUrl = env("SUPABASE_URL");
   const serviceKey = env("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceKey || !env("META_PAGE_TOKEN")) return json(503, { status: "configuration_required" });
+  if (!supabaseUrl || !serviceKey) return json(503, { status: "configuration_required" });
   const authorization = request.headers.get("authorization") ?? "";
   if (!(await callerIsAdmin(supabaseUrl, serviceKey, authorization))) return json(403, { status: "rejected" });
   let body: { leadgenId?: string };

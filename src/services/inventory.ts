@@ -173,6 +173,8 @@ export async function createCatalogueProduct(input: {
   if (!sku) throw new Error("SKU is required.");
   if (!input.category.trim()) throw new Error("Category is required.");
   if (input.stock < 0 || input.minimumStock < 0) throw new Error("Stock values cannot be negative.");
+  if (input.purchasePrice != null && !Number.isFinite(input.purchasePrice)) throw new Error("Purchase price must be a number or blank.");
+  if (input.sellingPrice != null && !Number.isFinite(input.sellingPrice)) throw new Error("Selling price must be a number or blank.");
 
   const { data, error } = await db()
     .from("inventory_products")
@@ -205,7 +207,10 @@ export async function createCatalogueProduct(input: {
       qty: input.stock,
       note: "Opening stock",
     });
-    if (stockError) throw new Error(stockError.message);
+    if (stockError) {
+      await db().from("inventory_products").delete().eq("id", data.id);
+      throw new Error(stockError.message);
+    }
   }
   return String(data.id);
 }
@@ -225,7 +230,9 @@ export async function updateCatalogueProduct(input: {
   const sku = input.sku.trim().toUpperCase();
   if (!input.name.trim()) throw new Error("Product name is required.");
   if (!sku) throw new Error("SKU is required.");
-  const { error } = await db()
+  if (input.purchasePrice != null && !Number.isFinite(input.purchasePrice)) throw new Error("Purchase price must be a number or blank.");
+  if (input.sellingPrice != null && !Number.isFinite(input.sellingPrice)) throw new Error("Selling price must be a number or blank.");
+  const { data, error } = await db()
     .from("inventory_products")
     .update({
       name: input.name.trim(),
@@ -240,23 +247,29 @@ export async function updateCatalogueProduct(input: {
       updated_at: new Date().toISOString(),
     })
     .eq("id", input.productId)
-    .is("deleted_at", null);
+    .is("deleted_at", null)
+    .select("id")
+    .maybeSingle();
   if (error) {
     if (error.message.toLowerCase().includes("duplicate") || error.message.toLowerCase().includes("sku")) {
       throw new Error("That SKU is already used on this desk.");
     }
     throw new Error(error.message);
   }
+  if (!data) throw new Error("Product was not updated. Check permissions or refresh the catalogue.");
 }
 
 export async function removeCatalogueProduct(productId: string) {
   const userId = (await db().auth.getUser()).data.user?.id ?? null;
-  const { error } = await db()
+  const { data, error } = await db()
     .from("inventory_products")
     .update({ deleted_at: new Date().toISOString(), deleted_by: userId, updated_at: new Date().toISOString(), is_active: false })
     .eq("id", productId)
-    .is("deleted_at", null);
+    .is("deleted_at", null)
+    .select("id")
+    .maybeSingle();
   if (error) throw new Error(error.message);
+  if (!data) throw new Error("Product was not removed. Check permissions or refresh the catalogue.");
 }
 
 export async function adjustCatalogueStock(productId: string, kind: "purchase" | "adjustment" | "treatment" | "sale", quantity: number, note: string) {
@@ -289,12 +302,15 @@ export async function uploadProductImage(input: { organizationId: string; worksp
     upsert: false,
   });
   if (uploadError) throw new Error(uploadError.message);
-  const { error } = await db()
+  const { data, error } = await db()
     .from("inventory_products")
     .update({ image_path: path, updated_at: new Date().toISOString() })
     .eq("id", input.productId)
-    .is("deleted_at", null);
+    .is("deleted_at", null)
+    .select("id")
+    .maybeSingle();
   if (error) throw new Error(error.message);
+  if (!data) throw new Error("Image uploaded but the product record was not updated.");
   return path;
 }
 
@@ -305,8 +321,10 @@ export async function productImageUrl(path: string) {
   return data.signedUrl;
 }
 
-export async function seedClinicCatalogue() {
-  const { data, error } = await db().rpc("seed_clinic_inventory_catalogue");
+export async function seedClinicCatalogue(workspaceId?: string) {
+  const { data, error } = await db().rpc("seed_clinic_inventory_catalogue", {
+    p_workspace: workspaceId ?? null,
+  });
   if (error) throw new Error(error.message);
   return Number(data ?? 0);
 }

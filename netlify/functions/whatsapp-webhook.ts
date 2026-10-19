@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { loadChannelSecrets, uniqueSecrets } from "../lib/channel-secrets.ts";
 
 function required(name: string) {
   return process.env[name]?.trim() || "";
@@ -9,37 +10,45 @@ function json(status: number, body: Record<string, string>) {
 }
 
 export default async (request: Request) => {
-  const verify = required("WHATSAPP_VERIFY_TOKEN");
-  const secret = required("META_APP_SECRET");
   const supabaseUrl = required("SUPABASE_URL");
   const serviceKey = required("SUPABASE_SERVICE_ROLE_KEY");
-  const organizationId = required("WHATSAPP_ORGANIZATION_ID");
-  const workspaceId = required("WHATSAPP_WORKSPACE_ID");
+  const stored = supabaseUrl && serviceKey ? await loadChannelSecrets(supabaseUrl, serviceKey) : [];
+  const whatsappRows = stored.filter((row) => row.channel === "whatsapp");
 
   if (request.method === "GET") {
     const url = new URL(request.url);
-    if (!verify) return json(503, { status: "configuration_required" });
-    if (url.searchParams.get("hub.mode") === "subscribe" && url.searchParams.get("hub.verify_token") === verify) {
+    const verifyTokens = uniqueSecrets([required("WHATSAPP_VERIFY_TOKEN"), ...whatsappRows.map((row) => row.verify_token), ...stored.filter((row) => row.channel === "meta").map((row) => row.verify_token)]);
+    if (!verifyTokens.length) return json(503, { status: "configuration_required" });
+    const provided = url.searchParams.get("hub.verify_token") ?? "";
+    if (url.searchParams.get("hub.mode") === "subscribe" && verifyTokens.includes(provided)) {
       return new Response(url.searchParams.get("hub.challenge") ?? "", { status: 200 });
     }
     return json(403, { status: "rejected" });
   }
 
-  if (!secret || !supabaseUrl || !serviceKey || !organizationId || !workspaceId) {
-    return json(503, { status: "configuration_required" });
-  }
+  if (!supabaseUrl || !serviceKey) return json(503, { status: "configuration_required" });
 
   const raw = await request.text();
   const signature = request.headers.get("x-hub-signature-256") ?? "";
-  const expected = `sha256=${createHmac("sha256", secret).update(raw).digest("hex")}`;
-  const left = Buffer.from(expected);
-  const right = Buffer.from(signature);
-  if (left.length !== right.length || !timingSafeEqual(left, right)) return json(401, { status: "invalid_signature" });
+  const secrets = uniqueSecrets([required("META_APP_SECRET"), ...stored.map((row) => row.app_secret)]);
+  if (!secrets.length) return json(503, { status: "configuration_required" });
+  const signed = secrets.some((secret) => {
+    const expected = `sha256=${createHmac("sha256", secret).update(raw).digest("hex")}`;
+    const left = Buffer.from(expected);
+    const right = Buffer.from(signature);
+    return left.length === right.length && timingSafeEqual(left, right);
+  });
+  if (!signed) return json(401, { status: "invalid_signature" });
 
   const payload = JSON.parse(raw) as {
-    entry?: Array<{ changes?: Array<{ value?: { messages?: Array<{ id: string; from: string; text?: { body?: string } }>; statuses?: Array<{ id: string; status: string }> } }> }>;
+    entry?: Array<{ changes?: Array<{ value?: { metadata?: { phone_number_id?: string }; messages?: Array<{ id: string; from: string; text?: { body?: string } }>; statuses?: Array<{ id: string; status: string }> } }> }>;
   };
   const value = payload.entry?.[0]?.changes?.[0]?.value;
+  const phoneNumberId = value?.metadata?.phone_number_id ?? "";
+  const matched = whatsappRows.find((row) => row.phone_number_id && row.phone_number_id === phoneNumberId);
+  const organizationId = matched?.organization_id || required("WHATSAPP_ORGANIZATION_ID");
+  const workspaceId = matched?.workspace_id || required("WHATSAPP_WORKSPACE_ID");
+  if (!organizationId || !workspaceId) return json(503, { status: "configuration_required" });
   const message = value?.messages?.[0];
   const status = value?.statuses?.[0];
   const externalId = message?.id ?? status?.id;

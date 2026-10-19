@@ -40,19 +40,26 @@ function ProductImage({ path, name, size = "card" }: { path: string; name: strin
   const [url, setUrl] = useState("");
   useEffect(() => {
     let active = true;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
     if (!path) {
       setUrl("");
       return;
     }
-    void productImageUrl(path)
-      .then((next) => {
-        if (active) setUrl(next);
-      })
-      .catch(() => {
-        if (active) setUrl("");
-      });
+    const load = () => {
+      void productImageUrl(path)
+        .then((next) => {
+          if (!active) return;
+          setUrl(next);
+          refreshTimer = setTimeout(load, 50 * 60 * 1000);
+        })
+        .catch(() => {
+          if (active) setUrl("");
+        });
+    };
+    load();
     return () => {
       active = false;
+      if (refreshTimer) clearTimeout(refreshTimer);
     };
   }, [path]);
 
@@ -71,7 +78,14 @@ function ProductImage({ path, name, size = "card" }: { path: string; name: strin
       </div>
     );
   }
-  return <img src={url} alt={name} className={`object-cover shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] ${frame}`} />;
+  return (
+    <img
+      src={url}
+      alt={name}
+      className={`object-cover shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] ${frame}`}
+      onError={() => setUrl("")}
+    />
+  );
 }
 
 function stockBadgeClass(status: ReturnType<typeof stockStatus>) {
@@ -142,8 +156,15 @@ function InventoryShell() {
         const clinic = rows.filter((item) => item.workspaceType === "clinic");
         setWorkspaces(clinic);
         setWorkspaceId((current) => (clinic.some((item) => item.id === current) ? current : clinic[0]?.id ?? ""));
+        if (clinic.length === 0) {
+          setLoading(false);
+          setError("No clinic workspace is available for inventory.");
+        }
       })
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Configuration Required"));
+      .catch((reason: unknown) => {
+        setLoading(false);
+        setError(reason instanceof Error ? reason.message : "Configuration Required");
+      });
   }, []);
 
   useEffect(() => {
@@ -169,11 +190,16 @@ function InventoryShell() {
 
   const pageSize = 12;
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const safePage = Math.min(page, pages);
+  const pageRows = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   useEffect(() => {
     setPage(1);
   }, [search, category, statusFilter, sortKey]);
+
+  useEffect(() => {
+    if (page > pages) setPage(pages);
+  }, [page, pages]);
 
   return (
     <div className="space-y-5">
@@ -194,7 +220,7 @@ function InventoryShell() {
               type="button"
               variant="secondary"
               onClick={() => {
-                void seedClinicCatalogue()
+                void seedClinicCatalogue(workspaceId)
                   .then((count) => {
                     setNotice(`Catalogue sync touched ${count} products without resetting stock or prices.`);
                     return reload();
@@ -293,7 +319,7 @@ function InventoryShell() {
           {pageRows.length === 0 ? (
             <div className="rounded-lg border border-dashed border-line bg-white px-4 py-16 text-center text-sm text-muted">
               <Package className="mx-auto mb-3 size-8 text-muted" />
-              No products match these filters.
+              {products.length === 0 ? "No products in this clinic catalogue yet." : "No products match these filters."}
             </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
@@ -368,10 +394,10 @@ function InventoryShell() {
 
           {pages > 1 ? (
             <div className="flex items-center justify-between text-sm">
-              <p className="text-muted">Page {page} of {pages} · {filtered.length} products</p>
+              <p className="text-muted">Page {safePage} of {pages} · {filtered.length} products</p>
               <div className="flex gap-2">
-                <Button type="button" variant="secondary" size="sm" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Previous</Button>
-                <Button type="button" variant="secondary" size="sm" disabled={page >= pages} onClick={() => setPage((value) => value + 1)}>Next</Button>
+                <Button type="button" variant="secondary" size="sm" disabled={safePage <= 1} onClick={() => setPage((value) => value - 1)}>Previous</Button>
+                <Button type="button" variant="secondary" size="sm" disabled={safePage >= pages} onClick={() => setPage((value) => value + 1)}>Next</Button>
               </div>
             </div>
           ) : null}
@@ -497,7 +523,7 @@ function CartPanel({
       )}
       <div className="rounded-md bg-canvas px-3 py-3 text-sm">
         <p>Priced lines: {priced.length} · Needs price: {unpriced.length}</p>
-        <p className="mt-1 text-lg font-semibold">Subtotal {formatInr(subtotal)}</p>
+        <p className="mt-1 text-lg font-semibold">Subtotal {priced.length === 0 ? "—" : formatInr(subtotal)}</p>
       </div>
       {manager && workspace ? (
         <div className="flex flex-wrap items-end gap-2">
@@ -555,10 +581,21 @@ function ProductEditorDialog({
 
   useEffect(() => {
     setFile(null);
-    setPreview("");
+    setPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return "";
+    });
   }, [product, open]);
 
+  useEffect(() => () => {
+    if (preview) URL.revokeObjectURL(preview);
+  }, [preview]);
+
   if (!manager) return null;
+
+  const categoryOptions = product?.category && !INVENTORY_CATEGORIES.includes(product.category as (typeof INVENTORY_CATEGORIES)[number])
+    ? [product.category, ...INVENTORY_CATEGORIES]
+    : [...INVENTORY_CATEGORIES];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -574,13 +611,23 @@ function ProductEditorDialog({
             const data = new FormData(event.currentTarget);
             const purchaseRaw = String(data.get("purchase") ?? "").trim();
             const sellingRaw = String(data.get("selling") ?? "").trim();
+            const purchasePrice = purchaseRaw === "" ? null : Number(purchaseRaw);
+            const sellingPrice = sellingRaw === "" ? null : Number(sellingRaw);
+            if (purchasePrice != null && !Number.isFinite(purchasePrice)) {
+              onError("Purchase price must be a number or blank.");
+              return;
+            }
+            if (sellingPrice != null && !Number.isFinite(sellingPrice)) {
+              onError("Selling price must be a number or blank.");
+              return;
+            }
             const payload = {
               name: String(data.get("name") ?? ""),
               sku: String(data.get("sku") ?? ""),
               category: String(data.get("category") ?? ""),
               description: String(data.get("description") ?? ""),
-              purchasePrice: purchaseRaw === "" ? null : Number(purchaseRaw),
-              sellingPrice: sellingRaw === "" ? null : Number(sellingRaw),
+              purchasePrice,
+              sellingPrice,
               minimumStock: Number(data.get("minimum") || 5),
               isActive: String(data.get("status") ?? "active") === "active",
               requiresNameVerification: data.get("verify") === "on",
@@ -616,7 +663,7 @@ function ProductEditorDialog({
           <label className="text-sm">
             Category
             <Select name="category" defaultValue={product?.category || INVENTORY_CATEGORIES[0]} className="mt-1">
-              {INVENTORY_CATEGORIES.map((item) => <option key={item} value={item}>{item}</option>)}
+              {categoryOptions.map((item) => <option key={item} value={item}>{item}</option>)}
             </Select>
           </label>
           <label className="text-sm md:col-span-2">
@@ -661,7 +708,10 @@ function ProductEditorDialog({
               onChange={(event) => {
                 const next = event.target.files?.[0] ?? null;
                 setFile(next);
-                setPreview(next ? URL.createObjectURL(next) : "");
+                setPreview((prev) => {
+                  if (prev) URL.revokeObjectURL(prev);
+                  return next ? URL.createObjectURL(next) : "";
+                });
               }}
             />
           </label>
