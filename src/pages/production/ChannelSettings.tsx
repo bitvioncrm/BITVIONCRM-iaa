@@ -8,7 +8,7 @@ import { listWorkspaces, type WorkspaceOption } from "@/services/production-lead
 const META_ROWS: Array<{ key: keyof ChannelDraft; label: string; secret?: boolean; placeholder?: string }> = [
   { key: "appId", label: "App ID", placeholder: "From the Meta app" },
   { key: "pageId", label: "Facebook Page ID", placeholder: "Page that owns the lead forms" },
-  { key: "adAccountId", label: "Ads account ID", placeholder: "act_1234567890" },
+  { key: "adAccountId", label: "Ads account ID", placeholder: "975152708626051" },
   { key: "appSecret", label: "App secret", secret: true, placeholder: "Paste to save or replace" },
   { key: "accessToken", label: "Page access token", secret: true, placeholder: "Paste to save or replace" },
   { key: "verifyToken", label: "Webhook verify token", secret: true, placeholder: "Same phrase as in Meta" },
@@ -119,9 +119,20 @@ export function ChannelSettings({ embedded = false }: { embedded?: boolean }) {
 
   const save = (workspace: WorkspaceOption, channel: "meta" | "whatsapp") => {
     const draft = drafts[`${workspace.id}:${channel}`] ?? emptyDraft(workspace.id, channel);
+    const adsAccount = draft.adAccountId.trim().replace(/^act_/i, "");
+    if (channel === "meta" && draft.adAccountId.trim() && !/^\d{6,20}$/.test(adsAccount)) {
+      setError("Ads account ID is the number from Ads Manager, such as 975152708626051.");
+      return;
+    }
+    const other = channel === "meta" ? drafts[`${(workspace.workspaceType === "clinic" ? institute?.id : clinic?.id) ?? ""}:meta`] : undefined;
+    const otherAccount = other?.adAccountId.trim().replace(/^act_/i, "") ?? "";
+    if (adsAccount && otherAccount && adsAccount === otherAccount) {
+      setError("This ads account is already on the other desk. Map an institute form instead of copying the same account.");
+      return;
+    }
     setBusy(`${workspace.id}:${channel}`);
     setError("");
-    void saveWorkspaceChannel(draft)
+    void saveWorkspaceChannel({ ...draft, adAccountId: adsAccount })
       .then(() => {
         setNotice(`${workspace.name} ${channel === "meta" ? "Meta" : "WhatsApp"} keys saved.`);
         load();
@@ -256,7 +267,7 @@ export function ChannelSettings({ embedded = false }: { embedded?: boolean }) {
         <p className="mt-2">App ID {channels.find((item) => item.channel === "meta" && item.appId)?.appId || "2209560369628366"} and the app secret are saved on both desks. In the Meta app, open Webhooks, choose Page, and subscribe to leadgen.</p>
         <p className="mt-2 font-mono text-xs">Callback URL: {origin}/.netlify/functions/meta-leadgen</p>
         <p className="font-mono text-xs">Verify token: {channels.find((item) => item.channel === "meta" && item.verifyToken)?.verifyToken || "bitvion-meta-leads"}</p>
-        <p className="mt-2">Still required in each column: Facebook Page ID, that desk’s own ads account ID, and the page access token. Clinic and institute must not share the same ads account. Then click Test.</p>
+        <p className="mt-2">The Dr kukku ads account 975152708626051 stays on the clinic desk. An institute lead form is separated with Form to desk. Each column still needs its Facebook Page ID and page access token before Test can succeed.</p>
         <p className="mt-2 font-mono text-xs">WhatsApp webhook: {origin}/.netlify/functions/whatsapp-webhook</p>
         {embedded ? <p className="mt-2"><Link className="font-medium text-accent" to="/settings">Open this table on Settings</Link></p> : <p className="mt-2"><Link className="font-medium text-accent" to="/meta">Back to Meta Lead Centre</Link></p>}
       </section>
