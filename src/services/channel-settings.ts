@@ -20,6 +20,7 @@ export interface ChannelStatus {
   accessTokenSet: boolean;
   appSecretSet: boolean;
   verifyTokenSet: boolean;
+  verifyToken: string;
   accessTokenLast4: string;
   status: string;
   detail: string;
@@ -59,6 +60,7 @@ export async function listWorkspaceChannels() {
     accessTokenSet: Boolean(row.access_token_set),
     appSecretSet: Boolean(row.app_secret_set),
     verifyTokenSet: Boolean(row.verify_token_set),
+    verifyToken: String(row.verify_token ?? ""),
     accessTokenLast4: String(row.access_token_last4 ?? ""),
     status: String(row.status ?? "configuration_required"),
     detail: String(row.detail ?? ""),

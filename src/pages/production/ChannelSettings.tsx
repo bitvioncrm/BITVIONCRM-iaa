@@ -252,10 +252,12 @@ export function ChannelSettings({ embedded = false }: { embedded?: boolean }) {
       </section>
 
       <section className="rounded-lg border border-line bg-white p-4 text-sm text-muted">
-        <p className="font-medium text-ink">Where to copy each value</p>
-        <p className="mt-2">Ads account ID: Ads Manager → Account overview (`act_…`). Page ID: Business settings → Pages. App ID and App secret: developers.facebook.com → your app → Settings → Basic. WhatsApp Phone number ID: WhatsApp → API setup. Use the clinic account and number in the clinic column only.</p>
-        <p className="mt-2 font-mono text-xs">Meta webhook: {origin}/.netlify/functions/meta-leadgen</p>
-        <p className="font-mono text-xs">WhatsApp webhook: {origin}/.netlify/functions/whatsapp-webhook</p>
+        <p className="font-medium text-ink">Connect Meta leads</p>
+        <p className="mt-2">App ID {channels.find((item) => item.channel === "meta" && item.appId)?.appId || "2209560369628366"} and the app secret are saved on both desks. In the Meta app, open Webhooks, choose Page, and subscribe to leadgen.</p>
+        <p className="mt-2 font-mono text-xs">Callback URL: {origin}/.netlify/functions/meta-leadgen</p>
+        <p className="font-mono text-xs">Verify token: {channels.find((item) => item.channel === "meta" && item.verifyToken)?.verifyToken || "bitvion-meta-leads"}</p>
+        <p className="mt-2">Still required in each column: Facebook Page ID, that desk’s own ads account ID, and the page access token. Clinic and institute must not share the same ads account. Then click Test.</p>
+        <p className="mt-2 font-mono text-xs">WhatsApp webhook: {origin}/.netlify/functions/whatsapp-webhook</p>
         {embedded ? <p className="mt-2"><Link className="font-medium text-accent" to="/settings">Open this table on Settings</Link></p> : <p className="mt-2"><Link className="font-medium text-accent" to="/meta">Back to Meta Lead Centre</Link></p>}
       </section>
     </div>
