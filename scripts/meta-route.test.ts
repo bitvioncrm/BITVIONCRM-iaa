@@ -41,6 +41,18 @@ if (resolveLeadDesk({ formId: "", pageId: "", adAccountId: "111", mappings: [], 
 const formWins = resolveLeadDesk({ formId: "222", pageId: "900", adAccountId: "111", mappings: [institute], accounts });
 if (formWins?.workspaceId !== "institute-ws" || formWins.reason !== "form") throw new Error("an explicit form mapping must override the ads account");
 
+const sharedDesks = [
+  { workspaceId: "clinic-ws", organizationId: "org", workspaceType: "clinic", name: "Dr. K's Aesthetic Clinic" },
+  { workspaceId: "institute-ws", organizationId: "org", workspaceType: "institute", name: "IAA Kochi" },
+];
+const clinicOnly = [{ adAccountId: "975152708626051", workspaceId: "clinic-ws", organizationId: "org" }];
+const iaaCampaign = resolveLeadDesk({ formId: "", pageId: "900", adAccountId: "975152708626051", campaignName: "IAA || aads | 6/10/26", mappings: [], accounts: clinicOnly, desks: sharedDesks });
+if (iaaCampaign?.workspaceId !== "institute-ws" || iaaCampaign.reason !== "campaign") throw new Error("an IAA campaign on the shared ads account must reach the institute");
+const clinicNamed = resolveLeadDesk({ formId: "", pageId: "900", adAccountId: "975152708626051", campaignName: "Leads | lip | 17/10/26", mappings: [], accounts: clinicOnly, desks: sharedDesks });
+if (clinicNamed?.workspaceId !== "clinic-ws" || clinicNamed.reason !== "ad_account") throw new Error("a clinic campaign on the shared ads account must stay on the clinic");
+const mappedOverName = resolveLeadDesk({ formId: "111", pageId: "900", adAccountId: "975152708626051", campaignName: "IAA | 18/9/26", mappings: [clinic], accounts: clinicOnly, desks: sharedDesks });
+if (mappedOverName?.workspaceId !== "clinic-ws" || mappedOverName.reason !== "form") throw new Error("a form mapping must override the campaign name");
+
 const ingest = readFileSync(new URL("../netlify/lib/meta-ingest.ts", import.meta.url), "utf8");
 if (ingest.includes("META_WORKSPACE_ID")) throw new Error("webhook still sends every lead to one workspace");
 if (!ingest.includes("resolveLeadDesk")) throw new Error("webhook does not apply form or ads-account routing");

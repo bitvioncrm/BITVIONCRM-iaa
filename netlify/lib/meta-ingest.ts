@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { resolveLeadDesk, type FormMapping } from "../../src/lib/meta-route.ts";
+import { resolveLeadDesk, type FormMapping, type WorkspaceDesk } from "../../src/lib/meta-route.ts";
 import { loadChannelSecrets, uniqueSecrets } from "./channel-secrets.ts";
 
 function env(name: string) {
@@ -115,6 +115,22 @@ async function loadMappings(supabaseUrl: string, serviceKey: string, formId: str
   };
 }
 
+async function loadDesks(supabaseUrl: string, serviceKey: string) {
+  const response = await fetch(
+    `${supabaseUrl}/rest/v1/workspaces?select=id,organization_id,name,workspace_type&deleted_at=is.null&workspace_type=in.(clinic,institute)`,
+    { headers: serviceHeaders(serviceKey) },
+  );
+  if (!response.ok) return [] as WorkspaceDesk[];
+  const rows = (await response.json()) as Array<{ id: string; organization_id: string; name: string; workspace_type: string }>;
+  if (!Array.isArray(rows)) return [];
+  return rows.map((row) => ({
+    workspaceId: row.id,
+    organizationId: row.organization_id,
+    workspaceType: row.workspace_type,
+    name: row.name ?? "",
+  }));
+}
+
 async function metaTokenForPage(supabaseUrl: string, serviceKey: string, pageId: string) {
   const rows = await loadChannelSecrets(supabaseUrl, serviceKey, "meta");
   const match = rows.find((row) => row.page_id && row.page_id === pageId && row.access_token)
@@ -178,14 +194,17 @@ export async function processLeadgen(input: {
     }
   }
   const secrets = await loadChannelSecrets(supabaseUrl, serviceKey, "meta");
+  const desks = await loadDesks(supabaseUrl, serviceKey);
   const mapping = resolveLeadDesk({
     formId,
     pageId,
     adAccountId,
+    campaignName: lead.campaign_name ?? "",
     mappings: mappings.rows,
     accounts: secrets
       .filter((row) => row.ad_account_id)
       .map((row) => ({ adAccountId: row.ad_account_id, workspaceId: row.workspace_id, organizationId: row.organization_id })),
+    desks,
   });
   const organizationId = mapping?.organizationId || fallbackOrg;
   if (!mapping) {

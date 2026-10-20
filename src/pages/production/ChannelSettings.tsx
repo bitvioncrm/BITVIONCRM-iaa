@@ -178,7 +178,7 @@ export function ChannelSettings({ embedded = false }: { embedded?: boolean }) {
         <header>
           <p className="text-xs font-medium tracking-wide text-accent uppercase">Admin</p>
           <h1 className="mt-1 text-[26px] font-semibold tracking-tight">Meta and WhatsApp</h1>
-          <p className="mt-1 max-w-3xl text-sm text-muted">Fill the clinic column and the institute column. Each ads account keeps its own campaigns.</p>
+          <p className="mt-1 max-w-3xl text-sm text-muted">The clinic column holds the shared ads account. Institute campaigns are the ones whose name contains IAA.</p>
         </header>
       )}
       {error ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
@@ -267,7 +267,7 @@ export function ChannelSettings({ embedded = false }: { embedded?: boolean }) {
         <p className="mt-2">App ID {channels.find((item) => item.channel === "meta" && item.appId)?.appId || "2209560369628366"} and the app secret are saved on both desks. In the Meta app, open Webhooks, choose Page, and subscribe to leadgen.</p>
         <p className="mt-2 font-mono text-xs">Callback URL: {origin}/.netlify/functions/meta-leadgen</p>
         <p className="font-mono text-xs">Verify token: {channels.find((item) => item.channel === "meta" && item.verifyToken)?.verifyToken || "bitvion-meta-leads"}</p>
-        <p className="mt-2">The Dr kukku ads account 975152708626051 stays on the clinic desk. An institute lead form is separated with Form to desk. Each column still needs its Facebook Page ID and page access token before Test can succeed.</p>
+        <p className="mt-2">Ads account 975152708626051 stays on the clinic. Campaigns named with IAA go to the institute, and the other campaigns on that account go to the clinic. Paste the Facebook Page ID and page access token into the clinic column so each new lead can be downloaded. The institute column can leave those two fields empty while both desks share this page.</p>
         <p className="mt-2 font-mono text-xs">WhatsApp webhook: {origin}/.netlify/functions/whatsapp-webhook</p>
         {embedded ? <p className="mt-2"><Link className="font-medium text-accent" to="/settings">Open this table on Settings</Link></p> : <p className="mt-2"><Link className="font-medium text-accent" to="/meta">Back to Meta Lead Centre</Link></p>}
       </section>
