@@ -62,7 +62,6 @@ export const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
       { to: "/pipeline", label: "Pipeline", icon: Kanban, end: false },
       { to: "/follow-ups", label: "Follow-ups", icon: CalendarClock, end: false },
       { to: "/calls", label: "Calls", icon: Phone, end: false },
-      { to: "/campaigns", label: "Campaigns", icon: Megaphone, end: false },
     ],
   },
   {
@@ -71,7 +70,6 @@ export const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
       { to: "/inventory", label: "Inventory", icon: Package, end: false },
       { to: "/billing", label: "Finance", icon: Receipt, end: false },
       { to: "/whatsapp", label: "WhatsApp", icon: MessageCircle, end: false },
-      { to: "/templates", label: "Templates", icon: FileText, end: false },
       { to: "/tasks", label: "Tasks", icon: CheckSquare, end: false },
     ],
   },

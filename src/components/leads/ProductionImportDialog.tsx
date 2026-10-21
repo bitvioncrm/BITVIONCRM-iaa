@@ -136,7 +136,7 @@ export function ProductionImportDialog({
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>Import leads</DialogTitle>
-          <DialogDescription>Choose the desk, then a CSV or Excel file. First name and last name are joined. Blank columns stay blank. Rows are saved in batches of 200.</DialogDescription>
+          <DialogDescription>CSV or Excel.</DialogDescription>
         </DialogHeader>
         <label className="text-[13px] font-medium">
           Desk

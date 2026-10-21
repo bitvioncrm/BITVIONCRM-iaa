@@ -119,7 +119,6 @@ export function ProductionWhatsApp() {
     <div className="space-y-3">
       <section className="rounded-lg border border-line bg-white p-3">
         <h2 className="text-sm font-semibold">WhatsApp numbers</h2>
-        <p className="mt-1 text-xs text-muted">The clinic and the institute keep separate numbers. A click opens that lead in WhatsApp. Nothing is sent from the CRM.</p>
         <div className="mt-3 grid gap-3 md:grid-cols-2">
           {visibleNumbers.map((item) => (
             <form
@@ -155,7 +154,6 @@ export function ProductionWhatsApp() {
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 className="text-sm font-semibold">Bulk posters</h2>
-              <p className="mt-1 text-xs text-muted">Save a poster and a message for {desk?.name ?? "this desk"}. The WhatsApp logo on each lead opens that chat with the message ready.</p>
             </div>
             {desk ? (
               <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-line px-3 text-sm">
@@ -265,7 +263,7 @@ export function ProductionWhatsApp() {
                     <a href={openHref} target="_blank" rel="noreferrer" className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[#25D366] px-3 text-sm font-medium text-white hover:bg-[#1ebe5d] sm:h-10">Open WhatsApp</a>
                   ) : <span className="text-xs text-muted">This lead has no phone number.</span>}
                 </form>
-              ) : <p className="bg-[#f0f2f5] px-4 py-3 text-xs text-[#667781]">WhatsApp opens for Admin and the telecallers.</p>}
+              ) : null}
             </>
           ) : <p className="m-auto text-sm text-[#667781]">Select a chat.</p>}
         </section>

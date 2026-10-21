@@ -63,7 +63,6 @@ export function ChannelSettings({ embedded = false }: { embedded?: boolean }) {
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
-  const origin = typeof window === "undefined" ? "" : window.location.origin;
 
   const load = () => {
     setLoading(true);
@@ -178,7 +177,6 @@ export function ChannelSettings({ embedded = false }: { embedded?: boolean }) {
         <header>
           <p className="text-xs font-medium tracking-wide text-accent uppercase">Admin</p>
           <h1 className="mt-1 text-[26px] font-semibold tracking-tight">Meta and WhatsApp</h1>
-          <p className="mt-1 max-w-3xl text-sm text-muted">The clinic column holds the shared ads account. Institute campaigns are the ones whose name contains IAA.</p>
         </header>
       )}
       {error ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
@@ -187,7 +185,6 @@ export function ChannelSettings({ embedded = false }: { embedded?: boolean }) {
       <section className="overflow-hidden rounded-lg border border-line bg-white">
         <div className="border-b border-line px-4 py-3">
           <h2 className="text-base font-semibold">Connection columns</h2>
-          <p className="mt-1 text-sm text-muted">Clinic on the left, institute on the right. Saved IDs stay visible. Secrets show “Saved” and are replaced only when you type a new value.</p>
         </div>
         {loading ? <p className="px-4 py-6 text-sm text-muted">Loading connection columns…</p> : null}
         {!loading && desks.length === 0 ? <p className="px-4 py-6 text-sm text-muted">No clinic or institute desk is available for this login.</p> : null}
@@ -293,16 +290,7 @@ export function ChannelSettings({ embedded = false }: { embedded?: boolean }) {
         ) : null}
       </section>
 
-      <section className="rounded-lg border border-line bg-white p-4 text-sm text-muted">
-        <p className="font-medium text-ink">Connect Meta leads</p>
-        <p className="mt-2">App ID {channels.find((item) => item.channel === "meta" && item.appId)?.appId || "2209560369628366"} and the app secret are saved on both desks. In the Meta app, open Webhooks, choose Page, and subscribe to leadgen.</p>
-        <p className="mt-2 font-mono text-xs">Callback URL: {origin}/.netlify/functions/meta-leadgen</p>
-        <p className="font-mono text-xs">Verify token: {channels.find((item) => item.channel === "meta" && item.verifyToken)?.verifyToken || "bitvion-meta-leads"}</p>
-        <p className="mt-2">Ads account 975152708626051 stays on the clinic. Campaigns named with IAA go to the institute, and the other campaigns on that account go to the clinic. Paste the Facebook Page ID and page access token into the clinic column so each new lead can be downloaded. The institute column can leave those two fields empty while both desks share this page.</p>
-        <p className="mt-2">A click on a WhatsApp ad becomes a lead on the desk whose Phone number ID matches that message. Clinic clicks stay for the clinic telecaller. Institute clicks stay for the institute telecaller. The same person messaging again is added to the lead already on that desk.</p>
-        <p className="mt-2 font-mono text-xs">WhatsApp webhook: {origin}/.netlify/functions/whatsapp-webhook</p>
-        {embedded ? null : <p className="mt-2"><Link className="font-medium text-accent" to="/meta">Back to Meta Lead Centre</Link></p>}
-      </section>
+      {embedded ? null : <p className="text-sm"><Link className="font-medium text-accent" to="/meta">Meta leads</Link></p>}
     </div>
   );
 }

@@ -74,7 +74,6 @@ export function MetaLeadCentre() {
   }, [assigned, bounds.from, bounds.to, campaign, desk, form, reload, status]);
 
   const connected = centre.status === "connected";
-  const configured = connected || centre.mappings.some((item) => item.active);
   const showCounts = connected || centre.leads.length > 0 || centre.failed > 0;
   const workspaceName = (id: string) => workspaces.find((item) => item.id === id)?.name ?? "Desk";
   const clinicCallers = callers.filter((item) => item.desk === "clinic");
@@ -94,7 +93,7 @@ export function MetaLeadCentre() {
       formName: String(data.get("name") ?? ""),
     })
       .then(() => {
-        setNotice("Form mapping saved. New leads from that form will use this desk.");
+        setNotice("Form mapping saved.");
         event.currentTarget.reset();
         setReload((value) => value + 1);
       })
@@ -106,7 +105,6 @@ export function MetaLeadCentre() {
       <header>
         <p className="text-xs font-medium tracking-wide text-accent uppercase">Meta Lead Centre · {bounds.label}</p>
         <h1 className="mt-1 text-[26px] font-semibold tracking-tight">Meta leads</h1>
-        <p className="mt-1 max-w-3xl text-sm text-muted">New instant-form leads from the Dr kukku ads account come straight into this CRM. A campaign whose name contains IAA lands on IAA Kochi. Every other campaign on that account lands on the clinic.</p>
       </header>
       <ChannelSettings embedded />
       {error ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
@@ -114,11 +112,11 @@ export function MetaLeadCentre() {
       <section className={`rounded-lg border px-4 py-3 ${connected ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
         <p className="text-sm font-semibold">{connected ? "Connected" : "Meta integration is not configured."}</p>
         <p className="mt-1 text-sm text-muted">
-          {connected ? centre.detail || "The last webhook stored a lead." : "Setup required. This screen will not show a connected state until a verified webhook stores a lead."}
+          {connected ? centre.detail || "Connected" : "Not connected"}
         </p>
         <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
           <div><dt className="text-muted">Last successful sync</dt><dd>{centre.lastSuccessAt ? new Date(centre.lastSuccessAt).toLocaleString("en-IN") : "None"}</dd></div>
-          <div><dt className="text-muted">Last webhook event</dt><dd>{centre.lastEventAt ? new Date(centre.lastEventAt).toLocaleString("en-IN") : "None"}</dd></div>
+          <div><dt className="text-muted">Last lead received</dt><dd>{centre.lastEventAt ? new Date(centre.lastEventAt).toLocaleString("en-IN") : "None"}</dd></div>
           <div><dt className="text-muted">Failed or unmapped</dt><dd className="tabular">{centre.failed}</dd></div>
         </dl>
       </section>
@@ -126,7 +124,6 @@ export function MetaLeadCentre() {
       {!centre.schemaReady ? <p className="text-sm text-muted">{centre.detail}</p> : (
         <section className="rounded-lg border border-line bg-white p-4">
           <h2 className="text-sm font-semibold">Form to desk</h2>
-          <p className="mt-1 text-sm text-muted">Optional. Use this only when one form should ignore the campaign name. Choose the desk that form must use.</p>
           <form className="mt-3 grid gap-2 md:grid-cols-5" onSubmit={onSave}>
             <input name="page" required placeholder="Page ID" className="h-11 rounded-md border border-line px-2 text-base sm:h-9 sm:text-sm" />
             <input name="form" required placeholder="Form ID" className="h-11 rounded-md border border-line px-2 text-base sm:h-9 sm:text-sm" />
@@ -157,12 +154,6 @@ export function MetaLeadCentre() {
               </tbody>
             </table>
           </div>
-          <div className="mt-4 rounded-md bg-canvas px-3 py-3 text-xs text-muted">
-            <p className="font-medium text-ink">Server setup</p>
-            <p className="mt-1">Webhook: <span className="font-mono">/.netlify/functions/meta-leadgen</span></p>
-            <p className="mt-1">Enter App ID, App secret, Page access token, and verify token under Settings for each desk. Server environment variables remain a fallback when a desk has no saved token.</p>
-            {!configured ? <p className="mt-2">Meta integration is not configured.</p> : null}
-          </div>
         </section>
       )}
 
@@ -172,12 +163,11 @@ export function MetaLeadCentre() {
           <Panel title="Institute Meta leads" counts={centre.institute} />
         </div>
       ) : (
-        <p className="text-sm text-muted">No Meta lead counts are shown until the integration is connected or imported leads exist.</p>
+        <p className="text-sm text-muted">No Meta leads yet.</p>
       )}
 
       <section className="space-y-3">
         <h2 className="text-sm font-semibold">Imported leads</h2>
-        <p className="text-sm text-muted">Clinic leads can be assigned only to a clinic telecaller. Institute leads can be assigned only to an institute telecaller.</p>
         <div className="grid gap-2 md:grid-cols-4">
           <input value={campaign} onChange={(event) => setCampaign(event.target.value)} placeholder="Campaign" className="rounded-md border border-line bg-white px-2 py-2" />
           <input value={form} onChange={(event) => setForm(event.target.value)} placeholder="Form" className="rounded-md border border-line bg-white px-2 py-2" />
@@ -339,7 +329,6 @@ export function MetaLeadCentre() {
       <section className="overflow-x-auto rounded-lg border border-line bg-white">
         <div className="border-b border-line px-4 py-3">
           <h2 className="text-sm font-semibold">Failed imports</h2>
-          <p className="text-xs text-muted">These rows store the form and error only. Contact details stay on the lead after a successful retry.</p>
         </div>
         {centre.events.length === 0 ? <p className="px-4 py-8 text-sm text-muted">No failed imports.</p> : (
           <table className="w-full text-left text-[13px]">

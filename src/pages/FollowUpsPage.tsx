@@ -38,7 +38,7 @@ function ProductionFollowUps() {
     <div className="space-y-3">
       <h1 className="text-2xl font-semibold">Follow-ups</h1>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
-      {rows.length === 0 ? <p className="text-sm text-muted">No follow-ups in PostgreSQL for the first workspace.</p> : rows.map((row) => <p key={row.id} className="text-sm">{row.due_at} · {row.status} · {row.notes}</p>)}
+      {rows.length === 0 ? <p className="text-sm text-muted">No follow-ups.</p> : rows.map((row) => <p key={row.id} className="text-sm">{row.due_at} · {row.status} · {row.notes}</p>)}
     </div>
   );
 }

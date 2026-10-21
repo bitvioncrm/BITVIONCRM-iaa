@@ -10,7 +10,6 @@ import { DeskProvider } from "@/context/DeskContext";
 import { useCrm } from "@/context/CrmContext";
 import { ROLE_LABEL } from "@/data/catalog";
 import { isAdmin } from "@/lib/scope";
-import { supabaseConfigured } from "@/lib/supabase";
 
 export function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
@@ -27,16 +26,9 @@ export function AppShell() {
       <Sidebar collapsed={collapsed} />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar collapsed={collapsed} onToggle={() => setCollapsed((value) => !value)} />
-        {productionUser ? null : (
-          <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-[13px] text-amber-900">
-            {supabaseConfigured
-              ? "Production database is configured. Sign in with a Supabase user. Demo passwords are not accepted."
-              : "Production database: Configuration Required. Leads on this screen stay in this browser until Supabase Auth is connected."}
-          </div>
-        )}
-        {admin && previewRole !== "administrator" ? (
+        {admin && !productionUser && previewRole !== "administrator" ? (
           <div className="flex items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-[13px] text-amber-900">
-            <span>Previewing the interface as {ROLE_LABEL[previewRole]}. Akhil Shijo remains the signed-in administrator.</span>
+            <span>Previewing as {ROLE_LABEL[previewRole]}.</span>
             <button type="button" className="font-medium underline" onClick={() => setPreviewRole("administrator")}>
               Return to Administrator
             </button>

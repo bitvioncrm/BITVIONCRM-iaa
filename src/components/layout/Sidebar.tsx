@@ -54,10 +54,10 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
           : items.map((item) => <SideLink key={item.to} item={item} collapsed={collapsed} />)}
       </nav>
       <div className={cn("flex items-center gap-2 border-t border-white/10 p-3", collapsed && "flex-col")}>
-        <Avatar name={session?.name ?? "Akhil Shijo"} />
+        <Avatar name={session?.name ?? "Staff"} />
         {collapsed ? null : (
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[13px] font-medium text-white">{session?.name ?? "Akhil Shijo"}</p>
+            <p className="truncate text-[13px] font-medium text-white">{session?.name ?? "Staff"}</p>
             <p className="truncate text-[11px] text-slate-400">{deskLabel}</p>
           </div>
         )}

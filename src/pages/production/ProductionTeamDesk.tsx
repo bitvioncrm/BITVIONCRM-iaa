@@ -66,7 +66,7 @@ export function ProductionTeamPage() {
     <div className="space-y-4">
       <PageHeader
         title="Team"
-        description="Assign waiting leads to the telecaller on the selected desk. Clinic leads stay on Dr. K's Aesthetic Clinic. Institute leads stay on IAA Kochi."
+        description=""
         actions={workspaces.length > 1 ? (
           <Select className="w-full sm:w-64" value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}>
             {workspaces.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -178,7 +178,7 @@ export function ProductionTeamPage() {
           <Link className="text-sm text-accent underline-offset-2 hover:underline" to="/leads?status=new&assigned=unassigned">Open unassigned leads</Link>
         </Card>
       ) : (
-        <p className="text-sm text-muted">Only Admin can assign fresh leads from this screen.</p>
+        <p className="text-sm text-muted">Assignment is available to Admin.</p>
       )}
     </div>
   );
@@ -249,7 +249,7 @@ export function ProductionDeskPage() {
     <div className="space-y-4">
       <PageHeader
         title={admin ? "Employee desk" : "My desk"}
-        description="Assigned leads from Supabase for the selected counsellor."
+        description=""
         actions={(
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
             {workspaces.length > 1 ? (

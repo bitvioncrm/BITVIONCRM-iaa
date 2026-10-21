@@ -76,7 +76,7 @@ export function ProductionLeadDetail({ id }: { id: string }) {
   }, [lead, returnedAt, sessionId, startedAt]);
 
   if (lead === null) return <Navigate to="/leads" replace />;
-  if (!lead) return <p className="text-sm text-muted">{error || "Loading lead from PostgreSQL."}</p>;
+  if (!lead) return <p className="text-sm text-muted">{error || "Loading lead."}</p>;
 
   const institute = workspaceType === "institute";
   const live = startedAt ? Math.max(0, Math.floor(((returnedAt ? new Date(returnedAt).getTime() : now) - new Date(startedAt).getTime()) / 1000)) : 0;
@@ -119,7 +119,6 @@ export function ProductionLeadDetail({ id }: { id: string }) {
         <p className="mt-3 text-3xl font-semibold tabular">{sessionId ? formatClock(live) : formatClock(callTotals?.talkSeconds ?? 0)}</p>
         {sessionId ? (
           <div className="mt-3 space-y-2">
-            <p className="text-sm text-muted">The phone dialer is open. Coming back after 15 seconds saves this time as connected. A shorter return is saved as rejected.</p>
             <CallResultButtons busy={ending} onResult={(outcome: CallOutcome) => {
               if (savedDial.current === sessionId) return;
               savedDial.current = sessionId;
@@ -160,7 +159,6 @@ export function ProductionLeadDetail({ id }: { id: string }) {
       </section>
       <section className="rounded-lg border border-line bg-white p-4">
         <h2 className="font-semibold">{institute ? "Convert to student" : "Convert to patient"}</h2>
-        <p className="mt-1 text-sm text-muted">This marks the lead converted and creates the {institute ? "student and admission" : "patient"} in the same workspace.</p>
         <Button type="button" className="mt-3" onClick={() => {
           void updateLeadStatus(lead, "converted")
             .then(async () => {

@@ -20,13 +20,10 @@ function Tile({ to, label }: { to: string; label: string }) {
   return <Link className="rounded-md border border-line bg-white px-3 py-2 text-sm hover:border-navy" to={to}>{label}</Link>;
 }
 
-function Shell({ title, detail, children }: { title: string; detail: string; children: ReactNode }) {
+function Shell({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-semibold">{title}</h1>
-        <p className="mt-1 text-sm text-muted">{detail}</p>
-      </div>
+      <h1 className="text-2xl font-semibold">{title}</h1>
       {children}
     </div>
   );
@@ -69,7 +66,7 @@ function DoctorDashboard() {
   const today = new Date().toISOString().slice(0, 10);
   const todays = appointments.filter((item) => String(item.starts_at).slice(0, 10) === today);
   return (
-    <Shell title="Doctor" detail="Today's clinic queue, consultations, and stock you can adjust. WhatsApp is view only.">
+    <Shell title="Doctor">
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       <div className="grid gap-3 sm:grid-cols-3">
         <Stat label="Today's appointments" value={String(todays.length)} />
@@ -96,7 +93,7 @@ function ReceptionDashboard() {
     void countRows("patients", clinic.id).then(setPatients);
   }, [clinic]);
   return (
-    <Shell title="Reception" detail="Patients and appointments. Billing is not on this desk. WhatsApp is view only.">
+    <Shell title="Reception">
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       <div className="grid gap-3 sm:grid-cols-3">
         <Stat label="Patients" value={String(patients)} />
@@ -108,7 +105,7 @@ function ReceptionDashboard() {
   );
 }
 
-function CallerDashboard({ title, detail, institute }: { title: string; detail: string; institute: boolean }) {
+function CallerDashboard({ title, institute }: { title: string; institute: boolean }) {
   const { workspaces, error } = useWorkspaces();
   const workspace = workspaces.find((item) => item.workspaceType === (institute ? "institute" : "clinic")) ?? workspaces[0];
   const [leads, setLeads] = useState(0);
@@ -126,7 +123,7 @@ function CallerDashboard({ title, detail, institute }: { title: string; detail: 
     })).catch(() => setCalls({ dials: "—", connected: "—", rejected: "—", talk: "—" }));
   }, [workspace]);
   return (
-    <Shell title={title} detail={detail}>
+    <Shell title={title}>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Stat label="Leads" value={String(leads)} />
@@ -149,9 +146,9 @@ function CallerDashboard({ title, detail, institute }: { title: string; detail: 
 }
 
 function ClinicCallerDashboard() {
-  return <CallerDashboard title="Clinic telecaller" detail="Your clinic leads and today's dials. Connected calls save the time you spoke. Institute calls stay on the institute telecaller." institute={false} />;
+  return <CallerDashboard title="Clinic telecaller" institute={false} />;
 }
 
 function InstituteCallerDashboard() {
-  return <CallerDashboard title="Institute telecaller" detail="Your institute leads and today's dials. Connected calls save the time you spoke. Clinic calls stay on the clinic telecaller." institute />;
+  return <CallerDashboard title="Institute telecaller" institute />;
 }

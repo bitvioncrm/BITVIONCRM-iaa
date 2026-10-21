@@ -286,7 +286,7 @@ export function ProductionLeadsPage() {
     <div className="space-y-4">
       <PageHeader
         title="Leads"
-        description={loading ? "Loading this page from PostgreSQL." : `${total.toLocaleString("en-IN")} ${status ? `${STATUS_LABEL[status as LeadStatus]} leads` : (LEAD_ORIGINS.find((item) => item.value === origin)?.label.toLowerCase() ?? "leads")}${origin === "latest" && !status ? " from today" : origin === "live" && !status ? "" : ` in ${bounds.label}`}. The list refreshes as leads arrive.`}
+        description={loading ? "Loading leads." : `${total.toLocaleString("en-IN")} ${status ? `${STATUS_LABEL[status as LeadStatus]} leads` : (LEAD_ORIGINS.find((item) => item.value === origin)?.label.toLowerCase() ?? "leads")}${origin === "latest" && !status ? " from today" : origin === "live" && !status ? "" : ` in ${bounds.label}`}.`}
         actions={
           <>
             <Button type="button" variant="secondary" onClick={() => setReload((value) => value + 1)}>Refresh</Button>
@@ -348,7 +348,7 @@ export function ProductionLeadsPage() {
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wide text-muted">{deskLabel}</p>
                   <h2 className="text-sm font-semibold">{item.name}</h2>
-                  <p className="mt-1 text-sm text-muted">{waiting.toLocaleString("en-IN")} waiting on this desk. Newest Meta leads are handed out first, and each lead stays on {item.name}.</p>
+                  <p className="mt-1 text-sm text-muted">{waiting.toLocaleString("en-IN")} waiting</p>
                 </div>
                 {people.length === 0 ? <p className="text-sm text-muted">Add a {deskLabel.toLowerCase()} telecaller before these leads can be assigned.</p> : people.map((member) => {
                   const held = Number(totals.assigned[member.userId] ?? 0);
@@ -478,7 +478,7 @@ export function ProductionLeadsPage() {
         <section className="rounded-lg border border-line bg-white p-4">
           <p className="text-sm text-muted">Calling now</p>
           <p className="text-3xl font-semibold tabular">{formatClock(elapsed)}</p>
-          <p className="mt-1 text-sm">{liveLead ? <Link to={`/leads/${liveLead.id}`}>{liveLead.fullName}</Link> : "This lead"} is on the phone. Coming back after 15 seconds saves this time as connected. A shorter return is saved as rejected.</p>
+          <p className="mt-1 text-sm">{liveLead ? <Link to={`/leads/${liveLead.id}`}>{liveLead.fullName}</Link> : "This lead"}</p>
           <div className="mt-3">
             <CallResultButtons busy={callBusy} onResult={finishCall} />
           </div>

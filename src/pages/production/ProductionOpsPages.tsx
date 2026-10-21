@@ -3,7 +3,7 @@ import { MetaLeadCentre } from "@/pages/production/MetaLeadCentre";
 import { listLeads, listWorkspaces, updateLeadStatus, type ProductionLead, type WorkspaceOption } from "@/services/production-leads";
 import { createTask, listAudit, listTasks, revenueSummary } from "@/services/production-ops";
 import { useAuth } from "@/context/AuthContext";
-import { STATUS_ORDER } from "@/data/catalog";
+import { STATUS_LABEL, STATUS_ORDER } from "@/data/catalog";
 import type { LeadStatus } from "@/types";
 
 function WorkspaceSelect({ value, onChange, rows }: { value: string; onChange: (value: string) => void; rows: WorkspaceOption[] }) {
@@ -18,6 +18,7 @@ export function ProductionPipeline() {
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
   const [workspaceId, setWorkspaceId] = useState("");
   const [rows, setRows] = useState<ProductionLead[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   useEffect(() => {
     void listWorkspaces().then((items) => {
@@ -27,15 +28,19 @@ export function ProductionPipeline() {
   }, []);
   useEffect(() => {
     if (!workspaceId) return;
-    void listLeads({ page: 1, workspaceId }).then((result) => setRows(result.leads)).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load leads"));
+    setLoading(true);
+    void listLeads({ page: 1, workspaceId })
+      .then((result) => setRows(result.leads))
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load leads"))
+      .finally(() => setLoading(false));
   }, [workspaceId]);
   return (
     <div className="space-y-3">
       <h1 className="text-2xl font-semibold">Pipeline</h1>
-      <p className="text-sm text-muted">Stage changes are written to PostgreSQL. This page loads one page of leads, not the full book.</p>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       <WorkspaceSelect value={workspaceId} onChange={setWorkspaceId} rows={workspaces} />
-      {rows.length === 0 ? <p className="text-sm text-muted">No leads on this page.</p> : null}
+      {loading ? <p className="text-sm text-muted">Loading leads.</p> : null}
+      {!loading && rows.length === 0 ? <p className="text-sm text-muted">No leads on this page.</p> : null}
       {rows.map((lead) => (
         <div key={lead.id} className="flex flex-col gap-2 rounded-lg border border-line bg-white px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
           <span className="min-w-0 break-words">{lead.fullName}</span>
@@ -45,7 +50,7 @@ export function ProductionPipeline() {
               .then(() => setRows((current) => current.map((item) => item.id === lead.id ? { ...item, status } : item)))
               .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Stage update failed"));
           }}>
-            {STATUS_ORDER.map((status) => <option key={status} value={status}>{status}</option>)}
+            {STATUS_ORDER.map((status) => <option key={status} value={status}>{STATUS_LABEL[status]}</option>)}
           </select>
         </div>
       ))}
@@ -105,7 +110,6 @@ export function ProductionReports() {
   return (
     <div className="space-y-3">
       <h1 className="text-2xl font-semibold">Reports</h1>
-      <p className="text-sm text-muted">Revenue comes from invoices, payments, and refunds. Leads are not counted as revenue.</p>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       <WorkspaceSelect value={workspaceId} onChange={setWorkspaceId} rows={workspaces} />
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
@@ -116,7 +120,7 @@ export function ProductionReports() {
           void revenueSummary(workspaceId, from, to).then(setSummary).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Revenue requires the latest migration"));
         }}>Load</button>
       </div>
-      {summary ? <p className="text-sm">Gross {summary.gross} · Discounts {summary.discounts} · Collected {summary.collected} · Refunds {summary.refunded} · Net {summary.net} · Pending {summary.pending}</p> : <p className="text-sm text-muted">Choose a range and load. This fails until revenue_totals is applied.</p>}
+      {summary ? <p className="text-sm">Gross {summary.gross} · Discounts {summary.discounts} · Collected {summary.collected} · Refunds {summary.refunded} · Net {summary.net} · Pending {summary.pending}</p> : null}
     </div>
   );
 }

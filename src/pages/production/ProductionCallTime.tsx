@@ -97,11 +97,6 @@ export function ProductionCallTime() {
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-semibold">{title}</h1>
-        <p className="mt-1 text-sm text-muted">
-          {seesEveryone
-            ? "Admin sees both desks. Clinic calls stay on the clinic telecaller. Institute calls stay on the institute telecaller."
-            : "You see only your own dials on this desk. Talk time is saved when you mark the call Connected."}
-        </p>
       </div>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {workspaces.length > 1 ? (
@@ -124,7 +119,6 @@ export function ProductionCallTime() {
           <div className="mt-3 space-y-3">
             <p className="text-sm">{speaking?.fullName ?? "Lead"} · {workspace?.name}</p>
             <p className="text-4xl font-semibold tabular">{formatClock(elapsed)}</p>
-            <p className="text-sm text-muted">The phone dialer is open. Coming back after 15 seconds saves this time as connected. A shorter return is saved as rejected.</p>
             <CallResultButtons busy={busy} onResult={finish} />
           </div>
         ) : (

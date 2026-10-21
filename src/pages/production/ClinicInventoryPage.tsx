@@ -207,7 +207,6 @@ function InventoryShell() {
         <div>
           <p className="text-xs font-medium tracking-wide text-accent uppercase">Clinic inventory</p>
           <h1 className="mt-1 text-[26px] font-semibold tracking-tight">Product catalogue</h1>
-          <p className="mt-1 max-w-3xl text-sm text-muted">Stock, prices, images, and cart issue are stored in Supabase. Adding items to the cart does not reduce stock until you confirm a stock-out.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {workspaces.length > 1 ? (
@@ -508,7 +507,6 @@ function CartPanel({
         <h2 className="text-lg font-semibold">Shopping cart</h2>
         <Button type="button" variant="secondary" size="sm" disabled={!cart.lines.length} onClick={() => cart.clear()}>Clear cart</Button>
       </div>
-      <p className="text-sm text-muted">Cart quantities do not reduce inventory. Confirm stock-out only when the items leave the shelf.</p>
       {cart.lines.length === 0 ? <p className="py-8 text-sm text-muted">Cart is empty.</p> : (
         <div className="space-y-3">
           {cart.lines.map((line) => (

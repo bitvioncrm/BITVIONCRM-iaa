@@ -34,11 +34,7 @@ export function LoginPage() {
     <div className="grid min-h-dvh lg:grid-cols-[1.05fr_0.95fr]">
       <section className="hidden flex-col justify-between bg-sidebar p-12 text-white lg:flex">
         <Logo className="w-[300px]" />
-        <div className="max-w-md">
-          <p className="text-3xl leading-tight font-semibold tracking-tight">Perumbavoor clinic and IAA Kochi, on one desk.</p>
-          <p className="mt-4 text-sm leading-6 text-slate-400">Dr. K's Aesthetic Clinic, Vengola. Meta leads come in fresh. The admin assigns them. Clinic WhatsApp can run automatically. Institute stays on a direct call.</p>
-        </div>
-        <p className="text-xs text-slate-500">{supabaseConfigured ? "Sign in with your Supabase user." : "Configuration Required — Supabase Auth is not set."}</p>
+        <p className="max-w-md text-3xl leading-tight font-semibold tracking-tight">Perumbavoor clinic and IAA Kochi, on one desk.</p>
       </section>
       <section className="flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
@@ -78,14 +74,14 @@ export function LoginPage() {
             {notice ? <p className="text-sm">{notice}</p> : null}
             <Button type="submit" className="w-full" disabled={loading}>{loading ? "Please wait…" : "Sign In"}</Button>
           </form>
-          {supabaseConfigured ? null : <p className="mt-4 text-sm text-muted">Configuration Required. Business data is not stored in this browser.</p>}
+          {supabaseConfigured ? null : <p className="mt-4 text-sm text-muted">Sign-in is not available right now.</p>}
         </div>
       </section>
       <Dialog open={forgot} onOpenChange={setForgot}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Forgot password</DialogTitle>
-            <DialogDescription>Supabase sends the reset email. No password is stored in this app.</DialogDescription>
+            <DialogDescription>Enter the account email. A reset link will be sent.</DialogDescription>
           </DialogHeader>
           <Input type="email" value={resetEmail} onChange={(event) => setResetEmail(event.target.value)} placeholder="Email" />
           {notice ? <p className="text-sm">{notice}</p> : null}

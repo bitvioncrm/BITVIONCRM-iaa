@@ -35,7 +35,7 @@ export function ProductionModule({ module }: { module: "clinic" | "institute" | 
       <select className="rounded-md border border-line px-2 py-2" value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}>
         {workspaces.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
       </select>
-      {!workspace ? <p className="text-sm text-muted">Create a workspace in Supabase before using this desk.</p> : null}
+      {!workspace ? <p className="text-sm text-muted">This desk is not available.</p> : null}
       {workspace && module === "clinic" ? <ClinicPanel workspace={workspace} onError={setError} onNotice={setNotice} /> : null}
       {workspace && module === "institute" ? <InstitutePanel workspace={workspace} onError={setError} onNotice={setNotice} /> : null}
       {workspace && module === "inventory" ? <InventoryPanel workspace={workspace} onError={setError} onNotice={setNotice} /> : null}
@@ -115,7 +115,7 @@ function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
         setAppointments(rows as typeof appointments);
       }, onError)}>
         <h2 className="font-semibold">{doctor ? "Today's queue" : "Appointments"}</h2>
-        {doctor ? <p className="text-sm text-muted">Update status as the consultation moves. Booking stays with Reception.</p> : (
+        {doctor ? null : (
           <>
             <select name="patient" className="w-full rounded-md border border-line px-2 py-2" value={patientId} onChange={(event) => setPatientId(event.target.value)}>
               <option value="">Patient</option>
@@ -342,7 +342,6 @@ function InventoryPanel({ workspace, onError, onNotice }: PanelProps) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold">Clinic inventory</h2>
-            <p className="mt-1 text-sm text-muted">Add or remove products, change the unit count, and keep a selling price on each item. Opening stock from the 5 Oct 2026 sheet can be loaded once.</p>
           </div>
           {admin ? (
             <button
@@ -414,7 +413,7 @@ function InventoryPanel({ workspace, onError, onNotice }: PanelProps) {
           </div>
           <button className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-white" type="submit">Save product</button>
         </form>
-      ) : <p className="text-sm text-muted">You can add stock, reduce stock, and record usage. Adding or removing a product stays with Admin.</p>}
+      ) : null}
 
       <div className="flex flex-wrap gap-2">
         <button type="button" className={`rounded-md border px-3 py-1.5 text-sm ${categoryFilter === "all" ? "border-accent text-accent" : "border-line"}`} onClick={() => setCategoryFilter("all")}>All</button>
@@ -559,7 +558,7 @@ function BillingPanel({ workspace, onError, onNotice }: PanelProps) {
       const paid = Number(data.get("paid") || 0);
       if (paid > 0) await recordPayment({ organizationId: workspace.organizationId, workspaceId: workspace.id, invoiceId: invoice.id, amount: paid, method: "cash" });
       setInvoiceId(invoice.id);
-      onNotice(`${invoice.number} total ₹${invoice.total}. Payment recorded in PostgreSQL. No payment gateway was used.`);
+      onNotice(`${invoice.number} total ₹${invoice.total}. Payment recorded.`);
     }, onError)}>
       <h2 className="font-semibold">Invoice</h2>
       <select name="patient" className="w-full rounded-md border border-line px-2 py-2"><option value="">No patient</option>{patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.full_name}</option>)}</select>

@@ -82,11 +82,6 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
     return `/leads?${params.toString()}`;
   };
   const heading = desk === "clinic" ? "Clinic Overview" : desk === "institute" ? "Institute Overview" : "Business Overview";
-  const subtitle = desk === "clinic"
-    ? "Clinic leads, patients, appointments, inventory, and collections for the selected dates."
-    : desk === "institute"
-      ? "Institute enquiries, admissions, students, and collections for the selected dates."
-      : "Monitor clinic operations, institute admissions, lead conversion, inventory, collections, and team activity from one place.";
   const showClinic = desk !== "institute";
   const showInstitute = desk !== "clinic";
   const chartsReady = Boolean(data && !data.chartNote);
@@ -96,7 +91,6 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
       <header>
         <p className="text-xs font-medium tracking-wide text-accent uppercase">{bounds.label}</p>
         <h1 className="mt-1 text-[26px] font-semibold tracking-tight">{heading}</h1>
-        <p className="mt-1 max-w-3xl text-sm text-muted">{subtitle}</p>
       </header>
       {error ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
       {data?.errors.length ? <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{data.errors[0]}</p> : null}
