@@ -161,7 +161,6 @@ export function MetaLeadCentre() {
             <p className="font-medium text-ink">Server setup</p>
             <p className="mt-1">Webhook: <span className="font-mono">/.netlify/functions/meta-leadgen</span></p>
             <p className="mt-1">Enter App ID, App secret, Page access token, and verify token under Settings for each desk. Server environment variables remain a fallback when a desk has no saved token.</p>
-            <p className="mt-2"><Link className="font-medium text-accent" to="/settings">Open connection settings</Link></p>
             {!configured ? <p className="mt-2">Meta integration is not configured.</p> : null}
           </div>
         </section>

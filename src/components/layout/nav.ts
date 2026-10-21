@@ -12,7 +12,6 @@ import {
   MessageCircle,
   Package,
   Phone,
-  Radio,
   Receipt,
   ScrollText,
   Settings,
@@ -53,8 +52,6 @@ export const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
       { to: "/", label: "Business Overview", icon: LayoutDashboard, end: true },
       { to: "/clinic", label: "Clinic", icon: Building2, end: false },
       { to: "/institute", label: "Institute", icon: GraduationCap, end: false },
-      { to: "/meta", label: "Meta Lead Centre", icon: Radio, end: false },
-      { to: "/settings", label: "Connect Meta & WhatsApp", icon: Settings, end: false },
     ],
   },
   {

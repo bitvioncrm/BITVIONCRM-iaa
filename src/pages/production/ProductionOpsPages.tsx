@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChannelSettings } from "@/pages/production/ChannelSettings";
+import { MetaLeadCentre } from "@/pages/production/MetaLeadCentre";
 import { listLeads, listWorkspaces, updateLeadStatus, type ProductionLead, type WorkspaceOption } from "@/services/production-leads";
 import { createTask, listAudit, listTasks, revenueSummary } from "@/services/production-ops";
 import { useAuth } from "@/context/AuthContext";
@@ -147,5 +147,5 @@ export function ProductionActivity() {
 }
 
 export function ProductionSettings() {
-  return <ChannelSettings />;
+  return <MetaLeadCentre />;
 }
