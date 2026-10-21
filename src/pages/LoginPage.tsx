@@ -45,7 +45,6 @@ export function LoginPage() {
           <Logo className="mb-6 w-52" />
           <p className="text-xs font-semibold tracking-[0.16em] text-muted">Dr. K's CRM</p>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight">Welcome back</h1>
-          <p className="mt-2 text-sm text-muted">Assign clinic and institute leads, then see who spoke to whom and for how long.</p>
           <form
             className="mt-8 space-y-4"
             onSubmit={form.handleSubmit(async (values) => {
