@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { STATUS_LABEL, STATUS_ORDER } from "@/data/catalog";
-import { isExcelLead, LEAD_ORIGINS, type LeadOrigin } from "@/lib/lead-origin";
+import { leadOriginLabel, LEAD_ORIGINS, type LeadOrigin } from "@/lib/lead-origin";
 import { RANGE_OPTIONS, type RangeKey } from "@/lib/range";
 import { downloadText } from "@/lib/csv";
 import {
@@ -431,7 +431,7 @@ export function ProductionLeadsPage() {
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <Link to={`/leads/${lead.id}`} className="font-medium">{lead.fullName}</Link>
-                <p className="text-xs text-muted">{lead.status === "excel" || isExcelLead(lead.source, lead.sourcePlatform) ? "Excel sheet" : lead.source === "meta_ads" ? "Meta" : "Added in CRM"}</p>
+                <p className="text-xs text-muted">{leadOriginLabel(lead.status, lead.source, lead.sourcePlatform)}</p>
               </div>
               <StatusBadge status={lead.status} />
             </div>
@@ -517,7 +517,7 @@ export function ProductionLeadsPage() {
               <tr key={lead.id} className="border-b border-line last:border-0">
                 <td className="px-3 py-2 font-medium">
                   <Link to={`/leads/${lead.id}`}>{lead.fullName}</Link>
-                  <p className="text-xs text-muted">{lead.status === "excel" || isExcelLead(lead.source, lead.sourcePlatform) ? "Excel sheet" : lead.source === "meta_ads" ? "Meta" : "Added in CRM"}</p>
+                  <p className="text-xs text-muted">{leadOriginLabel(lead.status, lead.source, lead.sourcePlatform)}</p>
                 </td>
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2">

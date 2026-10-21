@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { loadChannelSecrets, uniqueSecrets } from "../lib/channel-secrets.ts";
+import { loadChannelSecrets, uniqueSecrets, type ChannelSecret } from "../lib/channel-secrets.ts";
+import { messageBody, phoneLookup, whatsappLeadFields } from "../lib/whatsapp-inbound.ts";
 
 function required(name: string) {
   return process.env[name]?.trim() || "";
@@ -7,6 +8,81 @@ function required(name: string) {
 
 function json(status: number, body: Record<string, string>) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+}
+
+function serviceHeaders(serviceKey: string, prefer = "return=minimal") {
+  return {
+    apikey: serviceKey,
+    authorization: `Bearer ${serviceKey}`,
+    "content-type": "application/json",
+    prefer,
+  };
+}
+
+type InboundMessage = {
+  id?: string;
+  from?: string;
+  text?: { body?: string };
+  referral?: { headline?: string; source_id?: string };
+};
+
+type WebhookValue = {
+  metadata?: { phone_number_id?: string };
+  contacts?: Array<{ wa_id?: string; profile?: { name?: string } }>;
+  messages?: InboundMessage[];
+  statuses?: Array<{ id?: string; status?: string }>;
+};
+
+async function findLeadId(supabaseUrl: string, serviceKey: string, workspaceId: string, from: string) {
+  const phone = phoneLookup(from);
+  if (!phone.full) return "";
+  const match = phone.tail
+    ? `or=(phone_digits.eq.${phone.full},phone_digits.eq.${phone.tail},phone_digits.like.*${phone.tail})`
+    : `phone_digits=eq.${phone.full}`;
+  const response = await fetch(
+    `${supabaseUrl}/rest/v1/leads?workspace_id=eq.${workspaceId}&deleted_at=is.null&select=id&limit=1&${match}`,
+    { headers: serviceHeaders(serviceKey) },
+  );
+  if (!response.ok) return "";
+  const rows = (await response.json()) as Array<{ id?: string }>;
+  return rows[0]?.id ?? "";
+}
+
+async function createLead(supabaseUrl: string, serviceKey: string, desk: ChannelSecret, message: InboundMessage, name: string) {
+  const fields = whatsappLeadFields({
+    name,
+    from: message.from ?? "",
+    headline: message.referral?.headline,
+    sourceId: message.referral?.source_id,
+  });
+  if (!fields.phone) return "";
+  const response = await fetch(`${supabaseUrl}/rest/v1/leads`, {
+    method: "POST",
+    headers: serviceHeaders(serviceKey, "return=representation"),
+    body: JSON.stringify({
+      organization_id: desk.organization_id,
+      workspace_id: desk.workspace_id,
+      ...fields,
+      imported_at: new Date().toISOString(),
+    }),
+  });
+  if (!response.ok) return "";
+  const rows = (await response.json()) as Array<{ id?: string }>;
+  const leadId = rows[0]?.id ?? "";
+  if (leadId) {
+    await fetch(`${supabaseUrl}/rest/v1/lead_status_history`, {
+      method: "POST",
+      headers: serviceHeaders(serviceKey),
+      body: JSON.stringify({
+        organization_id: desk.organization_id,
+        workspace_id: desk.workspace_id,
+        lead_id: leadId,
+        from_status: null,
+        to_status: "new",
+      }),
+    });
+  }
+  return leadId;
 }
 
 export default async (request: Request) => {
@@ -40,67 +116,66 @@ export default async (request: Request) => {
   });
   if (!signed) return json(401, { status: "invalid_signature" });
 
-  const payload = JSON.parse(raw) as {
-    entry?: Array<{ changes?: Array<{ value?: { metadata?: { phone_number_id?: string }; messages?: Array<{ id: string; from: string; text?: { body?: string } }>; statuses?: Array<{ id: string; status: string }> } }> }>;
-  };
-  const value = payload.entry?.[0]?.changes?.[0]?.value;
-  const phoneNumberId = value?.metadata?.phone_number_id ?? "";
-  const matched = whatsappRows.find((row) => row.phone_number_id && row.phone_number_id === phoneNumberId);
-  const organizationId = matched?.organization_id || required("WHATSAPP_ORGANIZATION_ID");
-  const workspaceId = matched?.workspace_id || required("WHATSAPP_WORKSPACE_ID");
-  if (!organizationId || !workspaceId) return json(503, { status: "configuration_required" });
-  const message = value?.messages?.[0];
-  const status = value?.statuses?.[0];
-  const externalId = message?.id ?? status?.id;
-  if (!externalId) return json(200, { status: "ignored" });
+  const payload = JSON.parse(raw) as { entry?: Array<{ changes?: Array<{ value?: WebhookValue }> }> };
+  const values = (payload.entry ?? []).flatMap((entry) => entry.changes ?? []).map((change) => change.value).filter((value): value is WebhookValue => Boolean(value));
+  let storedCount = 0;
+  let unmapped = 0;
 
-  const seen = await fetch(`${supabaseUrl}/rest/v1/processed_events`, {
-    method: "POST",
-    headers: {
-      apikey: serviceKey,
-      authorization: `Bearer ${serviceKey}`,
-      "content-type": "application/json",
-      prefer: "return=representation,resolution=ignore-duplicates",
-    },
-    body: JSON.stringify({ provider: "whatsapp", external_event_id: externalId }),
-  });
-  if (!seen.ok) return json(502, { status: "event_store_failed" });
-  const storedEvents = (await seen.json()) as unknown[];
-  if (!Array.isArray(storedEvents) || storedEvents.length === 0) return json(200, { status: "duplicate" });
+  for (const value of values) {
+    const phoneNumberId = value.metadata?.phone_number_id ?? "";
+    const desk = whatsappRows.find((row) => row.phone_number_id && row.phone_number_id === phoneNumberId);
+    for (const status of value.statuses ?? []) {
+      if (!status.id) continue;
+      await fetch(`${supabaseUrl}/rest/v1/messages?provider_message_id=eq.${encodeURIComponent(status.id)}`, {
+        method: "PATCH",
+        headers: serviceHeaders(serviceKey),
+        body: JSON.stringify({ status: status.status ?? "" }),
+      });
+    }
+    for (const message of value.messages ?? []) {
+      if (!message.id || !message.from) continue;
+      if (!desk) {
+        unmapped += 1;
+        continue;
+      }
+      const seen = await fetch(
+        `${supabaseUrl}/rest/v1/processed_events?provider=eq.whatsapp&external_event_id=eq.${encodeURIComponent(message.id)}&select=id&limit=1`,
+        { headers: serviceHeaders(serviceKey) },
+      );
+      const seenRows = seen.ok ? ((await seen.json()) as unknown[]) : [];
+      if (Array.isArray(seenRows) && seenRows.length > 0) continue;
 
-  if (message) {
-    const stored = await fetch(`${supabaseUrl}/rest/v1/messages`, {
-      method: "POST",
-      headers: {
-        apikey: serviceKey,
-        authorization: `Bearer ${serviceKey}`,
-        "content-type": "application/json",
-        prefer: "return=minimal",
-      },
-      body: JSON.stringify({
-        organization_id: organizationId,
-        workspace_id: workspaceId,
-        channel: "whatsapp",
-        direction: "inbound",
-        body: message.text?.body ?? "",
-        provider_message_id: message.id,
-        status: "received",
-      }),
-    });
-    if (!stored.ok) return json(502, { status: "message_insert_failed" });
+      const contact = value.contacts?.find((item) => item.wa_id === message.from);
+      const name = contact?.profile?.name ?? "";
+      let leadId = await findLeadId(supabaseUrl, serviceKey, desk.workspace_id, message.from);
+      if (!leadId) leadId = await createLead(supabaseUrl, serviceKey, desk, message, name);
+      if (!leadId) return json(502, { status: "lead_insert_failed" });
+
+      const storedMessage = await fetch(`${supabaseUrl}/rest/v1/messages`, {
+        method: "POST",
+        headers: serviceHeaders(serviceKey),
+        body: JSON.stringify({
+          organization_id: desk.organization_id,
+          workspace_id: desk.workspace_id,
+          lead_id: leadId,
+          channel: "whatsapp",
+          direction: "inbound",
+          body: messageBody(message.text?.body ?? "", message.referral?.headline ?? ""),
+          provider_message_id: message.id,
+          status: "received",
+        }),
+      });
+      if (!storedMessage.ok) return json(502, { status: "message_insert_failed" });
+      await fetch(`${supabaseUrl}/rest/v1/processed_events`, {
+        method: "POST",
+        headers: serviceHeaders(serviceKey, "return=minimal,resolution=ignore-duplicates"),
+        body: JSON.stringify({ provider: "whatsapp", external_event_id: message.id }),
+      });
+      storedCount += 1;
+    }
   }
 
-  if (status) {
-    await fetch(`${supabaseUrl}/rest/v1/messages?provider_message_id=eq.${encodeURIComponent(status.id)}`, {
-      method: "PATCH",
-      headers: {
-        apikey: serviceKey,
-        authorization: `Bearer ${serviceKey}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ status: status.status }),
-    });
-  }
-
-  return json(200, { status: "stored" });
+  if (storedCount > 0) return json(200, { status: "stored" });
+  if (unmapped > 0) return json(200, { status: "unmapped_number" });
+  return json(200, { status: "ignored" });
 };
