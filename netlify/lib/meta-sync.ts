@@ -43,13 +43,13 @@ export async function syncMetaLeads() {
     for (const form of formList.body.data ?? []) {
       if (!form.id) continue;
       forms += 1;
-      const leads = await graphGet(`${form.id}/leads?fields=id&limit=25`, desk.access_token);
+      const leads = await graphAll(`${form.id}/leads?fields=id&limit=100`, desk.access_token);
       if (!leads.ok) {
         failed += 1;
-        reason = graphReason(leads.body);
+        reason = leads.reason;
         continue;
       }
-      const ids = (leads.body.data ?? []).map((lead) => lead.id).filter(Boolean);
+      const ids = leads.rows.map((lead) => lead.id).filter(Boolean);
       const fresh = await missingLeadIds(supabaseUrl, serviceKey, ids);
       for (const leadId of fresh) {
         const result = await processLeadgen({ leadgenId: leadId, formId: form.id, pageId: desk.page_id, adId: "" });
@@ -96,6 +96,19 @@ async function ensureLeadWebhook(desks: Awaited<ReturnType<typeof loadChannelSec
 
 function graphReason(body: GraphError) {
   return (body.error?.message ?? "graph_failed").replace(/access_token=[^&\s]+/g, "").slice(0, 160);
+}
+
+async function graphAll(path: string, token: string) {
+  const rows: Array<Record<string, string>> = [];
+  let next = `https://graph.facebook.com/v21.0/${path}${path.includes("?") ? "&" : "?"}access_token=${encodeURIComponent(token)}`;
+  for (let page = 0; page < 30 && next; page += 1) {
+    const response = await fetch(next);
+    const body = (await response.json()) as GraphError & { data?: Array<Record<string, string>>; paging?: { next?: string } };
+    if (!response.ok) return { ok: false, rows, reason: graphReason(body) };
+    rows.push(...(body.data ?? []));
+    next = body.paging?.next ?? "";
+  }
+  return { ok: true, rows, reason: "" };
 }
 
 async function missingLeadIds(supabaseUrl: string, serviceKey: string, ids: string[]) {

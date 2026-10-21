@@ -34,33 +34,35 @@ async function sync(supabaseUrl: string, serviceKey: string, secrets: SecretRow[
   let stored = 0;
   let failed = 0;
   let forms = 0;
+  let seen = 0;
   let reason = "";
-  const seen = new Set<string>();
+  const seenPages = new Set<string>();
   for (const desk of secrets) {
-    if (!desk.page_id || !desk.access_token || seen.has(desk.page_id)) continue;
-    seen.add(desk.page_id);
+    if (!desk.page_id || !desk.access_token || seenPages.has(desk.page_id)) continue;
+    seenPages.add(desk.page_id);
     const subscribed = await fetch(`https://graph.facebook.com/v21.0/${desk.page_id}/subscribed_apps`, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ subscribed_fields: "leadgen", access_token: desk.access_token }),
     });
     if (!subscribed.ok && !reason) reason = "page_subscribe_failed";
-    const formList = await graphGet(`${desk.page_id}/leadgen_forms?fields=id&limit=100`, desk.access_token);
+    const formList = await graphAll(`${desk.page_id}/leadgen_forms?fields=id,leads_count&limit=100`, desk.access_token);
     if (!formList.ok) {
       failed += 1;
-      reason = graphReason(formList.body);
+      reason = formList.reason;
       continue;
     }
-    for (const form of formList.body.data ?? []) {
+    for (const form of formList.rows) {
       if (!form.id) continue;
       forms += 1;
-      const leads = await graphGet(`${form.id}/leads?fields=id&limit=25`, desk.access_token);
+      const leads = await graphAll(`${form.id}/leads?fields=id&limit=100`, desk.access_token);
       if (!leads.ok) {
         failed += 1;
-        reason = graphReason(leads.body);
+        reason = leads.reason;
         continue;
       }
-      const ids = (leads.body.data ?? []).map((lead) => lead.id).filter(Boolean);
+      seen += leads.rows.length;
+      const ids = leads.rows.map((lead) => lead.id).filter(Boolean);
       const fresh = await missingLeadIds(supabaseUrl, serviceKey, ids);
       for (const leadId of fresh) {
         const outcome = await storeLead(supabaseUrl, serviceKey, secrets, desks, desk, form.id, leadId);
@@ -72,7 +74,8 @@ async function sync(supabaseUrl: string, serviceKey: string, secrets: SecretRow[
       }
     }
   }
-  return { status: stored > 0 ? "stored" : failed > 0 ? "partial" : "current", stored, failed, forms, reason, webhook };
+  const campaigns = await listCampaigns(secrets);
+  return { status: stored > 0 ? "stored" : failed > 0 ? "partial" : "current", stored, failed, forms, seen, campaigns: campaigns.count, campaign_list: campaigns.list, reason: reason || campaigns.reason, webhook };
 }
 
 const LEAD_WEBHOOK = "https://bitvioncrm-drks.netlify.app/.netlify/functions/meta-leadgen";
@@ -210,6 +213,32 @@ async function graphGet(path: string, token: string) {
   return { ok: response.ok, body };
 }
 
+async function graphAll(path: string, token: string) {
+  const rows: Array<Record<string, string>> = [];
+  let next = `https://graph.facebook.com/v21.0/${path}${path.includes("?") ? "&" : "?"}access_token=${encodeURIComponent(token)}`;
+  for (let page = 0; page < 30 && next; page += 1) {
+    const response = await fetch(next);
+    const body = (await response.json()) as GraphError & { data?: Array<Record<string, string>>; paging?: { next?: string } };
+    if (!response.ok) return { ok: false, rows, reason: graphReason(body) };
+    rows.push(...(body.data ?? []));
+    next = body.paging?.next ?? "";
+  }
+  return { ok: true, rows, reason: "" };
+}
+
+async function listCampaigns(secrets: SecretRow[]) {
+  const desk = secrets.find((row) => row.ad_account_id && row.access_token);
+  if (!desk) return { count: 0, list: "", reason: "no_ads_account" };
+  const account = desk.ad_account_id.replace(/^act_/i, "");
+  const listed = await graphAll(`act_${account}/campaigns?fields=name,objective,effective_status&limit=100`, desk.access_token);
+  if (!listed.ok) return { count: 0, list: "", reason: listed.reason };
+  const list = listed.rows
+    .map((row) => `${row.name ?? "Campaign"} [${row.objective ?? ""}${row.effective_status ? ` ${row.effective_status}` : ""}]`)
+    .join("; ")
+    .slice(0, 1800);
+  return { count: listed.rows.length, list, reason: "" };
+}
+
 type SecretRow = {
   organization_id: string;
   workspace_id: string;
@@ -248,11 +277,19 @@ async function loadMappings(supabaseUrl: string, serviceKey: string, formId: str
 }
 
 async function missingLeadIds(supabaseUrl: string, serviceKey: string, ids: string[]) {
-  if (!ids.length) return [];
-  const list = ids.map((id) => encodeURIComponent(id)).join(",");
-  const response = await fetch(`${supabaseUrl}/rest/v1/leads?select=meta_leadgen_id&meta_leadgen_id=in.(${list})`, { headers: headers(serviceKey) });
-  if (!response.ok) return ids;
-  const rows = (await response.json()) as Array<{ meta_leadgen_id?: string }>;
-  const have = new Set(rows.map((row) => row.meta_leadgen_id).filter(Boolean));
-  return ids.filter((id) => !have.has(id));
+  const fresh: string[] = [];
+  for (let index = 0; index < ids.length; index += 40) {
+    const slice = ids.slice(index, index + 40);
+    if (!slice.length) continue;
+    const list = slice.map((id) => encodeURIComponent(id)).join(",");
+    const response = await fetch(`${supabaseUrl}/rest/v1/leads?select=meta_leadgen_id&meta_leadgen_id=in.(${list})`, { headers: headers(serviceKey) });
+    if (!response.ok) {
+      fresh.push(...slice);
+      continue;
+    }
+    const rows = (await response.json()) as Array<{ meta_leadgen_id?: string }>;
+    const have = new Set(rows.map((row) => row.meta_leadgen_id).filter(Boolean));
+    fresh.push(...slice.filter((id) => !have.has(id)));
+  }
+  return fresh;
 }
