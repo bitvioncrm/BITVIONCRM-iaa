@@ -10,8 +10,10 @@ import { useAuth } from "@/context/AuthContext";
 import { canOperateWhatsApp } from "@/lib/production-access";
 import {
   assignLeadCount,
+  assignUnassignedLeads,
   leadAssignmentTotals,
   listAssignableMembers,
+  type AssignmentTotals,
   listLeads,
   listWorkspaces,
   type MemberOption,
@@ -25,7 +27,7 @@ export function ProductionTeamPage() {
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
   const [workspaceId, setWorkspaceId] = useState("");
   const [members, setMembers] = useState<MemberOption[]>([]);
-  const [totals, setTotals] = useState<{ unassigned: number; assigned: Record<string, number> }>({ unassigned: 0, assigned: {} });
+  const [totals, setTotals] = useState<AssignmentTotals>({ unassigned: 0, desks: {}, assigned: {} });
   const [assignee, setAssignee] = useState("");
   const [count, setCount] = useState("10");
   const [error, setError] = useState("");
@@ -63,7 +65,7 @@ export function ProductionTeamPage() {
     <div className="space-y-4">
       <PageHeader
         title="Team"
-        description="Live staff from Supabase roles. Assign fresh Meta leads to telecallers on the selected desk."
+        description="Assign waiting leads to the telecaller on the selected desk. Clinic leads stay on Dr. K's Aesthetic Clinic. Institute leads stay on IAA Kochi."
         actions={workspaces.length > 1 ? (
           <Select className="w-64" value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}>
             {workspaces.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -74,8 +76,8 @@ export function ProductionTeamPage() {
       {notice ? <p className="rounded-md border border-line bg-white px-3 py-2 text-sm">{notice}</p> : null}
       <div className="grid gap-3 sm:grid-cols-3">
         <Card className="p-4"><p className="text-xs text-muted">Staff on this desk</p><p className="mt-1 text-2xl font-semibold tabular">{members.length}</p></Card>
-        <Card className="p-4"><p className="text-xs text-muted">Fresh unassigned leads</p><p className="mt-1 text-2xl font-semibold tabular">{totals.unassigned}</p></Card>
-        <Card className="p-4"><p className="text-xs text-muted">Assigned across desks</p><p className="mt-1 text-2xl font-semibold tabular">{Object.values(totals.assigned).reduce((sum, value) => sum + Number(value), 0)}</p></Card>
+        <Card className="p-4"><p className="text-xs text-muted">Waiting on this desk</p><p className="mt-1 text-2xl font-semibold tabular">{Number(totals.desks[workspaceId] ?? 0).toLocaleString("en-IN")}</p></Card>
+        <Card className="p-4"><p className="text-xs text-muted">Assigned on this desk</p><p className="mt-1 text-2xl font-semibold tabular">{members.reduce((sum, member) => sum + Number(totals.assigned[member.userId] ?? 0), 0).toLocaleString("en-IN")}</p></Card>
       </div>
       <Card className="overflow-x-auto">
         <table className="w-full min-w-[720px] text-left text-[13px]">
@@ -105,14 +107,14 @@ export function ProductionTeamPage() {
           </label>
           <label className="text-sm">
             How many
-            <Input className="mt-1 w-28" type="number" min={1} max={100} value={count} onChange={(event) => setCount(event.target.value)} />
+            <Input className="mt-1 w-28" type="number" min={1} max={Math.max(Number(totals.desks[workspaceId] ?? 0), 1)} value={count} onChange={(event) => setCount(event.target.value)} />
           </label>
           <Button
             type="button"
-            disabled={busy || !assignee || totals.unassigned === 0}
+            disabled={busy || !assignee || Number(totals.desks[workspaceId] ?? 0) === 0}
             onClick={() => {
               const limit = Number(count);
-              if (!Number.isFinite(limit) || limit < 1) {
+              if (!Number.isInteger(limit) || limit < 1) {
                 setError("Enter how many leads to assign.");
                 return;
               }
@@ -120,14 +122,36 @@ export function ProductionTeamPage() {
               setError("");
               void assignLeadCount(assignee, limit)
                 .then((moved) => {
-                  setNotice(moved > 0 ? `Assigned ${moved} lead${moved === 1 ? "" : "s"}.` : "No unassigned leads were available.");
+                  const deskName = workspace?.name ?? "this desk";
+                  setNotice(moved > 0 ? `Assigned ${moved.toLocaleString("en-IN")} ${deskName} lead${moved === 1 ? "" : "s"}.` : `No waiting leads on ${deskName}.`);
                   return reload();
                 })
                 .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Assignment failed"))
                 .finally(() => setBusy(false));
             }}
           >
-            {busy ? "Assigning…" : "Assign fresh leads"}
+            {busy ? "Assigning…" : "Assign"}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={busy || !assignee || Number(totals.desks[workspaceId] ?? 0) === 0}
+            onClick={() => {
+              const waiting = Number(totals.desks[workspaceId] ?? 0);
+              const person = members.find((item) => item.userId === assignee);
+              if (!window.confirm(`Assign all ${waiting.toLocaleString("en-IN")} waiting leads on ${workspace?.name ?? "this desk"} to ${person?.name ?? "this telecaller"}?`)) return;
+              setBusy(true);
+              setError("");
+              void assignUnassignedLeads(workspaceId, assignee)
+                .then((moved) => {
+                  setNotice(moved > 0 ? `Assigned ${moved.toLocaleString("en-IN")} leads on ${workspace?.name ?? "this desk"}.` : `No waiting leads on ${workspace?.name ?? "this desk"}.`);
+                  return reload();
+                })
+                .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Assignment failed"))
+                .finally(() => setBusy(false));
+            }}
+          >
+            Assign all waiting
           </Button>
           <Link className="text-sm text-accent underline-offset-2 hover:underline" to="/leads?status=new&assigned=unassigned">Open unassigned leads</Link>
         </Card>

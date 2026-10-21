@@ -270,12 +270,20 @@ export async function assignUnassignedLeads(workspaceId: string, assigneeId: str
   return Number(data ?? 0);
 }
 
-export async function leadAssignmentTotals() {
+export type AssignmentTotals = {
+  unassigned: number;
+  desks: Record<string, number>;
+  assigned: Record<string, number>;
+};
+
+export async function leadAssignmentTotals(): Promise<AssignmentTotals> {
   const { data, error } = await client().rpc("lead_assignment_totals");
   if (error) throw new Error(error.message);
-  const payload = (data ?? {}) as { unassigned?: number; assigned?: Record<string, number> };
+  const payload = (data ?? {}) as { unassigned?: number; desks?: Record<string, number>; assigned?: Record<string, number> };
+  const desks = Object.fromEntries(Object.entries(payload.desks ?? {}).map(([id, count]) => [id, Number(count)]));
   return {
     unassigned: Number(payload.unassigned ?? 0),
+    desks,
     assigned: payload.assigned ?? {},
   };
 }
@@ -286,9 +294,29 @@ export async function assignLeadCount(assigneeId: string, limit: number) {
   return Number(data ?? 0);
 }
 
+async function assertDeskTelecaller(workspaceId: string, assignedTo: string) {
+  const workspace = await client().from("workspaces").select("workspace_type").eq("id", workspaceId).maybeSingle();
+  if (workspace.error) throw new Error(workspace.error.message);
+  const desk = String(workspace.data?.workspace_type ?? "");
+  const allowed = deskCallerRoles(desk);
+  if (!allowed.length) throw new Error("This lead is not on the clinic or institute desk.");
+  const members = await client().from("user_roles").select("roles(key)").eq("workspace_id", workspaceId).eq("user_id", assignedTo);
+  if (members.error) throw new Error(members.error.message);
+  const match = (members.data ?? []).some((row) => {
+    const roles = row.roles as { key: string } | { key: string }[] | null;
+    const role = Array.isArray(roles) ? roles[0]?.key : roles?.key;
+    return Boolean(role && allowed.includes(role));
+  });
+  if (!match) {
+    throw new Error(desk === "institute" ? "Assign institute leads only to an institute telecaller." : "Assign clinic leads only to a clinic telecaller.");
+  }
+}
+
 export async function assignLead(lead: Pick<ProductionLead, "id" | "organizationId" | "workspaceId">, assignedTo: string) {
+  await assertDeskTelecaller(lead.workspaceId, assignedTo);
   const userId = await currentUserId();
-  const { error } = await client().from("leads").update({ assigned_to: assignedTo, updated_by: userId, updated_at: new Date().toISOString() }).eq("id", lead.id);
+  const now = new Date().toISOString();
+  const { error } = await client().from("leads").update({ assigned_to: assignedTo, assigned_at: now, updated_by: userId, updated_at: now }).eq("id", lead.id);
   if (error) throw new Error(error.message);
   const { error: assignmentError } = await client().from("lead_assignments").insert({
     organization_id: lead.organizationId,

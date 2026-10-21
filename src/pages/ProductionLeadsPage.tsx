@@ -19,9 +19,11 @@ import {
   addLeadNote,
   assignLead,
   assignLeadCount,
+  assignUnassignedLeads,
   createLead,
   downloadWorkspaceCsv,
   leadAssignmentTotals,
+  type AssignmentTotals,
   listAssignableMembers,
   listLeads,
   listWorkspaces,
@@ -64,7 +66,7 @@ export function ProductionLeadsPage() {
   const [draft, setDraft] = useState({ fullName: "", phone: "", email: "", location: "", position: "" });
   const [assignCounts, setAssignCounts] = useState<Record<string, string>>({});
   const [assigningId, setAssigningId] = useState("");
-  const [totals, setTotals] = useState({ unassigned: 0, assigned: {} as Record<string, number> });
+  const [totals, setTotals] = useState<AssignmentTotals>({ unassigned: 0, desks: {}, assigned: {} });
   const [notice, setNotice] = useState("");
   const [callStats, setCallStats] = useState<Record<string, CallTotals>>({});
   const [live, setLive] = useState<LiveCall | null>(null);
@@ -105,7 +107,7 @@ export function ProductionLeadsPage() {
   useEffect(() => {
     void leadAssignmentTotals()
       .then(setTotals)
-      .catch(() => setTotals({ unassigned: 0, assigned: {} }));
+      .catch(() => setTotals({ unassigned: 0, desks: {}, assigned: {} }));
   }, [reload]);
 
   useEffect(() => {
@@ -272,57 +274,84 @@ export function ProductionLeadsPage() {
           {STATUS_ORDER.map((item) => <option key={item} value={item}>{STATUS_LABEL[item]}</option>)}
         </Select>
       </div>
-      {canAssign ? <section className="space-y-2 rounded-lg border border-line bg-white p-3">
-        <p className="text-sm">{totals.unassigned.toLocaleString("en-IN")} unassigned leads can be assigned. Enter how many each telecaller should receive. Institute leads are placed on IAA Kochi.</p>
-        {[...members].sort((left, right) => {
-          const leftDesk = workspaces.find((item) => item.id === left.workspaceId)?.workspaceType;
-          const rightDesk = workspaces.find((item) => item.id === right.workspaceId)?.workspaceType;
-          return leftDesk === rightDesk ? left.name.localeCompare(right.name) : leftDesk === "clinic" ? -1 : 1;
-        }).map((member) => {
-          const deskName = workspaces.find((item) => item.id === member.workspaceId)?.name ?? "";
-          const held = Number(totals.assigned[member.userId] ?? 0);
-          return (
-            <form
-              key={member.userId}
-              className="flex flex-wrap items-center gap-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                const limit = Number(assignCounts[member.userId] ?? "");
-                if (!Number.isInteger(limit) || limit < 1) {
-                  setError("Enter how many leads to assign.");
-                  return;
-                }
-                if (!window.confirm(`Assign ${limit.toLocaleString("en-IN")} leads to ${member.name} on ${deskName}?`)) return;
-                setAssigningId(member.userId);
-                void assignLeadCount(member.userId, limit)
-                  .then((count) => {
+      {canAssign ? (
+        <section className="grid gap-3 lg:grid-cols-2">
+          {deskWorkspaces.map((item) => {
+            const people = members.filter((member) => member.workspaceId === item.id).sort((left, right) => left.name.localeCompare(right.name));
+            const waiting = Number(totals.desks[item.id] ?? 0);
+            const deskLabel = item.workspaceType === "institute" ? "Institute" : "Clinic";
+            return (
+              <div key={item.id} className="space-y-3 rounded-lg border border-line bg-white p-3">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted">{deskLabel}</p>
+                  <h2 className="text-sm font-semibold">{item.name}</h2>
+                  <p className="mt-1 text-sm text-muted">{waiting.toLocaleString("en-IN")} waiting on this desk. Newest Meta leads are handed out first, and each lead stays on {item.name}.</p>
+                </div>
+                {people.length === 0 ? <p className="text-sm text-muted">Add a {deskLabel.toLowerCase()} telecaller before these leads can be assigned.</p> : people.map((member) => {
+                  const held = Number(totals.assigned[member.userId] ?? 0);
+                  const finish = (count: number) => {
                     setError("");
-                    setNotice(`Assigned ${count.toLocaleString("en-IN")} leads to ${member.name}.`);
+                    setNotice(`Assigned ${count.toLocaleString("en-IN")} leads to ${member.name} on ${item.name}.`);
                     setAssignCounts((current) => ({ ...current, [member.userId]: "" }));
                     setPage(1);
                     setReload((value) => value + 1);
-                  })
-                  .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not assign the leads"))
-                  .finally(() => setAssigningId(""));
-              }}
-            >
-              <p className="min-w-64 text-sm">{member.name} · {productionRoleLabel(member.role)} · {held.toLocaleString("en-IN")} assigned</p>
-              <Input
-                type="number"
-                min={1}
-                max={Math.max(totals.unassigned, 1)}
-                required
-                placeholder="How many"
-                className="w-32"
-                value={assignCounts[member.userId] ?? ""}
-                onChange={(event) => setAssignCounts((current) => ({ ...current, [member.userId]: event.target.value }))}
-              />
-              <Button type="submit" disabled={Boolean(assigningId) || totals.unassigned < 1}>{assigningId === member.userId ? "Assigning…" : "Assign"}</Button>
-              <span className="text-xs text-muted">{deskName}</span>
-            </form>
-          );
-        })}
-      </section> : null}
+                  };
+                  return (
+                    <form
+                      key={member.userId}
+                      className="flex flex-wrap items-center gap-2"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        const limit = Number(assignCounts[member.userId] ?? "");
+                        if (!Number.isInteger(limit) || limit < 1) {
+                          setError("Enter how many leads to assign.");
+                          return;
+                        }
+                        if (!window.confirm(`Assign ${limit.toLocaleString("en-IN")} ${item.name} leads to ${member.name}?`)) return;
+                        setAssigningId(member.userId);
+                        void assignLeadCount(member.userId, limit)
+                          .then(finish)
+                          .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not assign the leads"))
+                          .finally(() => setAssigningId(""));
+                      }}
+                    >
+                      <p className="min-w-56 text-sm">{member.name} · {productionRoleLabel(member.role)} · {held.toLocaleString("en-IN")} assigned</p>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={Math.max(waiting, 1)}
+                        required
+                        placeholder="How many"
+                        className="w-32"
+                        value={assignCounts[member.userId] ?? ""}
+                        onChange={(event) => setAssignCounts((current) => ({ ...current, [member.userId]: event.target.value }))}
+                      />
+                      <Button type="submit" disabled={Boolean(assigningId) || waiting < 1}>{assigningId === member.userId ? "Assigning…" : "Assign"}</Button>
+                      {people.length === 1 ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={Boolean(assigningId) || waiting < 1}
+                          onClick={() => {
+                            if (!window.confirm(`Assign all ${waiting.toLocaleString("en-IN")} waiting leads on ${item.name} to ${member.name}?`)) return;
+                            setAssigningId(member.userId);
+                            void assignUnassignedLeads(item.id, member.userId)
+                              .then(finish)
+                              .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not assign the leads"))
+                              .finally(() => setAssigningId(""));
+                          }}
+                        >
+                          Assign all waiting
+                        </Button>
+                      ) : null}
+                    </form>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </section>
+      ) : null}
       {workspace ? (
         <form
           className="grid gap-2 rounded-lg border border-line bg-white p-3 md:grid-cols-6"
