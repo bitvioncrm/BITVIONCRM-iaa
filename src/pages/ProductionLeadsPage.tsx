@@ -6,6 +6,7 @@ import { ProductionImportDialog } from "@/components/leads/ProductionImportDialo
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Pagination } from "@/components/shared/Pagination";
 import { PhoneLink } from "@/components/shared/PhoneLink";
+import { WhatsAppLink } from "@/components/shared/WhatsAppLink";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,7 +40,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useDialEndedAt } from "@/components/calls/useDialEndedAt";
 import { formatClock, outcomeFromPhoneReturn, type CallOutcome, type CallTotals } from "@/lib/call-time";
 import { phoneTel } from "@/lib/phone";
-import { canOperateWhatsApp, productionRoleLabel, whatsAppDesk } from "@/lib/production-access";
+import { canOperateWhatsApp, canWriteWhatsApp, productionRoleLabel, whatsAppDesk } from "@/lib/production-access";
 import { activeCall, endCall, leadCallStats, startCall, type LiveCall } from "@/services/production-ops";
 import type { LeadStatus } from "@/types";
 
@@ -47,6 +48,7 @@ export function ProductionLeadsPage() {
   const { productionUser } = useAuth();
   const callerDesk = whatsAppDesk(productionUser?.roleKey ?? "");
   const canAssign = canOperateWhatsApp(productionUser?.roleKey ?? "");
+  const canWhatsApp = canWriteWhatsApp(productionUser?.roleKey ?? "");
   const { desk, setDesk, bounds, rangeKey, setRangeKey, customFrom, setCustomFrom, customTo, setCustomTo } = useDesk();
   const [params] = useSearchParams();
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
@@ -435,7 +437,12 @@ export function ProductionLeadsPage() {
                   <Link to={`/leads/${lead.id}`}>{lead.fullName}</Link>
                   <p className="text-xs text-muted">{lead.status === "excel" || isExcelLead(lead.source, lead.sourcePlatform) ? "Excel sheet" : lead.source === "meta_ads" ? "Meta" : "Added in CRM"}</p>
                 </td>
-                <td className="px-3 py-2"><PhoneLink phone={lead.phone} onClick={() => { if (!live && !callBusy) beginCall(lead); }} /></td>
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <PhoneLink phone={lead.phone} onClick={() => { if (!live && !callBusy) beginCall(lead); }} />
+                    {canWhatsApp ? <WhatsAppLink phone={lead.phone} label={`Open WhatsApp for ${lead.fullName}`} /> : null}
+                  </div>
+                </td>
                 <td className="px-3 py-2">
                   <Select
                     value={lead.status}

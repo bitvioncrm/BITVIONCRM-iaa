@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { PhoneLink } from "@/components/shared/PhoneLink";
+import { WhatsAppLink } from "@/components/shared/WhatsAppLink";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { STATUS_LABEL, STATUS_ORDER } from "@/data/catalog";
@@ -9,10 +10,14 @@ import { CallResultButtons } from "@/components/calls/CallResultButtons";
 import { useDialEndedAt } from "@/components/calls/useDialEndedAt";
 import { formatClock, outcomeFromPhoneReturn, type CallOutcome, type CallTotals } from "@/lib/call-time";
 import { phoneTel } from "@/lib/phone";
+import { canWriteWhatsApp } from "@/lib/production-access";
+import { useAuth } from "@/context/AuthContext";
 import { createCourse, createPatient, createStudent, endCall, leadCallStats, startCall } from "@/services/production-ops";
 import type { LeadStatus } from "@/types";
 
 export function ProductionLeadDetail({ id }: { id: string }) {
+  const { productionUser } = useAuth();
+  const canWhatsApp = canWriteWhatsApp(productionUser?.roleKey ?? "");
   const [lead, setLead] = useState<ProductionLead | null | undefined>(undefined);
   const [notes, setNotes] = useState<{ id: string; body: string; created_at: string }[]>([]);
   const [followups, setFollowups] = useState<{ id: string; due_at: string; notes: string; status: string }[]>([]);
@@ -81,14 +86,17 @@ export function ProductionLeadDetail({ id }: { id: string }) {
     <div className="space-y-4">
       <Link to="/leads" className="text-sm text-muted">Back to leads</Link>
       <h1 className="text-2xl font-semibold">{lead.fullName}</h1>
-      <PhoneLink phone={lead.phone} onClick={() => {
-        if (sessionId || !phoneTel(lead.phone)) return;
-        void startCall(lead.organizationId, lead.workspaceId, lead.id).then((row) => {
-          setSessionId(row.id);
-          setStartedAt(row.startedAt);
-          setNotice("");
-        }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Start call failed"));
-      }} />
+      <div className="flex items-center gap-2">
+        <PhoneLink phone={lead.phone} onClick={() => {
+          if (sessionId || !phoneTel(lead.phone)) return;
+          void startCall(lead.organizationId, lead.workspaceId, lead.id).then((row) => {
+            setSessionId(row.id);
+            setStartedAt(row.startedAt);
+            setNotice("");
+          }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Start call failed"));
+        }} />
+        {canWhatsApp ? <WhatsAppLink phone={lead.phone} label={`Open WhatsApp for ${lead.fullName}`} /> : null}
+      </div>
       <p className="text-sm text-muted">{lead.email} · {lead.location} · {lead.position}</p>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {notice ? <p className="text-sm">{notice}</p> : null}

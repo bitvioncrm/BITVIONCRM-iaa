@@ -127,6 +127,29 @@ export async function countWhatsAppRecipients(workspaceId: string, filters: { fr
   return { total: result.total, pages: result.pages };
 }
 
+export interface WhatsAppNumber {
+  workspaceId: string;
+  name: string;
+  workspaceType: string;
+  displayPhone: string;
+}
+
+export async function listWhatsAppNumbers() {
+  const { data, error } = await client().rpc("list_whatsapp_numbers");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    workspaceId: String(row.workspace_id),
+    name: String(row.workspace_name ?? ""),
+    workspaceType: String(row.workspace_type ?? ""),
+    displayPhone: String(row.display_phone ?? ""),
+  })) satisfies WhatsAppNumber[];
+}
+
+export async function saveWhatsAppNumber(workspaceId: string, displayPhone: string) {
+  const { error } = await client().rpc("save_whatsapp_number", { p_workspace: workspaceId, p_display_phone: displayPhone.trim() });
+  if (error) throw new Error(error.message);
+}
+
 export async function sendWhatsAppMessage(input: { leadId: string; to: string; text: string; bulkSize: number }) {
   const session = await client().auth.getSession();
   const token = session.data.session?.access_token;

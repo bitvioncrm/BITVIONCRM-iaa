@@ -16,6 +16,10 @@ if (pathsForRole("institute_user").includes("/clinic")) throw new Error("institu
 if (!pathsForRole("super_admin").includes("/billing")) throw new Error("super billing");
 if (pathsForRole("receptionist").includes("/billing")) throw new Error("receptionist billing");
 if (pathsForRole("doctor").includes("/billing")) throw new Error("doctor billing");
+if (roleAllowsPath("doctor", "/whatsapp") || roleAllowsPath("receptionist", "/whatsapp")) throw new Error("whatsapp is for admin and telecallers");
+if (!roleAllowsPath("clinic_telecaller", "/whatsapp") || !roleAllowsPath("institute_telecaller", "/whatsapp") || !roleAllowsPath("admin", "/whatsapp")) {
+  throw new Error("whatsapp roles");
+}
 if (!canOperateWhatsApp("admin") || canOperateWhatsApp("doctor") || canOperateWhatsApp("receptionist") || canOperateWhatsApp("clinic_telecaller") || canOperateWhatsApp("institute_telecaller")) {
   throw new Error("whatsapp operate");
 }
