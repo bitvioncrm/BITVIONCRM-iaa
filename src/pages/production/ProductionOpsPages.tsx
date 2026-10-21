@@ -29,7 +29,7 @@ export function ProductionPipeline() {
   useEffect(() => {
     if (!workspaceId) return;
     setLoading(true);
-    void listLeads({ page: 1, workspaceId })
+    void listLeads({ page: 1, workspaceId, counted: false })
       .then((result) => setRows(result.leads))
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load leads"))
       .finally(() => setLoading(false));

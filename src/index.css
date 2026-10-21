@@ -57,7 +57,7 @@
 
 @layer utilities {
   .page-enter {
-    animation: page-enter 180ms ease;
+    animation: page-enter 90ms ease-out;
   }
 
   .tabular {
@@ -67,12 +67,10 @@
 
 @keyframes page-enter {
   from {
-    opacity: 0;
-    transform: translateY(4px);
+    opacity: 0.65;
   }
   to {
     opacity: 1;
-    transform: none;
   }
 }
 

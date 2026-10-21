@@ -29,6 +29,8 @@ import {
   type AssignmentTotals,
   listAssignableMembers,
   listLeads,
+  loadLeadList,
+  PAGE_SIZE,
   listWorkspaces,
   updateLeadStatus,
   type MemberOption,
@@ -112,6 +114,7 @@ export function ProductionLeadsPage() {
   }, [workspaces]);
 
   useEffect(() => {
+    if (quietRefresh.current) return;
     void leadAssignmentTotals()
       .then(setTotals)
       .catch(() => setTotals({ unassigned: 0, desks: {}, assigned: {} }));
@@ -123,15 +126,30 @@ export function ProductionLeadsPage() {
     const silent = quietRefresh.current;
     quietRefresh.current = false;
     if (!silent) setLoading(true);
-    void listLeads({ page, workspaceId: workspaceId || undefined, status, search: searchQuery, source, origin, unassigned, createdFrom: bounds.from, createdTo: bounds.to })
-      .then((result) => {
-        setLeads(result.leads);
-        setPages(result.pages);
-        setTotal(result.total);
+    let active = true;
+    const pending = loadLeadList({ page, workspaceId: workspaceId || undefined, status, search: searchQuery, source, origin, unassigned, createdFrom: bounds.from, createdTo: bounds.to });
+    void Promise.resolve(pending.leads)
+      .then((leads) => {
+        if (!active) return;
+        setLeads(leads);
         setError("");
+        setLoading(false);
       })
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load leads"))
-      .finally(() => setLoading(false));
+      .catch((reason: unknown) => {
+        if (!active) return;
+        setError(reason instanceof Error ? reason.message : "Could not load leads");
+        setLoading(false);
+      });
+    void Promise.resolve(pending.total)
+      .then((total) => {
+        if (!active) return;
+        setTotal(total);
+        setPages(Math.max(1, Math.ceil(total / PAGE_SIZE)));
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
   }, [bounds.from, bounds.to, desk, origin, page, reload, searchQuery, source, status, unassigned, workspaceId, workspaces.length]);
 
   useEffect(() => {

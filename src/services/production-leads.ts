@@ -5,7 +5,7 @@ import { deskCallerRoles } from "@/lib/production-access";
 import { supabase } from "@/lib/supabase";
 import type { LeadStatus } from "@/types";
 
-const PAGE_SIZE = 20;
+export const PAGE_SIZE = 20;
 const IMPORT_BATCH = 200;
 
 export interface ProductionLead {
@@ -99,15 +99,20 @@ export async function primaryRoleKey() {
   return roles?.key ?? "institute_user";
 }
 
+let workspaceCache: { at: number; rows: WorkspaceOption[] } | null = null;
+
 export async function listWorkspaces() {
+  if (workspaceCache && Date.now() - workspaceCache.at < 60_000) return workspaceCache.rows;
   const { data, error } = await client().from("workspaces").select("id, organization_id, name, workspace_type").is("deleted_at", null).order("name");
   if (error) throw new Error(error.message);
-  return (data ?? []).map((row) => ({
+  const rows = (data ?? []).map((row) => ({
     id: row.id as string,
     organizationId: row.organization_id as string,
     name: row.name as string,
     workspaceType: row.workspace_type as string,
   })) satisfies WorkspaceOption[];
+  workspaceCache = { at: Date.now(), rows };
+  return rows;
 }
 
 export async function listAssignableMembers(workspaceId: string, workspaceType?: string) {
@@ -160,39 +165,73 @@ export interface LeadQuery {
   origin?: LeadOrigin;
   createdFrom?: string;
   createdTo?: string;
+  counted?: boolean;
 }
 
-export async function listLeads(query: LeadQuery) {
-  const from = Math.max(0, query.page - 1) * PAGE_SIZE;
-  const to = from + PAGE_SIZE - 1;
-  let request = client().from("leads").select("*", { count: "exact" }).is("deleted_at", null);
-  if (query.workspaceId) request = request.eq("workspace_id", query.workspaceId);
-  if (query.status) request = request.eq("status", query.status);
-  if (query.unassigned) request = request.is("assigned_to", null);
-  else if (query.assignedTo) request = request.eq("assigned_to", query.assignedTo);
-  if (query.source) request = request.eq("source", query.source);
-  if (query.origin === "excel") request = request.or("source.eq.whatsapp,source_platform.eq.excel,status.eq.excel");
-  if (query.origin === "live") request = request.neq("source", "whatsapp").neq("source_platform", "excel").neq("status", "excel");
+const LEAD_LIST_COLUMNS = "id, organization_id, workspace_id, full_name, phone, email, location, position, source, source_platform, priority, status, assigned_to, created_at, next_follow_up_at";
+
+interface LeadFilter {
+  is(column: string, value: null): LeadFilter;
+  eq(column: string, value: string): LeadFilter;
+  neq(column: string, value: string): LeadFilter;
+  or(filters: string): LeadFilter;
+  gte(column: string, value: string): LeadFilter;
+  lt(column: string, value: string): LeadFilter;
+}
+
+function leadFilter(request: LeadFilter, query: LeadQuery) {
+  let next = request.is("deleted_at", null);
+  if (query.workspaceId) next = next.eq("workspace_id", query.workspaceId);
+  if (query.status) next = next.eq("status", query.status);
+  if (query.unassigned) next = next.is("assigned_to", null);
+  else if (query.assignedTo) next = next.eq("assigned_to", query.assignedTo);
+  if (query.source) next = next.eq("source", query.source);
+  if (query.origin === "excel") next = next.or("source.eq.whatsapp,source_platform.eq.excel,status.eq.excel");
+  if (query.origin === "live") next = next.neq("source", "whatsapp").neq("source_platform", "excel").neq("status", "excel");
   if (query.origin === "latest") {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
     const today = start.toISOString().replace(/\.\d{3}Z$/, "Z");
-    request = request.or(`created_at.gte.${today},imported_at.gte.${today}`);
+    next = next.or(`created_at.gte.${today},imported_at.gte.${today}`);
   } else if (query.origin !== "live") {
-    if (query.createdFrom) request = request.gte("created_at", query.createdFrom);
-    if (query.createdTo) request = request.lt("created_at", query.createdTo);
+    if (query.createdFrom) next = next.gte("created_at", query.createdFrom);
+    if (query.createdTo) next = next.lt("created_at", query.createdTo);
   }
   const search = sanitizeSearch(query.search ?? "");
   if (search) {
     const phone = normalizePhone(search);
     const parts = [`full_name.ilike.%${search}%`, `email_normalized.ilike.%${search.toLowerCase()}%`, `position.ilike.%${search}%`];
     if (phone) parts.push(`phone_digits.ilike.%${phone}%`);
-    request = request.or(parts.join(","));
+    next = next.or(parts.join(","));
   }
-  const { data, error, count } = await request.order("created_at", { ascending: false }).range(from, to);
-  if (error) throw new Error(error.message);
-  const total = count ?? 0;
-  return { leads: ((data ?? []) as LeadRow[]).map(mapLead), total, pages: Math.max(1, Math.ceil(total / PAGE_SIZE)), pageSize: PAGE_SIZE };
+  return next;
+}
+
+export function loadLeadList(query: LeadQuery) {
+  const from = Math.max(0, query.page - 1) * PAGE_SIZE;
+  const to = from + PAGE_SIZE - 1;
+  const rows = leadFilter(client().from("leads").select(LEAD_LIST_COLUMNS) as unknown as LeadFilter, query) as unknown as {
+    order: (column: string, options: { ascending: boolean }) => { range: (from: number, to: number) => Promise<{ data: LeadRow[] | null; error: { message: string } | null }> };
+  };
+  const count = query.counted === false ? null : leadFilter(client().from("leads").select("id", { count: "exact", head: true }) as unknown as LeadFilter, query) as unknown as PromiseLike<{ count: number | null; error: { message: string } | null }>;
+  return {
+    leads: rows.order("created_at", { ascending: false }).range(from, to).then(({ data, error }) => {
+      if (error) throw new Error(error.message);
+      return ((data ?? []) as LeadRow[]).map(mapLead);
+    }),
+    total: count
+      ? count.then(({ count: total, error }) => {
+          if (error) throw new Error(error.message);
+          return total ?? 0;
+        })
+      : Promise.resolve(0),
+  };
+}
+
+export async function listLeads(query: LeadQuery) {
+  const pending = loadLeadList(query);
+  const [leads, total] = await Promise.all([pending.leads, pending.total]);
+  return { leads, total, pages: Math.max(1, Math.ceil(total / PAGE_SIZE)), pageSize: PAGE_SIZE };
 }
 
 export async function getLead(id: string) {

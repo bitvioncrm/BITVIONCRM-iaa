@@ -204,34 +204,26 @@ export async function loadOverview(workspaces: WorkspaceOption[], desk: DeskKey,
     errors.push(reason instanceof Error ? `Collections: ${reason.message}` : "Collections could not be loaded");
   }
 
-  const clinicLeads = desk === "clinic" ? leads : await safe(errors, "Clinic leads", () => countRows("leads", clinicIds, (query) => inRange(live(query))));
-  const instituteLeads = desk === "institute" ? leads : await safe(errors, "Institute leads", () => countRows("leads", instituteIds, (query) => inRange(live(query))));
-  const outstandingTotal = await safe(errors, "Outstanding", () => outstanding(selectedIds));
+  const inventoryTotals = async () => {
+    if (!clinicIds.length) return { lowStock: 0, expiring: 0, inventoryAlerts: 0 };
+    const { data, error, count } = await db().from("inventory_products").select("id, current_stock, minimum_stock, expires_on", { count: "exact" }).in("workspace_id", clinicIds).is("deleted_at", null).limit(500);
+    if (error) throw new Error(error.message);
+    if ((count ?? 0) > (data ?? []).length) throw new Error("Product list is larger than this screen can total");
+    const low = (data ?? []).filter((row) => Number(row.current_stock) <= Number(row.minimum_stock));
+    const exp = (data ?? []).filter((row) => row.expires_on && String(row.expires_on) <= horizonDate && Number(row.current_stock) > 0);
+    return { lowStock: low.length, expiring: exp.length, inventoryAlerts: new Set([...low, ...exp].map((row) => row.id as string)).size };
+  };
 
-  let lowStock: number | null = 0;
-  let expiring: number | null = 0;
-  let inventoryAlerts: number | null = 0;
-  try {
-    if (!clinicIds.length) {
-      lowStock = 0;
-      expiring = 0;
-      inventoryAlerts = 0;
-    } else {
-      const { data, error, count } = await db().from("inventory_products").select("id, current_stock, minimum_stock, expires_on", { count: "exact" }).in("workspace_id", clinicIds).is("deleted_at", null).limit(500);
-      if (error) throw new Error(error.message);
-      if ((count ?? 0) > (data ?? []).length) throw new Error("Product list is larger than this screen can total");
-      const low = (data ?? []).filter((row) => Number(row.current_stock) <= Number(row.minimum_stock));
-      const exp = (data ?? []).filter((row) => row.expires_on && String(row.expires_on) <= horizonDate && Number(row.current_stock) > 0);
-      lowStock = low.length;
-      expiring = exp.length;
-      inventoryAlerts = new Set([...low, ...exp].map((row) => row.id as string)).size;
-    }
-  } catch (reason) {
-    lowStock = null;
-    expiring = null;
-    inventoryAlerts = null;
-    errors.push(reason instanceof Error ? `Inventory: ${reason.message}` : "Inventory could not be loaded");
-  }
+  const [clinicLeads, instituteLeads, outstandingTotal, inventory] = await Promise.all([
+    desk === "clinic" ? Promise.resolve(leads) : safe(errors, "Clinic leads", () => countRows("leads", clinicIds, (query) => inRange(live(query)))),
+    desk === "institute" ? Promise.resolve(leads) : safe(errors, "Institute leads", () => countRows("leads", instituteIds, (query) => inRange(live(query)))),
+    safe(errors, "Outstanding", () => outstanding(selectedIds)),
+    inventoryTotals().catch((reason: unknown) => {
+      errors.push(reason instanceof Error ? `Inventory: ${reason.message}` : "Inventory could not be loaded");
+      return { lowStock: null, expiring: null, inventoryAlerts: null };
+    }),
+  ]);
+  const { lowStock, expiring, inventoryAlerts } = inventory;
 
   let trend: Overview["trend"] = [];
   let funnel: Overview["funnel"] = [];
@@ -251,11 +243,13 @@ export async function loadOverview(workspaces: WorkspaceOption[], desk: DeskKey,
         .gte("created_at", bounds.from)
         .lt("created_at", bounds.to)
         .order("created_at", { ascending: false })
-        .limit(2000);
+        .limit(leads > 500 ? 8 : 2000);
       if (error) throw new Error(error.message);
       const rows = data ?? [];
-      if (leads > rows.length) {
-        chartNote = "Charts are hidden because this range has more leads than can be charted without a partial picture. The KPI counts above are exact.";
+      if (leads > 500) {
+        chartNote = "wide";
+      } else if (leads > rows.length) {
+        chartNote = "wide";
       } else {
         const ordered = [...rows].reverse();
         const trendMap = new Map<string, { label: string; leads: number; sort: number }>();

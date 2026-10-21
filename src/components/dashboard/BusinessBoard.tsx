@@ -93,7 +93,7 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
       </header>
       {error ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
       {data?.errors.length ? <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{data.errors[0]}</p> : null}
-      {loading || !data ? (
+      {!data ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {Array.from({ length: 10 }, (_, index) => <div key={index} className="h-[92px] animate-pulse rounded-lg border border-line bg-white" />)}
         </div>
@@ -159,6 +159,7 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
 
           {variant === "full" ? (
             <>
+              {data.chartNote ? null : <>
               <div className="grid gap-4 xl:grid-cols-2">
                 <Chart title="Lead acquisition" subtitle={bounds.label} empty={chartsReady && data.trend.length ? "" : "No leads in this range"}>
                   <LineChart data={data.trend}>
@@ -238,6 +239,7 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
                   </table>
                 </section>
               ) : null}
+              </>}
               <section className="overflow-x-auto rounded-lg border border-line bg-white">
                 <div className="border-b border-line px-4 py-3">
                   <h3 className="text-sm font-semibold">Latest leads</h3>
