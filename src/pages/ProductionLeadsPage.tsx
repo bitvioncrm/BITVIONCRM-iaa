@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { STATUS_LABEL, STATUS_ORDER } from "@/data/catalog";
+import { isExcelLead, LEAD_ORIGINS, type LeadOrigin } from "@/lib/lead-origin";
+import { RANGE_OPTIONS, type RangeKey } from "@/lib/range";
 import { downloadText } from "@/lib/csv";
 import {
   addFollowUp,
@@ -41,7 +43,7 @@ export function ProductionLeadsPage() {
   const { productionUser } = useAuth();
   const callerDesk = whatsAppDesk(productionUser?.roleKey ?? "");
   const canAssign = canOperateWhatsApp(productionUser?.roleKey ?? "");
-  const { desk, setDesk, bounds } = useDesk();
+  const { desk, setDesk, bounds, rangeKey, setRangeKey, customFrom, setCustomFrom, customTo, setCustomTo } = useDesk();
   const [params] = useSearchParams();
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
   const [members, setMembers] = useState<MemberOption[]>([]);
@@ -49,6 +51,7 @@ export function ProductionLeadsPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState(params.get("status") ?? "");
   const [source, setSource] = useState(params.get("source") ?? "");
+  const [origin, setOrigin] = useState<LeadOrigin>("all");
   const [unassigned, setUnassigned] = useState(params.get("assigned") === "unassigned");
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
@@ -67,6 +70,7 @@ export function ProductionLeadsPage() {
   const [live, setLive] = useState<LiveCall | null>(null);
   const [now, setNow] = useState(0);
   const [callBusy, setCallBusy] = useState(false);
+  const quietRefresh = useRef(false);
 
   useEffect(() => {
     if (callerDesk === "clinic" || callerDesk === "institute") {
@@ -107,8 +111,10 @@ export function ProductionLeadsPage() {
   useEffect(() => {
     if (!workspaces.length) return;
     if (desk !== "all" && !workspaceId) return;
-    setLoading(true);
-    void listLeads({ page, workspaceId: workspaceId || undefined, status, search, source, unassigned, createdFrom: bounds.from, createdTo: bounds.to })
+    const silent = quietRefresh.current;
+    quietRefresh.current = false;
+    if (!silent) setLoading(true);
+    void listLeads({ page, workspaceId: workspaceId || undefined, status, search, source, origin, unassigned, createdFrom: bounds.from, createdTo: bounds.to })
       .then((result) => {
         setLeads(result.leads);
         setPages(result.pages);
@@ -117,7 +123,28 @@ export function ProductionLeadsPage() {
       })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load leads"))
       .finally(() => setLoading(false));
-  }, [bounds.from, bounds.to, desk, page, reload, search, source, status, unassigned, workspaceId, workspaces.length]);
+  }, [bounds.from, bounds.to, desk, origin, page, reload, search, source, status, unassigned, workspaceId, workspaces.length]);
+
+  useEffect(() => {
+    const refresh = () => {
+      quietRefresh.current = true;
+      setReload((value) => value + 1);
+    };
+    const onLead = (event: Event) => {
+      const detail = (event as CustomEvent<{ fullName?: string }>).detail;
+      setNotice(detail?.fullName ? `New lead: ${detail.fullName}` : "A new lead arrived.");
+      setPage(1);
+      refresh();
+    };
+    window.addEventListener("bitvion-lead", onLead);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") refresh();
+    }, 15000);
+    return () => {
+      window.removeEventListener("bitvion-lead", onLead);
+      window.clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     void activeCall().then(setLive).catch(() => setLive(null));
@@ -194,9 +221,10 @@ export function ProductionLeadsPage() {
     <div className="space-y-4">
       <PageHeader
         title="Leads"
-        description={loading ? "Loading this page from PostgreSQL." : `${total.toLocaleString("en-IN")} leads created in ${bounds.label}. The list is one page at a time.`}
+        description={loading ? "Loading this page from PostgreSQL." : `${total.toLocaleString("en-IN")} ${LEAD_ORIGINS.find((item) => item.value === origin)?.label.toLowerCase() ?? "leads"}${origin === "latest" ? " from today" : ` in ${bounds.label}`}. The list refreshes as leads arrive.`}
         actions={
           <>
+            <Button type="button" variant="secondary" onClick={() => setReload((value) => value + 1)}>Refresh</Button>
             <Button type="button" disabled={!workspaces.length} onClick={() => setImportOpen(true)}>
               <Upload className="size-4" /> Import CSV
             </Button>
@@ -221,13 +249,25 @@ export function ProductionLeadsPage() {
       ) : null}
       {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
       {notice ? <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</p> : null}
-      <div className="grid gap-2 rounded-lg border border-line bg-white p-3 md:grid-cols-4">
-        <Select value={workspaceId} onChange={(event) => { setWorkspaceId(event.target.value); setPage(1); }}>
+      <div className="grid gap-2 rounded-lg border border-line bg-white p-3 md:grid-cols-3 xl:grid-cols-6">
+        <Select value={workspaceId} onChange={(event) => { setWorkspaceId(event.target.value); setPage(1); }} aria-label="Desk">
           {canAssign && desk === "all" ? <option value="">All authorized desks</option> : null}
           {deskWorkspaces.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </Select>
+        <Select value={origin} onChange={(event) => { setOrigin(event.target.value as LeadOrigin); setPage(1); }} aria-label="Lead source">
+          {LEAD_ORIGINS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </Select>
+        <Select value={rangeKey} onChange={(event) => { setRangeKey(event.target.value as RangeKey); setPage(1); }} aria-label="Date range">
+          {RANGE_OPTIONS.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+        </Select>
+        {rangeKey === "custom" ? (
+          <>
+            <Input aria-label="From" type="date" value={customFrom} onChange={(event) => { setCustomFrom(event.target.value); setPage(1); }} />
+            <Input aria-label="To" type="date" value={customTo} onChange={(event) => { setCustomTo(event.target.value); setPage(1); }} />
+          </>
+        ) : null}
         <Input placeholder="Search name, phone, email" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} />
-        <Select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>
+        <Select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }} aria-label="Stage">
           <option value="">Stage</option>
           {STATUS_ORDER.map((item) => <option key={item} value={item}>{STATUS_LABEL[item]}</option>)}
         </Select>
@@ -304,7 +344,7 @@ export function ProductionLeadsPage() {
               .then(() => {
                 setDraft({ fullName: "", phone: "", email: "", location: "", position: "" });
                 setPage(1);
-                return listLeads({ page: 1, workspaceId, status, search, source, unassigned, createdFrom: bounds.from, createdTo: bounds.to });
+                return listLeads({ page: 1, workspaceId, status, search, source, origin, unassigned, createdFrom: bounds.from, createdTo: bounds.to });
               })
               .then((result) => {
                 setLeads(result.leads);
@@ -340,7 +380,10 @@ export function ProductionLeadsPage() {
           <tbody>
             {leads.map((lead) => (
               <tr key={lead.id} className="border-b border-line last:border-0">
-                <td className="px-3 py-2 font-medium"><Link to={`/leads/${lead.id}`}>{lead.fullName}</Link></td>
+                <td className="px-3 py-2 font-medium">
+                  <Link to={`/leads/${lead.id}`}>{lead.fullName}</Link>
+                  <p className="text-xs text-muted">{isExcelLead(lead.source, lead.sourcePlatform) ? "Excel sheet" : lead.source === "meta_ads" ? "Meta" : "Added in CRM"}</p>
+                </td>
                 <td className="px-3 py-2"><PhoneLink phone={lead.phone} onClick={() => { if (!live && !callBusy) beginCall(lead); }} /></td>
                 <td className="px-3 py-2">
                   <Select

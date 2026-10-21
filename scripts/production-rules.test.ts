@@ -1,4 +1,5 @@
 import { outcomeFromPhoneReturn, summarizeCalls } from "../src/lib/call-time.ts";
+import { isExcelLead } from "../src/lib/lead-origin.ts";
 import { automationDecision, rangeForPreset } from "../src/lib/production-rules.ts";
 import { pathsForRole, roleAllowsPath, canOperateWhatsApp, canSendBulk, canWriteWhatsApp, deskCallerRoles, WHATSAPP_BULK_ADMIN_LIMIT } from "../src/lib/production-access.ts";
 
@@ -45,5 +46,7 @@ if (calls.dials !== 3 || calls.connected !== 1 || calls.rejected !== 1 || calls.
   throw new Error("call totals");
 }
 if (outcomeFromPhoneReturn(14) !== "rejected" || outcomeFromPhoneReturn(15) !== "connected") throw new Error("phone return");
+if (!isExcelLead("whatsapp", "") || !isExcelLead("facebook", "excel")) throw new Error("excel lead");
+if (isExcelLead("meta_ads", "meta") || isExcelLead("other", "")) throw new Error("live lead was marked as excel");
 
 console.log("production rules ok");

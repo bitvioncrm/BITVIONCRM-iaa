@@ -1,5 +1,6 @@
 import { Bell } from "lucide-react";
 import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 import { useNavigate } from "react-router-dom";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAuth } from "@/context/AuthContext";
@@ -19,6 +20,24 @@ function LiveAlerts() {
   const [items, setItems] = useState<Array<{ title: string; body: string; href: string }>>([]);
   useEffect(() => {
     void listWorkspaces().then((rows) => loadLiveAlerts(rows)).then(setItems).catch(() => setItems([]));
+  }, []);
+  useEffect(() => {
+    if (!supabase) return;
+    if (typeof Notification !== "undefined" && Notification.permission === "default") void Notification.requestPermission();
+    const channel = supabase
+      .channel("lead-arrivals")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "leads" }, (payload) => {
+        const row = payload.new as { id?: string; full_name?: string };
+        if (!row.id) return;
+        const fullName = row.full_name || "New lead";
+        setItems((current) => [{ title: "New lead", body: fullName, href: `/leads/${row.id}` }, ...current].slice(0, 20));
+        window.dispatchEvent(new CustomEvent("bitvion-lead", { detail: { id: row.id, fullName } }));
+        if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification("New lead", { body: fullName });
+      })
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
   }, []);
   return (
     <Popover>

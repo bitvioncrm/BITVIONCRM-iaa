@@ -1,4 +1,5 @@
 import { stageFromText } from "@/data/catalog";
+import type { LeadOrigin } from "@/lib/lead-origin";
 import { chunk, duplicateKind, normalizeEmail, normalizePhone, phoneKey, sanitizeSearch, type DuplicateKind } from "@/lib/lead-normalize";
 import { deskCallerRoles } from "@/lib/production-access";
 import { supabase } from "@/lib/supabase";
@@ -17,6 +18,7 @@ export interface ProductionLead {
   location: string;
   position: string;
   source: string;
+  sourcePlatform: string;
   priority: string;
   status: LeadStatus;
   assignedTo: string | null;
@@ -48,6 +50,7 @@ interface LeadRow {
   location: string;
   position: string;
   source: string;
+  source_platform: string | null;
   priority: string;
   status: LeadStatus;
   assigned_to: string | null;
@@ -66,6 +69,7 @@ function mapLead(row: LeadRow): ProductionLead {
     location: row.location,
     position: row.position,
     source: row.source,
+    sourcePlatform: row.source_platform ?? "",
     priority: row.priority,
     status: row.status,
     assignedTo: row.assigned_to,
@@ -153,6 +157,7 @@ export interface LeadQuery {
   assignedTo?: string;
   unassigned?: boolean;
   source?: string;
+  origin?: LeadOrigin;
   createdFrom?: string;
   createdTo?: string;
 }
@@ -166,8 +171,17 @@ export async function listLeads(query: LeadQuery) {
   if (query.unassigned) request = request.is("assigned_to", null);
   else if (query.assignedTo) request = request.eq("assigned_to", query.assignedTo);
   if (query.source) request = request.eq("source", query.source);
-  if (query.createdFrom) request = request.gte("created_at", query.createdFrom);
-  if (query.createdTo) request = request.lt("created_at", query.createdTo);
+  if (query.origin === "excel") request = request.or("source.eq.whatsapp,source_platform.eq.excel");
+  if (query.origin === "live") request = request.neq("source", "whatsapp").neq("source_platform", "excel");
+  if (query.origin === "latest") {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const today = start.toISOString().replace(/\.\d{3}Z$/, "Z");
+    request = request.or(`created_at.gte.${today},imported_at.gte.${today}`);
+  } else {
+    if (query.createdFrom) request = request.gte("created_at", query.createdFrom);
+    if (query.createdTo) request = request.lt("created_at", query.createdTo);
+  }
   const search = sanitizeSearch(query.search ?? "");
   if (search) {
     const phone = normalizePhone(search);
@@ -456,6 +470,7 @@ export async function importLeadBatches(workspace: WorkspaceOption, rows: Import
         location: row.location.trim(),
         position: row.position.trim(),
         source: row.source || "other",
+        source_platform: "excel",
         status: stageFromText(row.status),
         assigned_to: assignedTo,
         created_by: userId,
