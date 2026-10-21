@@ -53,6 +53,17 @@ if (clinicNamed?.workspaceId !== "clinic-ws" || clinicNamed.reason !== "ad_accou
 const mappedOverName = resolveLeadDesk({ formId: "111", pageId: "900", adAccountId: "975152708626051", campaignName: "IAA | 18/9/26", mappings: [clinic], accounts: clinicOnly, desks: sharedDesks });
 if (mappedOverName?.workspaceId !== "clinic-ws" || mappedOverName.reason !== "form") throw new Error("a form mapping must override the campaign name");
 
+const pages = [
+  { pageId: "clinic-page", workspaceId: "clinic-ws", organizationId: "org" },
+  { pageId: "institute-page", workspaceId: "institute-ws", organizationId: "org" },
+];
+const institutePage = resolveLeadDesk({ formId: "", pageId: "institute-page", adAccountId: "", mappings: [], accounts: clinicOnly, desks: sharedDesks, pages });
+if (institutePage?.workspaceId !== "institute-ws" || institutePage.reason !== "page") throw new Error("the institute page must receive its own form leads");
+const clinicPage = resolveLeadDesk({ formId: "", pageId: "clinic-page", adAccountId: "999", campaignName: "Leads | lip | 17/10/26", mappings: [], accounts: clinicOnly, desks: sharedDesks, pages });
+if (clinicPage?.workspaceId !== "clinic-ws" || clinicPage.reason !== "page") throw new Error("the clinic page must keep a clinic form even when the ads account differs");
+const clinicPageIaa = resolveLeadDesk({ formId: "", pageId: "clinic-page", adAccountId: "", campaignName: "IAA || aads | 6/10/26", mappings: [], accounts: clinicOnly, desks: sharedDesks, pages });
+if (clinicPageIaa?.workspaceId !== "institute-ws" || clinicPageIaa.reason !== "campaign") throw new Error("an IAA campaign on the clinic page must still reach the institute");
+
 const ingest = readFileSync(new URL("../netlify/lib/meta-ingest.ts", import.meta.url), "utf8");
 if (ingest.includes("META_WORKSPACE_ID")) throw new Error("webhook still sends every lead to one workspace");
 if (!ingest.includes("resolveLeadDesk")) throw new Error("webhook does not apply form or ads-account routing");

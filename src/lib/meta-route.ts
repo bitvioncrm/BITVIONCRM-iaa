@@ -31,6 +31,12 @@ export interface WorkspaceDesk {
   name: string;
 }
 
+export interface PageDesk {
+  pageId: string;
+  workspaceId: string;
+  organizationId: string;
+}
+
 function tokenPattern(token: string) {
   return new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
 }
@@ -58,6 +64,7 @@ export function resolveLeadDesk(input: {
   mappings: FormMapping[];
   accounts: AdAccountDesk[];
   desks?: WorkspaceDesk[];
+  pages?: PageDesk[];
 }) {
   const form = input.formId.trim();
   const formMatches = form
@@ -71,6 +78,22 @@ export function resolveLeadDesk(input: {
   if (formMatches.length === 1) {
     const match = formMatches[0];
     return { workspaceId: match.workspaceId, organizationId: match.organizationId, reason: "form" as const };
+  }
+
+  const pageHits = new Map<string, PageDesk>();
+  for (const page of input.pages ?? []) {
+    if (page.pageId.trim() !== input.pageId.trim() || !page.workspaceId || !page.organizationId) continue;
+    pageHits.set(page.workspaceId, page);
+  }
+  if (pageHits.size > 1) return null;
+  if (pageHits.size === 1) {
+    const page = [...pageHits.values()][0];
+    const pageDesk = (input.desks ?? []).find((desk) => desk.workspaceId === page.workspaceId);
+    if (pageDesk?.workspaceType !== "institute") {
+      const campaignDesk = instituteDeskForCampaign(input.campaignName ?? "", page.organizationId, input.desks ?? []);
+      if (campaignDesk) return { workspaceId: campaignDesk.workspaceId, organizationId: campaignDesk.organizationId, reason: "campaign" as const };
+    }
+    return { workspaceId: page.workspaceId, organizationId: page.organizationId, reason: "page" as const };
   }
 
   const account = normalizeAdAccountId(input.adAccountId);

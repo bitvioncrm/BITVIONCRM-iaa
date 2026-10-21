@@ -205,6 +205,9 @@ export async function processLeadgen(input: {
       .filter((row) => row.ad_account_id)
       .map((row) => ({ adAccountId: row.ad_account_id, workspaceId: row.workspace_id, organizationId: row.organization_id })),
     desks,
+    pages: secrets
+      .filter((row) => row.page_id)
+      .map((row) => ({ pageId: row.page_id, workspaceId: row.workspace_id, organizationId: row.organization_id })),
   });
   const organizationId = mapping?.organizationId || fallbackOrg;
   if (!mapping) {
