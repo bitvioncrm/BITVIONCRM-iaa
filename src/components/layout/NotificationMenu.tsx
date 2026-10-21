@@ -22,9 +22,10 @@ function LiveAlerts() {
     void listWorkspaces().then((rows) => loadLiveAlerts(rows)).then(setItems).catch(() => setItems([]));
   }, []);
   useEffect(() => {
-    if (!supabase) return;
+    const client = supabase;
+    if (!client) return;
     if (typeof Notification !== "undefined" && Notification.permission === "default") void Notification.requestPermission();
-    const channel = supabase
+    const channel = client
       .channel("lead-arrivals")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "leads" }, (payload) => {
         const row = payload.new as { id?: string; full_name?: string };
@@ -36,7 +37,7 @@ function LiveAlerts() {
       })
       .subscribe();
     return () => {
-      void supabase.removeChannel(channel);
+      void client.removeChannel(channel);
     };
   }, []);
   return (
