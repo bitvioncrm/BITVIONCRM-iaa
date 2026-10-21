@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { STATUS_LABEL, STATUS_ORDER } from "@/data/catalog";
-import { leadOriginLabel, LEAD_ORIGINS, type LeadOrigin } from "@/lib/lead-origin";
+import { isExcelLead, leadOriginLabel, LEAD_ORIGINS, type LeadOrigin } from "@/lib/lead-origin";
 import { RANGE_OPTIONS, type RangeKey } from "@/lib/range";
 import { downloadText } from "@/lib/csv";
 import {
@@ -58,7 +58,7 @@ export function ProductionLeadsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [status, setStatus] = useState(params.get("status") ?? "");
   const [source, setSource] = useState(params.get("source") ?? "");
-  const [origin, setOrigin] = useState<LeadOrigin>("all");
+  const [origin, setOrigin] = useState<LeadOrigin>("live");
   const [unassigned, setUnassigned] = useState(params.get("assigned") === "unassigned");
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
@@ -167,11 +167,13 @@ export function ProductionLeadsPage() {
         };
         const view = viewRef.current;
         const deskIds = view.desk === "all" ? view.workspaces.map((item) => item.id) : view.workspaces.filter((item) => item.workspaceType === view.desk).map((item) => item.id);
+        const excel = lead.status === "excel" || isExcelLead(lead.source, lead.sourcePlatform);
         const visible = (!view.workspaceId || lead.workspaceId === view.workspaceId)
           && (!deskIds.length || deskIds.includes(lead.workspaceId))
           && (!view.status || lead.status === view.status)
           && (!view.source || lead.source === view.source)
-          && view.origin !== "excel"
+          && (view.origin !== "excel" || excel)
+          && (view.origin !== "live" || !excel)
           && (!view.unassigned || !lead.assignedTo)
           && (!view.search.trim() || `${lead.fullName} ${lead.phone}`.toLowerCase().includes(view.search.trim().toLowerCase()));
         if (visible) {
@@ -284,7 +286,7 @@ export function ProductionLeadsPage() {
     <div className="space-y-4">
       <PageHeader
         title="Leads"
-        description={loading ? "Loading this page from PostgreSQL." : `${total.toLocaleString("en-IN")} ${status ? `${STATUS_LABEL[status as LeadStatus]} leads` : (LEAD_ORIGINS.find((item) => item.value === origin)?.label.toLowerCase() ?? "leads")}${origin === "latest" && !status ? " from today" : ` in ${bounds.label}`}. The list refreshes as leads arrive.`}
+        description={loading ? "Loading this page from PostgreSQL." : `${total.toLocaleString("en-IN")} ${status ? `${STATUS_LABEL[status as LeadStatus]} leads` : (LEAD_ORIGINS.find((item) => item.value === origin)?.label.toLowerCase() ?? "leads")}${origin === "latest" && !status ? " from today" : origin === "live" && !status ? "" : ` in ${bounds.label}`}. The list refreshes as leads arrive.`}
         actions={
           <>
             <Button type="button" variant="secondary" onClick={() => setReload((value) => value + 1)}>Refresh</Button>

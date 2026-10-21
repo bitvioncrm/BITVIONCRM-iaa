@@ -178,7 +178,7 @@ export async function listLeads(query: LeadQuery) {
     start.setHours(0, 0, 0, 0);
     const today = start.toISOString().replace(/\.\d{3}Z$/, "Z");
     request = request.or(`created_at.gte.${today},imported_at.gte.${today}`);
-  } else {
+  } else if (query.origin !== "live") {
     if (query.createdFrom) request = request.gte("created_at", query.createdFrom);
     if (query.createdTo) request = request.lt("created_at", query.createdTo);
   }
