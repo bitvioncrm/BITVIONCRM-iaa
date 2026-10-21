@@ -32,13 +32,17 @@ export function LoginPage() {
 
   return (
     <div className="grid min-h-dvh lg:grid-cols-[1.05fr_0.95fr]">
-      <section className="hidden flex-col justify-between bg-sidebar p-12 text-white lg:flex">
-        <Logo className="w-[300px]" />
-        <p className="max-w-md text-3xl leading-tight font-semibold tracking-tight">Perumbavoor clinic and IAA Kochi, on one desk.</p>
+      <section className="relative hidden items-center justify-center overflow-hidden bg-sidebar px-16 text-white lg:flex">
+        <div className="pointer-events-none absolute top-1/2 left-1/2 h-[420px] w-[420px] -translate-x-1/2 -translate-y-[58%] rounded-full bg-[radial-gradient(circle,rgba(198,161,91,0.22),transparent_68%)]" />
+        <div className="relative flex w-full max-w-md flex-col items-center text-center">
+          <Logo className="w-[300px]" />
+          <span className="mt-8 h-px w-12 bg-[#c6a15b]" />
+          <p className="mt-6 max-w-xs text-[22px] leading-snug font-medium tracking-tight text-white/90">Perumbavoor clinic and IAA Kochi, on one desk.</p>
+        </div>
       </section>
-      <section className="flex items-center justify-center px-6 py-12">
+      <section className="flex items-center justify-center bg-white px-6 py-12">
         <div className="w-full max-w-sm">
-          <Logo className="mb-6 w-52" />
+          <Logo className="mx-auto mb-8 w-48" />
           <p className="text-xs font-semibold tracking-[0.16em] text-muted">Dr. K's CRM</p>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight">Welcome back</h1>
           <form
