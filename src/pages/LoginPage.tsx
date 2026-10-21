@@ -17,10 +17,9 @@ const schema = z.object({
 });
 
 export function LoginPage() {
-  const { session, login, signup, resetPassword } = useAuth();
+  const { session, login, resetPassword } = useAuth();
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
   const [loading, setLoading] = useState(false);
   const [forgot, setForgot] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
@@ -50,17 +49,11 @@ export function LoginPage() {
           <form
             className="mt-8 space-y-4"
             onSubmit={form.handleSubmit(async (values) => {
-              if (mode === "sign-up" && values.password.length < 8) {
-                setLoading(false);
-                setError("Use at least 8 characters.");
-                return;
-              }
               setError("");
               setLoading(true);
-              const message = mode === "sign-up" ? await signup(values.email, values.password) : await login(values.email, values.password);
+              const message = await login(values.email, values.password);
               setLoading(false);
               if (message) setError(message);
-              else if (mode === "sign-up") setNotice("Account requested. Confirm the email if required, then sign in. The first user becomes Super Admin.");
             })}
           >
             <label className="block text-[13px] font-medium">
@@ -84,11 +77,8 @@ export function LoginPage() {
             </div>
             {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
             {notice ? <p className="text-sm">{notice}</p> : null}
-            <Button type="submit" className="w-full" disabled={loading}>{loading ? "Please wait…" : mode === "sign-up" ? "Create account" : "Sign In"}</Button>
+            <Button type="submit" className="w-full" disabled={loading}>{loading ? "Please wait…" : "Sign In"}</Button>
           </form>
-          <button type="button" className="mt-4 text-sm text-muted" onClick={() => setMode(mode === "sign-in" ? "sign-up" : "sign-in")}>
-            {mode === "sign-in" ? "Create an account" : "Already have an account"}
-          </button>
           {supabaseConfigured ? null : <p className="mt-4 text-sm text-muted">Configuration Required. Business data is not stored in this browser.</p>}
         </div>
       </section>
