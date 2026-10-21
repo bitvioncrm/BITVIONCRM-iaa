@@ -29,8 +29,8 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
 
   return (
     <aside className={cn("hidden h-full shrink-0 flex-col bg-sidebar text-slate-300 lg:flex", collapsed ? "w-[72px]" : "w-[248px]")}>
-      <div className={cn("flex items-center border-b border-white/10", collapsed ? "h-16 justify-center px-2" : "h-[76px] px-4")}>
-        <Logo mark={collapsed} className={collapsed ? "h-12 w-12" : "h-14 w-auto max-w-[180px]"} />
+      <div className={cn("flex items-center justify-center border-b border-white/10", collapsed ? "h-[84px] px-2" : "px-4 py-5")}>
+        <Logo className={collapsed ? "w-14" : "w-[196px]"} />
       </div>
       <nav className="flex-1 space-y-3 overflow-y-auto px-2 py-3">
         {groups && !collapsed

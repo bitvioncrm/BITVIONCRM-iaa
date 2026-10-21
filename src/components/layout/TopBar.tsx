@@ -81,7 +81,7 @@ export function TopBar({ collapsed, onToggle }: { collapsed: boolean; onToggle: 
       <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
         <SheetContent title="Menu" className="max-w-xs bg-sidebar text-slate-200">
           <div className="border-b border-white/10 px-4 py-4">
-            <Logo className="h-12 w-auto max-w-[180px]" />
+            <Logo className="w-48" />
           </div>
           <nav className="space-y-1 p-3">
             {items.map((item) => (

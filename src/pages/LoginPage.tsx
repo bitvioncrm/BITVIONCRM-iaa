@@ -34,7 +34,7 @@ export function LoginPage() {
   return (
     <div className="grid min-h-dvh lg:grid-cols-[1.05fr_0.95fr]">
       <section className="hidden flex-col justify-between bg-sidebar p-12 text-white lg:flex">
-        <Logo className="h-auto w-full max-w-[400px] object-left" />
+        <Logo className="w-[300px]" />
         <div className="max-w-md">
           <p className="text-3xl leading-tight font-semibold tracking-tight">Perumbavoor clinic and IAA Kochi, on one desk.</p>
           <p className="mt-4 text-sm leading-6 text-slate-400">Dr. K's Aesthetic Clinic, Vengola. Meta leads come in fresh. The admin assigns them. Clinic WhatsApp can run automatically. Institute stays on a direct call.</p>
@@ -43,7 +43,7 @@ export function LoginPage() {
       </section>
       <section className="flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
-          <Logo mark className="mb-5 h-32 w-32" />
+          <Logo className="mb-6 w-52" />
           <p className="text-xs font-semibold tracking-[0.16em] text-muted">Dr. K's CRM</p>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight">Welcome back</h1>
           <p className="mt-2 text-sm text-muted">Assign clinic and institute leads, then see who spoke to whom and for how long.</p>
