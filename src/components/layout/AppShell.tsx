@@ -27,11 +27,7 @@ export function AppShell() {
       <Sidebar collapsed={collapsed} />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar collapsed={collapsed} onToggle={() => setCollapsed((value) => !value)} />
-        {productionUser ? (
-          <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-[13px] text-amber-900">
-            Signed in with Supabase. Business records on these screens are stored in PostgreSQL. Meta and WhatsApp stay unconnected until server secrets are set.
-          </div>
-        ) : (
+        {productionUser ? null : (
           <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-[13px] text-amber-900">
             {supabaseConfigured
               ? "Production database is configured. Sign in with a Supabase user. Demo passwords are not accepted."
