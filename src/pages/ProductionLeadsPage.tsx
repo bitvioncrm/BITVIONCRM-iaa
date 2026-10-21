@@ -55,6 +55,7 @@ export function ProductionLeadsPage() {
   const [members, setMembers] = useState<MemberOption[]>([]);
   const [workspaceId, setWorkspaceId] = useState("");
   const [search, setSearch] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [status, setStatus] = useState(params.get("status") ?? "");
   const [source, setSource] = useState(params.get("source") ?? "");
   const [origin, setOrigin] = useState<LeadOrigin>("all");
@@ -77,6 +78,8 @@ export function ProductionLeadsPage() {
   const [now, setNow] = useState(0);
   const [callBusy, setCallBusy] = useState(false);
   const quietRefresh = useRef(false);
+  const viewRef = useRef({ workspaceId: "", desk, status: "", source: "", origin, unassigned: false, search: "", workspaces: [] as WorkspaceOption[] });
+  viewRef.current = { workspaceId, desk, status, source, origin, unassigned, search: searchQuery, workspaces };
 
   useEffect(() => {
     if (callerDesk === "clinic" || callerDesk === "institute") {
@@ -120,7 +123,7 @@ export function ProductionLeadsPage() {
     const silent = quietRefresh.current;
     quietRefresh.current = false;
     if (!silent) setLoading(true);
-    void listLeads({ page, workspaceId: workspaceId || undefined, status, search, source, origin, unassigned, createdFrom: bounds.from, createdTo: bounds.to })
+    void listLeads({ page, workspaceId: workspaceId || undefined, status, search: searchQuery, source, origin, unassigned, createdFrom: bounds.from, createdTo: bounds.to })
       .then((result) => {
         setLeads(result.leads);
         setPages(result.pages);
@@ -129,7 +132,12 @@ export function ProductionLeadsPage() {
       })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load leads"))
       .finally(() => setLoading(false));
-  }, [bounds.from, bounds.to, desk, origin, page, reload, search, source, status, unassigned, workspaceId, workspaces.length]);
+  }, [bounds.from, bounds.to, desk, origin, page, reload, searchQuery, source, status, unassigned, workspaceId, workspaces.length]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearchQuery(search), 250);
+    return () => window.clearTimeout(timer);
+  }, [search]);
 
   useEffect(() => {
     const refresh = () => {
@@ -137,17 +145,66 @@ export function ProductionLeadsPage() {
       setReload((value) => value + 1);
     };
     const onLead = (event: Event) => {
-      const detail = (event as CustomEvent<{ fullName?: string }>).detail;
+      const detail = (event as CustomEvent<{ fullName?: string; row?: Record<string, string | null> }>).detail;
+      const row = detail?.row;
+      if (row?.id) {
+        const lead: ProductionLead = {
+          id: String(row.id),
+          organizationId: String(row.organization_id ?? ""),
+          workspaceId: String(row.workspace_id ?? ""),
+          fullName: String(row.full_name || detail.fullName || "New lead"),
+          phone: String(row.phone ?? ""),
+          email: String(row.email ?? ""),
+          location: String(row.location ?? ""),
+          position: String(row.position ?? ""),
+          source: String(row.source ?? ""),
+          sourcePlatform: String(row.source_platform ?? ""),
+          priority: String(row.priority ?? "medium"),
+          status: (row.status as LeadStatus) || "new",
+          assignedTo: row.assigned_to ? String(row.assigned_to) : null,
+          createdAt: String(row.created_at ?? new Date().toISOString()),
+          nextFollowUpAt: row.next_follow_up_at ? String(row.next_follow_up_at) : null,
+        };
+        const view = viewRef.current;
+        const deskIds = view.desk === "all" ? view.workspaces.map((item) => item.id) : view.workspaces.filter((item) => item.workspaceType === view.desk).map((item) => item.id);
+        const visible = (!view.workspaceId || lead.workspaceId === view.workspaceId)
+          && (!deskIds.length || deskIds.includes(lead.workspaceId))
+          && (!view.status || lead.status === view.status)
+          && (!view.source || lead.source === view.source)
+          && view.origin !== "excel"
+          && (!view.unassigned || !lead.assignedTo)
+          && (!view.search.trim() || `${lead.fullName} ${lead.phone}`.toLowerCase().includes(view.search.trim().toLowerCase()));
+        if (visible) {
+          setPage(1);
+          setLeads((current) => current.some((item) => item.id === lead.id) ? current : [lead, ...current].slice(0, 20));
+          setTotal((current) => current + 1);
+        }
+      }
       setNotice(detail?.fullName ? `New lead: ${detail.fullName}` : "A new lead arrived.");
-      setPage(1);
+      refresh();
+    };
+    const onUpdate = (event: Event) => {
+      const row = (event as CustomEvent<{ row?: Record<string, string | null> }>).detail?.row;
+      if (!row?.id) return;
+      setLeads((current) => current.map((item) => item.id === row.id ? {
+        ...item,
+        status: (row.status as LeadStatus) || item.status,
+        assignedTo: row.assigned_to ? String(row.assigned_to) : null,
+        fullName: String(row.full_name || item.fullName),
+      } : item));
       refresh();
     };
     window.addEventListener("bitvion-lead", onLead);
+    window.addEventListener("bitvion-lead-update", onUpdate);
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") refresh();
-    }, 15000);
+      const focused = document.activeElement;
+      if (document.visibilityState !== "visible") return;
+      if (focused instanceof HTMLSelectElement || focused instanceof HTMLInputElement || focused instanceof HTMLTextAreaElement) return;
+      refresh();
+    }, 8000);
     return () => {
       window.removeEventListener("bitvion-lead", onLead);
+      window.removeEventListener("bitvion-lead-update", onUpdate);
       window.clearInterval(timer);
     };
   }, []);

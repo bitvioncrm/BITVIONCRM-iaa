@@ -43,24 +43,34 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
-    void listWorkspaces()
-      .then(async (rows) => {
-        if (!active) return;
-        setWorkspaces(rows);
-        const overview = await loadOverview(rows, desk, bounds, rangeKey === "today" || rangeKey === "yesterday");
-        if (!active) return;
-        setData(overview);
-        setError("");
-      })
-      .catch((reason: unknown) => {
-        if (active) setError(reason instanceof Error ? reason.message : "The overview could not be loaded");
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
+    const load = (initial: boolean) => {
+      if (initial) setLoading(true);
+      void listWorkspaces()
+        .then(async (rows) => {
+          if (!active) return;
+          setWorkspaces(rows);
+          const overview = await loadOverview(rows, desk, bounds, rangeKey === "today" || rangeKey === "yesterday");
+          if (!active) return;
+          setData(overview);
+          setError("");
+        })
+        .catch((reason: unknown) => {
+          if (active) setError(reason instanceof Error ? reason.message : "The overview could not be loaded");
+        })
+        .finally(() => {
+          if (active && initial) setLoading(false);
+        });
+    };
+    load(true);
+    const onLead = () => load(false);
+    window.addEventListener("bitvion-lead", onLead);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") load(false);
+    }, 20000);
     return () => {
       active = false;
+      window.removeEventListener("bitvion-lead", onLead);
+      window.clearInterval(timer);
     };
   }, [bounds, desk, rangeKey]);
 

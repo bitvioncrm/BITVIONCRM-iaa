@@ -28,12 +28,17 @@ function LiveAlerts() {
     const channel = client
       .channel("lead-arrivals")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "leads" }, (payload) => {
-        const row = payload.new as { id?: string; full_name?: string };
+        const row = payload.new as Record<string, string | null | undefined>;
         if (!row.id) return;
         const fullName = row.full_name || "New lead";
-        setItems((current) => [{ title: "New lead", body: fullName, href: `/leads/${row.id}` }, ...current].slice(0, 20));
-        window.dispatchEvent(new CustomEvent("bitvion-lead", { detail: { id: row.id, fullName } }));
+        setItems((current) => [{ title: fullName, body: row.source === "whatsapp_click" ? "WhatsApp click" : "New lead", href: `/leads/${row.id}` }, ...current].slice(0, 20));
+        window.dispatchEvent(new CustomEvent("bitvion-lead", { detail: { id: row.id, fullName, row } }));
         if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification("New lead", { body: fullName });
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "leads" }, (payload) => {
+        const row = payload.new as Record<string, string | null | undefined>;
+        if (!row.id) return;
+        window.dispatchEvent(new CustomEvent("bitvion-lead-update", { detail: { id: row.id, row } }));
       })
       .subscribe();
     return () => {
@@ -55,7 +60,7 @@ function LiveAlerts() {
         </div>
         <div className="max-h-96 overflow-y-auto">
           {items.length === 0 ? <p className="px-3 py-8 text-center text-sm text-muted">No operational alerts.</p> : items.map((item) => (
-            <button key={item.title} type="button" className="block w-full border-b border-line px-3 py-3 text-left last:border-0 hover:bg-slate-50" onClick={() => navigate(item.href)}>
+            <button key={`${item.href}:${item.body}`} type="button" className="block w-full border-b border-line px-3 py-3 text-left last:border-0 hover:bg-slate-50" onClick={() => navigate(item.href)}>
               <span className="block text-[13px] font-medium">{item.title}</span>
               <span className="mt-0.5 block text-[13px] text-muted">{item.body}</span>
             </button>

@@ -52,6 +52,7 @@ export function ProductionWhatsApp() {
   const [bulkPosterId, setBulkPosterId] = useState("");
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("");
+  const [chatReload, setChatReload] = useState(0);
   const endRef = useRef<HTMLDivElement>(null);
   const visibleDesks = useMemo(() => workspaces.filter((item) => deskMode === "both" || item.workspaceType === deskMode), [deskMode, workspaces]);
   const desk = visibleDesks.find((item) => item.id === deskId) ?? visibleDesks[0];
@@ -85,7 +86,13 @@ export function ProductionWhatsApp() {
       })
       .catch((reason: unknown) => setNotice(reason instanceof Error ? reason.message : "Could not load chats"));
     void listWhatsAppPosters(desk.id).then(setPosters).catch(() => setPosters([]));
-  }, [desk, search]);
+  }, [desk, search, chatReload]);
+
+  useEffect(() => {
+    const onLead = () => setChatReload((value) => value + 1);
+    window.addEventListener("bitvion-lead", onLead);
+    return () => window.removeEventListener("bitvion-lead", onLead);
+  }, []);
 
   useEffect(() => {
     if (!activeId) {
