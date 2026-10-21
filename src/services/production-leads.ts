@@ -171,8 +171,8 @@ export async function listLeads(query: LeadQuery) {
   if (query.unassigned) request = request.is("assigned_to", null);
   else if (query.assignedTo) request = request.eq("assigned_to", query.assignedTo);
   if (query.source) request = request.eq("source", query.source);
-  if (query.origin === "excel") request = request.or("source.eq.whatsapp,source_platform.eq.excel");
-  if (query.origin === "live") request = request.neq("source", "whatsapp").neq("source_platform", "excel");
+  if (query.origin === "excel") request = request.or("source.eq.whatsapp,source_platform.eq.excel,status.eq.excel");
+  if (query.origin === "live") request = request.neq("source", "whatsapp").neq("source_platform", "excel").neq("status", "excel");
   if (query.origin === "latest") {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
@@ -327,6 +327,28 @@ export async function assignLead(lead: Pick<ProductionLead, "id" | "organization
   });
   if (assignmentError) throw new Error(assignmentError.message);
   await client().from("audit_logs").insert({ user_id: userId, organization_id: lead.organizationId, workspace_id: lead.workspaceId, action: "lead_assigned", entity: "leads", entity_id: lead.id });
+}
+
+export async function clearLeadAssignment(lead: Pick<ProductionLead, "id" | "organizationId" | "workspaceId">) {
+  const userId = await currentUserId();
+  const now = new Date().toISOString();
+  const { error } = await client().from("leads").update({ assigned_to: null, assigned_at: null, updated_by: userId, updated_at: now }).eq("id", lead.id);
+  if (error) throw new Error(error.message);
+  const { error: assignmentError } = await client().from("lead_assignments").insert({
+    organization_id: lead.organizationId,
+    workspace_id: lead.workspaceId,
+    lead_id: lead.id,
+    assigned_to: null,
+    assigned_by: userId,
+  });
+  if (assignmentError) throw new Error(assignmentError.message);
+  await client().from("audit_logs").insert({ user_id: userId, organization_id: lead.organizationId, workspace_id: lead.workspaceId, action: "lead_unassigned", entity: "leads", entity_id: lead.id });
+}
+
+export async function clearAssignedLeads(assigneeId: string) {
+  const { data, error } = await client().rpc("clear_assigned_leads", { p_assignee_id: assigneeId });
+  if (error) throw new Error(error.message);
+  return Number(data ?? 0);
 }
 
 export async function deleteLead(lead: ProductionLead) {
@@ -499,7 +521,7 @@ export async function importLeadBatches(workspace: WorkspaceOption, rows: Import
         position: row.position.trim(),
         source: row.source || "other",
         source_platform: "excel",
-        status: stageFromText(row.status),
+        status: row.status.trim() ? stageFromText(row.status) : "excel",
         assigned_to: assignedTo,
         created_by: userId,
         updated_by: userId,

@@ -4,7 +4,7 @@ import { useDesk } from "@/context/DeskContext";
 import { productionRoleLabel } from "@/lib/production-access";
 import { ChannelSettings } from "@/pages/production/ChannelSettings";
 import { assignMetaLead, listDeskTelecallers, loadMetaCentre, retryMetaImport, saveFormMapping, setMappingActive, type DeskCaller, type MetaCentre } from "@/services/meta-admin";
-import { listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
+import { clearLeadAssignment, listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
 
 const EMPTY: MetaCentre = {
   status: "configuration_required",
@@ -221,7 +221,23 @@ export function MetaLeadCentre() {
                           disabled={savingId === lead.id || !workspace}
                           onChange={(event) => {
                             const assignedTo = event.target.value;
-                            if (!assignedTo || !workspace) return;
+                            if (!workspace) return;
+                            if (!assignedTo) {
+                              if (!lead.assignedTo) return;
+                              setSavingId(lead.id);
+                              setError("");
+                              void clearLeadAssignment({ id: lead.id, organizationId: workspace.organizationId, workspaceId: lead.workspaceId })
+                                .then(() => {
+                                  setNotice(`Assignment removed from ${lead.name}.`);
+                                  setCentre((current) => ({
+                                    ...current,
+                                    leads: current.leads.map((item) => (item.id === lead.id ? { ...item, assignedTo: null } : item)),
+                                  }));
+                                })
+                                .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not remove the assignment"))
+                                .finally(() => setSavingId(""));
+                              return;
+                            }
                             setSavingId(lead.id);
                             setError("");
                             void assignMetaLead({
@@ -243,7 +259,7 @@ export function MetaLeadCentre() {
                               .finally(() => setSavingId(""));
                           }}
                         >
-                          <option value="">{lead.assignedTo && !known ? "Assigned" : workspace?.workspaceType === "institute" ? "Choose an institute telecaller" : "Choose a clinic telecaller"}</option>
+                          <option value="">{lead.assignedTo ? "Remove assignment" : workspace?.workspaceType === "institute" ? "Choose an institute telecaller" : "Choose a clinic telecaller"}</option>
                           {lead.assignedTo && !known ? <option value={lead.assignedTo}>Current assignee</option> : null}
                           {deskCallers.map((caller) => <option key={caller.userId} value={caller.userId}>{caller.name} · {productionRoleLabel(caller.role)}</option>)}
                         </select>

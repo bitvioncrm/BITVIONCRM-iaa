@@ -20,6 +20,8 @@ import {
   assignLead,
   assignLeadCount,
   assignUnassignedLeads,
+  clearAssignedLeads,
+  clearLeadAssignment,
   createLead,
   downloadWorkspaceCsv,
   leadAssignmentTotals,
@@ -223,7 +225,7 @@ export function ProductionLeadsPage() {
     <div className="space-y-4">
       <PageHeader
         title="Leads"
-        description={loading ? "Loading this page from PostgreSQL." : `${total.toLocaleString("en-IN")} ${LEAD_ORIGINS.find((item) => item.value === origin)?.label.toLowerCase() ?? "leads"}${origin === "latest" ? " from today" : ` in ${bounds.label}`}. The list refreshes as leads arrive.`}
+        description={loading ? "Loading this page from PostgreSQL." : `${total.toLocaleString("en-IN")} ${status ? `${STATUS_LABEL[status as LeadStatus]} leads` : (LEAD_ORIGINS.find((item) => item.value === origin)?.label.toLowerCase() ?? "leads")}${origin === "latest" && !status ? " from today" : ` in ${bounds.label}`}. The list refreshes as leads arrive.`}
         actions={
           <>
             <Button type="button" variant="secondary" onClick={() => setReload((value) => value + 1)}>Refresh</Button>
@@ -327,6 +329,26 @@ export function ProductionLeadsPage() {
                         onChange={(event) => setAssignCounts((current) => ({ ...current, [member.userId]: event.target.value }))}
                       />
                       <Button type="submit" disabled={Boolean(assigningId) || waiting < 1}>{assigningId === member.userId ? "Assigning…" : "Assign"}</Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={Boolean(assigningId) || held < 1}
+                        onClick={() => {
+                          if (!window.confirm(`Remove assignment from ${held.toLocaleString("en-IN")} leads held by ${member.name} on ${item.name}?`)) return;
+                          setAssigningId(member.userId);
+                          void clearAssignedLeads(member.userId)
+                            .then((count) => {
+                              setError("");
+                              setNotice(`Removed assignment from ${count.toLocaleString("en-IN")} leads held by ${member.name}.`);
+                              setPage(1);
+                              setReload((value) => value + 1);
+                            })
+                            .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not remove the assignment"))
+                            .finally(() => setAssigningId(""));
+                        }}
+                      >
+                        Remove assigned
+                      </Button>
                       {people.length === 1 ? (
                         <Button
                           type="button"
@@ -411,7 +433,7 @@ export function ProductionLeadsPage() {
               <tr key={lead.id} className="border-b border-line last:border-0">
                 <td className="px-3 py-2 font-medium">
                   <Link to={`/leads/${lead.id}`}>{lead.fullName}</Link>
-                  <p className="text-xs text-muted">{isExcelLead(lead.source, lead.sourcePlatform) ? "Excel sheet" : lead.source === "meta_ads" ? "Meta" : "Added in CRM"}</p>
+                  <p className="text-xs text-muted">{lead.status === "excel" || isExcelLead(lead.source, lead.sourcePlatform) ? "Excel sheet" : lead.source === "meta_ads" ? "Meta" : "Added in CRM"}</p>
                 </td>
                 <td className="px-3 py-2"><PhoneLink phone={lead.phone} onClick={() => { if (!live && !callBusy) beginCall(lead); }} /></td>
                 <td className="px-3 py-2">
@@ -433,13 +455,19 @@ export function ProductionLeadsPage() {
                     value={lead.assignedTo ?? ""}
                     onChange={(event) => {
                       const assignedTo = event.target.value;
-                      if (!assignedTo) return;
+                      if (!assignedTo) {
+                        if (!lead.assignedTo) return;
+                        void clearLeadAssignment(lead)
+                          .then(() => setLeads((current) => current.map((item) => (item.id === lead.id ? { ...item, assignedTo: null } : item))))
+                          .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not remove the assignment"));
+                        return;
+                      }
                       void assignLead(lead, assignedTo)
                         .then(() => setLeads((current) => current.map((item) => (item.id === lead.id ? { ...item, assignedTo } : item))))
                         .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not assign the lead"));
                     }}
                   >
-                    <option value="">Unassigned</option>
+                    <option value="">{lead.assignedTo ? "Remove assignment" : "Unassigned"}</option>
                     {members.filter((member) => member.workspaceId === lead.workspaceId).map((member) => <option key={member.userId} value={member.userId}>{member.name} · {productionRoleLabel(member.role)}</option>)}
                   </Select>
                 </td>

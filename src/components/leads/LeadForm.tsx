@@ -29,7 +29,7 @@ const schema = z.object({
   priority: z.enum(["low", "medium", "high", "urgent"]),
   assignedTo: z.string(),
   businessUnit: z.enum(["clinic", "institute"]),
-  status: z.enum(["new", "contacted", "interested", "follow_up", "documents_pending", "processing", "interview", "selected", "converted", "lost"]),
+  status: z.enum(["excel", "new", "contacted", "interested", "follow_up", "documents_pending", "processing", "interview", "selected", "converted", "lost"]),
   notes: z.string().optional(),
   tags: z.string().optional(),
 });

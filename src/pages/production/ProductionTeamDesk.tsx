@@ -11,6 +11,7 @@ import { canOperateWhatsApp } from "@/lib/production-access";
 import {
   assignLeadCount,
   assignUnassignedLeads,
+  clearAssignedLeads,
   leadAssignmentTotals,
   listAssignableMembers,
   type AssignmentTotals,
@@ -152,6 +153,27 @@ export function ProductionTeamPage() {
             }}
           >
             Assign all waiting
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={busy || !assignee || Number(totals.assigned[assignee] ?? 0) < 1}
+            onClick={() => {
+              const held = Number(totals.assigned[assignee] ?? 0);
+              const person = members.find((item) => item.userId === assignee);
+              if (!window.confirm(`Remove assignment from ${held.toLocaleString("en-IN")} leads held by ${person?.name ?? "this telecaller"} on ${workspace?.name ?? "this desk"}?`)) return;
+              setBusy(true);
+              setError("");
+              void clearAssignedLeads(assignee)
+                .then((moved) => {
+                  setNotice(moved > 0 ? `Removed assignment from ${moved.toLocaleString("en-IN")} leads on ${workspace?.name ?? "this desk"}.` : `No assigned leads to remove on ${workspace?.name ?? "this desk"}.`);
+                  return reload();
+                })
+                .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not remove the assignment"))
+                .finally(() => setBusy(false));
+            }}
+          >
+            Remove assigned
           </Button>
           <Link className="text-sm text-accent underline-offset-2 hover:underline" to="/leads?status=new&assigned=unassigned">Open unassigned leads</Link>
         </Card>

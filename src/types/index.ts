@@ -14,6 +14,7 @@ export interface AccessRights {
 }
 
 export type LeadStatus =
+  | "excel"
   | "new"
   | "contacted"
   | "interested"

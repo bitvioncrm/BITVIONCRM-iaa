@@ -134,6 +134,7 @@ export const FEMALE_NAMES = new Set([
 ]);
 
 export const STATUS_ORDER: LeadStatus[] = [
+  "excel",
   "new",
   "contacted",
   "interested",
@@ -147,6 +148,7 @@ export const STATUS_ORDER: LeadStatus[] = [
 ];
 
 export const STATUS_LABEL: Record<LeadStatus, string> = {
+  excel: "Excel",
   new: "New",
   contacted: "Contacted",
   interested: "Interested",
@@ -181,6 +183,7 @@ export function stageFromText(value: string): LeadStatus {
 }
 
 export const STATUS_CLASS: Record<LeadStatus, string> = {
+  excel: "bg-slate-100 text-slate-600",
   new: "bg-slate-100 text-slate-700",
   contacted: "bg-blue-50 text-blue-800",
   interested: "bg-emerald-50 text-emerald-800",
