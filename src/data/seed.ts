@@ -379,7 +379,7 @@ function buildCalls(leads: Lead[], now: Date): CallLog[] {
 
 function settings(): AppSettings {
   return {
-    companyName: "BITVION",
+    companyName: "Dr. K's",
     companyEmail: "hello@bitvion.demo",
     companyPhone: "+919895529928",
     website: "https://bitvion.demo",
@@ -393,7 +393,7 @@ function settings(): AppSettings {
     },
     meta: {
       connected: true,
-      accountName: "Bitvion Ads",
+      accountName: "Dr. K's Ads",
       adAccountId: "act_8842103391",
       pageName: "Dr. K's Aesthetic Clinic",
       status: "demo",
@@ -441,7 +441,7 @@ function automation(): Automation {
       { id: "n2", type: "action", title: "One custom message", description: "Write one message. {{name}} and {{position}} fill in for each lead." },
       { id: "n3", type: "action", title: "One poster", description: "Attach a single poster. The same poster goes with the message." },
       { id: "n4", type: "condition", title: "Send now or schedule?", description: "Send opens the WhatsApp thread in demo mode. Schedule creates a follow-up for the chosen time." },
-      { id: "n5", type: "action", title: "Send to these leads", description: "Demo Mode — the message stays in BITVION. Clinic welcome can still send itself. Institute messages are only the ones you send.", branch: "yes" },
+      { id: "n5", type: "action", title: "Send to these leads", description: "Demo Mode — the message stays in Dr. K's. Clinic welcome can still send itself. Institute messages are only the ones you send.", branch: "yes" },
       { id: "n6", type: "action", title: "Schedule follow-up message", description: "The same message and poster are queued as a WhatsApp follow-up.", branch: "no" },
     ],
   };
@@ -740,7 +740,7 @@ export function buildSeed(now = new Date()): CrmState {
     if (!lead) continue;
     const base = addDays(now, -((index % 5) + 1));
     base.setHours(10, 15, 0, 0);
-    addMessage(lead, "out", `Hi ${lead.fullName.split(" ")[0]}, this is ${USERS.find((user) => user.id === lead.assignedTo)?.name ?? "BITVION"} from Dr. K's Aesthetic Clinic. We received your enquiry for ${lead.position}.`, base.toISOString(), index === 9 ? "failed" : "read");
+    addMessage(lead, "out", `Hi ${lead.fullName.split(" ")[0]}, this is ${USERS.find((user) => user.id === lead.assignedTo)?.name ?? "Dr. K's"} from Dr. K's Aesthetic Clinic. We received your enquiry for ${lead.position}.`, base.toISOString(), index === 9 ? "failed" : "read");
     if (index !== 9 && index % 2 === 0) {
       const reply = new Date(base.getTime() + (40 + index) * 60 * 1000);
       addMessage(lead, "in", "Thank you. Please let me know the documents you need.", reply.toISOString(), "read");

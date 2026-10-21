@@ -114,7 +114,7 @@ function DemoSettings() {
             <div className="space-y-4">
               <h2 className="font-semibold">Meta Ads</h2>
               <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Demo Mode — Meta Ads API not connected. Lead forms are simulated.</div>
-              <p className="text-sm text-muted">A person fills a Meta lead form on Facebook or Instagram. Bitvion receives the name, phone and place, then drops the enquiry into the fresh queue. The admin assigns it to a counsellor.</p>
+              <p className="text-sm text-muted">A person fills a Meta lead form on Facebook or Instagram. Dr. K's receives the name, phone and place, then drops the enquiry into the fresh queue. The admin assigns it to a counsellor.</p>
               <ol className="list-decimal space-y-1 pl-5 text-sm text-muted">
                 <li>Campaign runs on the clinic page or the IAA Kochi page.</li>
                 <li>Lead form captures name, phone and place.</li>
@@ -193,7 +193,7 @@ function DemoSettings() {
           <Button type="button" onClick={() => setMetaOpen(false)}>Continue in demo mode</Button>
         </DialogContent>
       </Dialog>
-      <ConfirmDialog open={reset} danger title="Reset demo data?" description="Local changes will be replaced with the BITVION clinic and institute dataset." confirmLabel="Reset" onOpenChange={setReset} onConfirm={resetDemo} />
+      <ConfirmDialog open={reset} danger title="Reset demo data?" description="Local changes will be replaced with the Dr. K's clinic and institute dataset." confirmLabel="Reset" onOpenChange={setReset} onConfirm={resetDemo} />
     </div>
   );
 }

@@ -44,7 +44,7 @@ function ProductionSearch({ open, onOpenChange }: { open: boolean; onOpenChange:
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl p-0">
-        <DialogTitle className="sr-only">Search BITVION</DialogTitle>
+        <DialogTitle className="sr-only">Search Dr. K's</DialogTitle>
         <div className="flex items-center gap-2 border-b border-line px-3">
           <Search className="size-4 text-muted" />
           <input
@@ -111,7 +111,7 @@ function DemoSearch({ open, onOpenChange }: { open: boolean; onOpenChange: (open
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl p-0">
-        <DialogTitle className="sr-only">Search BITVION</DialogTitle>
+        <DialogTitle className="sr-only">Search Dr. K's</DialogTitle>
         <div className="flex items-center gap-2 border-b border-line px-3">
           <Search className="size-4 text-muted" />
           <input

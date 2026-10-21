@@ -47,7 +47,7 @@ export function SendWhatsAppDialog({
           <DialogDescription>
             {lead.whatsappAutomation
               ? "Demo Mode — clinic automation can send this. The WhatsApp API is not connected."
-              : "Direct connect — institute leads are not automated. This message stays inside BITVION."}
+              : "Direct connect — institute leads are not automated. This message stays inside Dr. K's."}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 md:grid-cols-2">

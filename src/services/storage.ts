@@ -40,7 +40,7 @@ export function idleCrm(): CrmState {
     calls: [],
     automation: { id: "production", name: "Production", enabled: false, runOnNewLeads: false, nodes: [] },
     settings: {
-      companyName: "BITVION",
+      companyName: "Dr. K's",
       companyEmail: "",
       companyPhone: "",
       website: "",

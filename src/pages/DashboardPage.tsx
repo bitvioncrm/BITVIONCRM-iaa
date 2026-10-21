@@ -136,7 +136,7 @@ function DeskHome({
           <h2 className="text-sm font-semibold">WhatsApp automation demo</h2>
           <p className="text-sm text-muted">Clinic only. A new clinic lead can receive this welcome without you typing it.</p>
           <p className="rounded-md bg-slate-50 px-3 py-2 text-sm">{preview || "Assign yourself a clinic lead to preview the welcome."}</p>
-          <p className="text-xs text-muted">Demo Mode — the message stays inside BITVION. A phone number still opens the phone app.</p>
+          <p className="text-xs text-muted">Demo Mode — the message stays inside Dr. K's. A phone number still opens the phone app.</p>
           <Button
             type="button"
             disabled={!sample || !template}
