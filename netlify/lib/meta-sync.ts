@@ -1,5 +1,6 @@
 import { loadChannelSecrets } from "./channel-secrets.ts";
 import { processLeadgen } from "./meta-ingest.ts";
+import { linkWhatsAppDesks } from "./whatsapp-link.ts";
 
 function env(name: string) {
   return process.env[name]?.trim() ?? "";
@@ -7,18 +8,13 @@ function env(name: string) {
 
 type GraphError = { error?: { message?: string; code?: number } };
 
-async function graphGet(path: string, token: string) {
-  const response = await fetch(`https://graph.facebook.com/v21.0/${path}${path.includes("?") ? "&" : "?"}access_token=${encodeURIComponent(token)}`);
-  const body = (await response.json()) as GraphError & { data?: Array<Record<string, string>> };
-  return { ok: response.ok, body };
-}
-
 export async function syncMetaLeads() {
   const supabaseUrl = env("SUPABASE_URL");
   const serviceKey = env("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceKey) return { status: "configuration_required", stored: 0, duplicate: 0, failed: 0, forms: 0, reason: "", webhook: "" };
+  if (!supabaseUrl || !serviceKey) return { status: "configuration_required", stored: 0, duplicate: 0, failed: 0, forms: 0, reason: "", webhook: "", whatsapp: "" };
   const desks = (await loadChannelSecrets(supabaseUrl, serviceKey, "meta")).filter((row) => row.page_id && row.access_token);
   const webhook = await ensureLeadWebhook(desks);
+  const whatsapp = await linkWhatsAppDesks(supabaseUrl, serviceKey);
   let stored = 0;
   let duplicate = 0;
   let failed = 0;
@@ -34,13 +30,13 @@ export async function syncMetaLeads() {
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ subscribed_fields: "leadgen", access_token: desk.access_token }),
     });
-    const formList = await graphGet(`${desk.page_id}/leadgen_forms?fields=id&limit=100`, desk.access_token);
+    const formList = await graphAll(`${desk.page_id}/leadgen_forms?fields=id&limit=100`, desk.access_token);
     if (!formList.ok) {
       failed += 1;
-      reason = graphReason(formList.body);
+      reason = formList.reason;
       continue;
     }
-    for (const form of formList.body.data ?? []) {
+    for (const form of formList.rows) {
       if (!form.id) continue;
       forms += 1;
       const leads = await graphAll(`${form.id}/leads?fields=id&limit=100`, desk.access_token);
@@ -64,7 +60,7 @@ export async function syncMetaLeads() {
     }
   }
 
-  return { status: stored > 0 ? "stored" : failed > 0 ? "partial" : "current", stored, duplicate, failed, forms, reason, webhook };
+  return { status: stored > 0 ? "stored" : failed > 0 ? "partial" : "current", stored, duplicate, failed, forms, reason: reason || whatsapp.reason, webhook, whatsapp: `${whatsapp.linked}/${whatsapp.phones}:${whatsapp.webhook}` };
 }
 
 const LEAD_WEBHOOK = "https://bitvioncrm-drks.netlify.app/.netlify/functions/meta-leadgen";

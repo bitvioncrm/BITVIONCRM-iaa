@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { instituteDeskForCampaign } from "../../src/lib/meta-route.ts";
 import { loadChannelSecrets, uniqueSecrets, type ChannelSecret } from "../lib/channel-secrets.ts";
 import { messageBody, phoneLookup, whatsappLeadFields } from "../lib/whatsapp-inbound.ts";
 
@@ -85,6 +86,37 @@ async function createLead(supabaseUrl: string, serviceKey: string, desk: Channel
   return leadId;
 }
 
+async function bindClickDesk(supabaseUrl: string, serviceKey: string, rows: ChannelSecret[], phoneNumberId: string, headline: string) {
+  const known = rows.find((row) => row.phone_number_id === phoneNumberId);
+  if (known) return known;
+  if (!headline.trim()) return undefined;
+  const response = await fetch(
+    `${supabaseUrl}/rest/v1/workspaces?select=id,organization_id,name,workspace_type&deleted_at=is.null&workspace_type=in.(clinic,institute)`,
+    { headers: serviceHeaders(serviceKey) },
+  );
+  if (!response.ok) return undefined;
+  const loaded = ((await response.json()) as Array<{ id: string; organization_id: string; name: string; workspace_type: string }>).map((desk) => ({
+    workspaceId: desk.id,
+    organizationId: desk.organization_id,
+    workspaceType: desk.workspace_type,
+    name: desk.name ?? "",
+  }));
+  const institute = instituteDeskForCampaign(headline, loaded[0]?.organizationId ?? "", loaded);
+  const clinic = loaded.find((desk) => desk.workspaceType === "clinic");
+  const target = institute?.workspaceId ?? clinic?.workspaceId ?? "";
+  const row = rows.find((item) => item.workspace_id === target);
+  if (!row || (row.phone_number_id && row.phone_number_id !== phoneNumberId)) return undefined;
+  if (!row.phone_number_id) {
+    await fetch(`${supabaseUrl}/rest/v1/workspace_channel_secrets?workspace_id=eq.${row.workspace_id}&channel=eq.whatsapp`, {
+      method: "PATCH",
+      headers: serviceHeaders(serviceKey),
+      body: JSON.stringify({ phone_number_id: phoneNumberId, status: "connected", updated_at: new Date().toISOString() }),
+    });
+    row.phone_number_id = phoneNumberId;
+  }
+  return row;
+}
+
 export default async (request: Request) => {
   const supabaseUrl = required("SUPABASE_URL");
   const serviceKey = required("SUPABASE_SERVICE_ROLE_KEY");
@@ -134,7 +166,11 @@ export default async (request: Request) => {
     }
     for (const message of value.messages ?? []) {
       if (!message.id || !message.from) continue;
-      if (!desk) {
+      let matched = desk;
+      if (!matched && phoneNumberId) {
+        matched = await bindClickDesk(supabaseUrl, serviceKey, whatsappRows, phoneNumberId, message.referral?.headline ?? "");
+      }
+      if (!matched) {
         unmapped += 1;
         continue;
       }
@@ -147,16 +183,16 @@ export default async (request: Request) => {
 
       const contact = value.contacts?.find((item) => item.wa_id === message.from);
       const name = contact?.profile?.name ?? "";
-      let leadId = await findLeadId(supabaseUrl, serviceKey, desk.workspace_id, message.from);
-      if (!leadId) leadId = await createLead(supabaseUrl, serviceKey, desk, message, name);
+      let leadId = await findLeadId(supabaseUrl, serviceKey, matched.workspace_id, message.from);
+      if (!leadId) leadId = await createLead(supabaseUrl, serviceKey, matched, message, name);
       if (!leadId) return json(502, { status: "lead_insert_failed" });
 
       const storedMessage = await fetch(`${supabaseUrl}/rest/v1/messages`, {
         method: "POST",
         headers: serviceHeaders(serviceKey),
         body: JSON.stringify({
-          organization_id: desk.organization_id,
-          workspace_id: desk.workspace_id,
+          organization_id: matched.organization_id,
+          workspace_id: matched.workspace_id,
           lead_id: leadId,
           channel: "whatsapp",
           direction: "inbound",
