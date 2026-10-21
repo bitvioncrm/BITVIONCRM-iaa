@@ -5,7 +5,6 @@ import { ImportDialog } from "@/components/leads/ImportDialog";
 import { LeadForm } from "@/components/leads/LeadForm";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { HowItWorks } from "@/components/shared/HowItWorks";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Pagination } from "@/components/shared/Pagination";
 import { PriorityBadge, StatusBadge } from "@/components/shared/StatusBadge";
@@ -116,7 +115,6 @@ function DemoLeadsPage() {
           </>
         }
       />
-      <HowItWorks page="leads" />
       <div className="grid gap-2 rounded-lg border border-line bg-white p-3 md:grid-cols-4 xl:grid-cols-8">
         <Input className="md:col-span-2" placeholder="Search leads" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} />
         <Select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>

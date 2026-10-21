@@ -177,9 +177,7 @@ export function ProductionTeamPage() {
           </Button>
           <Link className="text-sm text-accent underline-offset-2 hover:underline" to="/leads?status=new&assigned=unassigned">Open unassigned leads</Link>
         </Card>
-      ) : (
-        <p className="text-sm text-muted">Assignment is available to Admin.</p>
-      )}
+      ) : null}
     </div>
   );
 }

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { HowItWorks } from "@/components/shared/HowItWorks";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { SendWhatsAppDialog } from "@/components/whatsapp/SendWhatsAppDialog";
 import { Button } from "@/components/ui/button";
@@ -99,7 +98,6 @@ function DemoFollowUps() {
   return (
     <div className="space-y-4">
       <PageHeader title="Follow-ups" description="Filter by type, counsellor, lead status and due date." />
-      <HowItWorks page="follow" />
       <div className="grid gap-2 rounded-lg border border-line bg-white p-3 md:grid-cols-5">
         <Select value={type} onChange={(event) => setType(event.target.value)}>
           <option value="">Follow-up type</option>

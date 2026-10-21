@@ -163,7 +163,7 @@ export function ChannelSettings({ embedded = false }: { embedded?: boolean }) {
           value={value}
           type={row.secret ? "password" : "text"}
           autoComplete="off"
-          placeholder={savedFlag(saved, row.key) ? "Saved — type here to replace" : row.placeholder}
+          placeholder={savedFlag(saved, row.key) ? "Saved" : row.placeholder}
           onChange={(event) => setField(workspace.id, channel, row.key, event.target.value)}
         />
         {row.secret && savedFlag(saved, row.key) ? <p className="mt-1 text-[11px] text-emerald-700">Saved{row.key === "accessToken" && saved?.accessTokenLast4 ? ` · ends ${saved.accessTokenLast4}` : ""}</p> : null}

@@ -16,12 +16,11 @@ function money(value: number | null) {
   return value === null ? "—" : inr(value);
 }
 
-function Kpi({ label, value, detail, to }: { label: string; value: string; detail: string; to: string }) {
+function Kpi({ label, value, to }: { label: string; value: string; detail?: string; to: string }) {
   return (
     <Link to={to} className="block rounded-lg border border-line bg-white px-4 py-3 transition hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30">
       <p className="text-[11px] font-medium tracking-wide text-muted uppercase">{label}</p>
       <p className="mt-1 text-[26px] leading-none font-semibold tabular">{value}</p>
-      <p className="mt-2 text-xs text-muted">{detail}</p>
     </Link>
   );
 }
@@ -160,7 +159,6 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
 
           {variant === "full" ? (
             <>
-              {data.chartNote ? <p className="text-sm text-muted">{data.chartNote}</p> : null}
               <div className="grid gap-4 xl:grid-cols-2">
                 <Chart title="Lead acquisition" subtitle={bounds.label} empty={chartsReady && data.trend.length ? "" : "No leads in this range"}>
                   <LineChart data={data.trend}>
@@ -225,7 +223,6 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
                 <section className="overflow-x-auto rounded-lg border border-line bg-white">
                   <div className="border-b border-line px-4 py-3">
                     <h3 className="text-sm font-semibold">Course-wise enquiry conversion</h3>
-                    <p className="text-xs text-muted">Grouped by the interest recorded on institute leads. An enquiry is not an enrolment.</p>
                   </div>
                   <table className="w-full text-left text-[13px]">
                     <thead className="text-xs text-muted"><tr>{["Interest", "Leads", "Converted"].map((heading) => <th key={heading} className="px-4 py-2 font-medium">{heading}</th>)}</tr></thead>
@@ -244,7 +241,6 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
               <section className="overflow-x-auto rounded-lg border border-line bg-white">
                 <div className="border-b border-line px-4 py-3">
                   <h3 className="text-sm font-semibold">Latest leads</h3>
-                  <p className="text-xs text-muted">Newest records in {bounds.label.toLowerCase()}.</p>
                 </div>
                 {data.recent.length === 0 ? <p className="px-4 py-8 text-sm text-muted">No leads in this range.</p> : (
                   <>
@@ -284,11 +280,10 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
   );
 }
 
-function Chart({ title, subtitle, empty, children }: { title: string; subtitle: string; empty: string; children: ReactNode }) {
+function Chart({ title, empty, children }: { title: string; subtitle?: string; empty: string; children: ReactNode }) {
   return (
     <section className="rounded-lg border border-line bg-white p-4">
       <h3 className="text-sm font-semibold">{title}</h3>
-      <p className="text-xs text-muted">{subtitle}</p>
       <div className="mt-3 h-[240px]">
         {empty ? <p className="flex h-full items-center justify-center text-center text-sm text-muted">{empty}</p> : (
           <ResponsiveContainer width="100%" height="100%">{children}</ResponsiveContainer>

@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { HowItWorks } from "@/components/shared/HowItWorks";
 import { PhoneLink } from "@/components/shared/PhoneLink";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { StatusBadge } from "@/components/shared/StatusBadge";
@@ -56,7 +55,6 @@ function DemoCallsPage() {
   return (
     <div className="space-y-4">
         <PageHeader title="Calls" description={`${rows.length} calls · ${formatTalk(minutes)} on this filter. Tap a number to open the phone. The log stays inside Dr. K's.`} />
-      <HowItWorks page="calls" />
       <div className="grid gap-2 rounded-lg border border-line bg-white p-3 md:grid-cols-5">
         <Input placeholder="Name, phone or place" value={query} onChange={(event) => setQuery(event.target.value)} />
         <Select value={owner} onChange={(event) => setOwner(event.target.value)} disabled={!viewAll}>

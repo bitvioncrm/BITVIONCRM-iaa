@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { HowItWorks } from "@/components/shared/HowItWorks";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -62,7 +61,6 @@ function DemoTeamPage() {
         description="Admin creates employees, sets what each person can open, and assigns fresh Meta leads."
         actions={<Button type="button" disabled={!isAdmin} onClick={() => { setError(""); setEditing(emptyMember()); }}>Add employee</Button>}
       />
-      <HowItWorks page="team" />
       <div className="grid gap-3 sm:grid-cols-3">
         <Card className="p-4"><p className="text-xs text-muted">Total talk time</p><p className="mt-1 text-2xl font-semibold tabular">{formatTalk(totalTalk)}</p></Card>
         <Card className="p-4"><p className="text-xs text-muted">Fresh unassigned leads</p><p className="mt-1 text-2xl font-semibold tabular">{fresh.length}</p></Card>

@@ -110,10 +110,7 @@ export function MetaLeadCentre() {
       {error ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
       {notice ? <p className="rounded-md border border-line bg-white px-3 py-2 text-sm">{notice}</p> : null}
       <section className={`rounded-lg border px-4 py-3 ${connected ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
-        <p className="text-sm font-semibold">{connected ? "Connected" : "Meta integration is not configured."}</p>
-        <p className="mt-1 text-sm text-muted">
-          {connected ? centre.detail || "Connected" : "Not connected"}
-        </p>
+        <p className="text-sm font-semibold">{connected ? "Connected" : "Not connected"}</p>
         <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
           <div><dt className="text-muted">Last successful sync</dt><dd>{centre.lastSuccessAt ? new Date(centre.lastSuccessAt).toLocaleString("en-IN") : "None"}</dd></div>
           <div><dt className="text-muted">Last lead received</dt><dd>{centre.lastEventAt ? new Date(centre.lastEventAt).toLocaleString("en-IN") : "None"}</dd></div>

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { HowItWorks } from "@/components/shared/HowItWorks";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { SendWhatsAppDialog } from "@/components/whatsapp/SendWhatsAppDialog";
@@ -44,7 +43,6 @@ function DemoDeskPage() {
           </Select>
         ) : null}
       />
-      <HowItWorks page="desk" />
       <div className="grid gap-3 sm:grid-cols-3">
         <Card className="p-4"><p className="text-xs text-muted">Assigned leads</p><p className="mt-1 text-2xl font-semibold tabular">{leads.length}</p></Card>
         <Card className="p-4"><p className="text-xs text-muted">Calls by {owner?.name.split(" ")[0] ?? "this desk"}</p><p className="mt-1 text-2xl font-semibold tabular">{calls.length}</p></Card>

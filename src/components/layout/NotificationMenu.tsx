@@ -56,7 +56,6 @@ function LiveAlerts() {
       <PopoverContent className="w-96 p-0">
         <div className="border-b border-line px-3 py-2.5">
           <p className="text-sm font-semibold">Notifications</p>
-          <p className="text-[11px] text-muted">Live alerts from current records. They are not a second copy of each event.</p>
         </div>
         <div className="max-h-96 overflow-y-auto">
           {items.length === 0 ? <p className="px-3 py-8 text-center text-sm text-muted">No operational alerts.</p> : items.map((item) => (
