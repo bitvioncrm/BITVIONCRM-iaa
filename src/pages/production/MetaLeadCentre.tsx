@@ -128,13 +128,13 @@ export function MetaLeadCentre() {
           <h2 className="text-sm font-semibold">Form to desk</h2>
           <p className="mt-1 text-sm text-muted">Optional. Use this only when one form should ignore the campaign name. Choose the desk that form must use.</p>
           <form className="mt-3 grid gap-2 md:grid-cols-5" onSubmit={onSave}>
-            <input name="page" required placeholder="Page ID" className="rounded-md border border-line px-2 py-2" />
-            <input name="form" required placeholder="Form ID" className="rounded-md border border-line px-2 py-2" />
-            <input name="name" placeholder="Form name" className="rounded-md border border-line px-2 py-2" />
-            <select name="workspace" required className="rounded-md border border-line px-2 py-2" defaultValue={workspaces.find((item) => item.workspaceType === "clinic")?.id ?? ""}>
+            <input name="page" required placeholder="Page ID" className="h-11 rounded-md border border-line px-2 text-base sm:h-9 sm:text-sm" />
+            <input name="form" required placeholder="Form ID" className="h-11 rounded-md border border-line px-2 text-base sm:h-9 sm:text-sm" />
+            <input name="name" placeholder="Form name" className="h-11 rounded-md border border-line px-2 text-base sm:h-9 sm:text-sm" />
+            <select name="workspace" required className="h-11 rounded-md border border-line px-2 text-base sm:h-9 sm:text-sm" defaultValue={workspaces.find((item) => item.workspaceType === "clinic")?.id ?? ""}>
               {workspaces.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
-            <button className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-white" type="submit">Save mapping</button>
+            <button className="h-11 rounded-md bg-accent px-3 text-sm font-medium text-white sm:h-9" type="submit">Save mapping</button>
           </form>
           <div className="mt-4 overflow-x-auto">
             <table className="w-full text-left text-[13px]">
@@ -197,7 +197,70 @@ export function MetaLeadCentre() {
           </select>
         </div>
         {loading ? <p className="text-sm text-muted">Loading Meta records…</p> : null}
-        <div className="overflow-x-auto rounded-lg border border-line bg-white">
+        <div className="space-y-3 lg:hidden">
+          {centre.leads.map((lead) => {
+            const workspace = workspaces.find((item) => item.id === lead.workspaceId);
+            const deskCallers = callers.filter((item) => item.workspaceId === lead.workspaceId);
+            const known = deskCallers.some((item) => item.userId === lead.assignedTo);
+            return (
+              <article key={lead.id} className="space-y-2 rounded-lg border border-line p-3">
+                <Link to={`/leads/${lead.id}`} className="font-medium">{lead.name}</Link>
+                <p className="text-xs text-muted">{workspaceName(lead.workspaceId)} · {lead.status}</p>
+                <p className="text-xs text-muted">{lead.campaign || "No campaign"} · {lead.form || "No form"}</p>
+                <select
+                  aria-label={`Assign ${lead.name}`}
+                  className="h-11 w-full rounded-md border border-line bg-white px-2 text-base"
+                  value={lead.assignedTo ?? ""}
+                  disabled={savingId === lead.id || !workspace}
+                  onChange={(event) => {
+                    const assignedTo = event.target.value;
+                    if (!workspace) return;
+                    if (!assignedTo) {
+                      if (!lead.assignedTo) return;
+                      setSavingId(lead.id);
+                      setError("");
+                      void clearLeadAssignment({ id: lead.id, organizationId: workspace.organizationId, workspaceId: lead.workspaceId })
+                        .then(() => {
+                          setNotice(`Assignment removed from ${lead.name}.`);
+                          setCentre((current) => ({
+                            ...current,
+                            leads: current.leads.map((item) => (item.id === lead.id ? { ...item, assignedTo: null } : item)),
+                          }));
+                        })
+                        .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not remove the assignment"))
+                        .finally(() => setSavingId(""));
+                      return;
+                    }
+                    setSavingId(lead.id);
+                    setError("");
+                    void assignMetaLead({
+                      leadId: lead.id,
+                      organizationId: workspace.organizationId,
+                      workspaceId: lead.workspaceId,
+                      workspaceType: workspace.workspaceType,
+                      assignedTo,
+                    })
+                      .then(() => {
+                        const caller = deskCallers.find((item) => item.userId === assignedTo);
+                        setNotice(`${lead.name} assigned to ${caller?.name ?? "the telecaller"}.`);
+                        setCentre((current) => ({
+                          ...current,
+                          leads: current.leads.map((item) => (item.id === lead.id ? { ...item, assignedTo } : item)),
+                        }));
+                      })
+                      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not assign the lead"))
+                      .finally(() => setSavingId(""));
+                  }}
+                >
+                  <option value="">{lead.assignedTo ? "Remove assignment" : workspace?.workspaceType === "institute" ? "Choose an institute telecaller" : "Choose a clinic telecaller"}</option>
+                  {lead.assignedTo && !known ? <option value={lead.assignedTo}>Current assignee</option> : null}
+                  {deskCallers.map((caller) => <option key={caller.userId} value={caller.userId}>{caller.name} · {productionRoleLabel(caller.role)}</option>)}
+                </select>
+              </article>
+            );
+          })}
+        </div>
+        <div className="hidden overflow-x-auto rounded-lg border border-line bg-white lg:block">
           {centre.leads.length === 0 ? <p className="px-4 py-8 text-sm text-muted">No Meta leads in this desk and date range.</p> : (
             <table className="w-full min-w-[880px] text-left text-[13px]">
               <thead className="text-xs text-muted"><tr>{["Name", "Desk", "Status", "Campaign", "Form", "Telecaller"].map((heading) => <th key={heading} className="px-3 py-2 font-medium">{heading}</th>)}</tr></thead>

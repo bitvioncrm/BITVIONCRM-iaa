@@ -30,13 +30,13 @@ export function TopBar({ collapsed, onToggle }: { collapsed: boolean; onToggle: 
       <button type="button" aria-pressed={collapsed} className="hidden rounded-md p-2 text-muted hover:bg-slate-100 lg:inline-flex" onClick={onToggle} aria-label="Collapse sidebar">
         <PanelLeft className="size-4" />
       </button>
-      <button type="button" className="rounded-md p-2 text-muted hover:bg-slate-100 lg:hidden" onClick={() => setMenuOpen(true)} aria-label="Open menu">
+      <button type="button" className="inline-flex size-11 items-center justify-center rounded-md text-muted hover:bg-slate-100 lg:hidden" onClick={() => setMenuOpen(true)} aria-label="Open menu">
         <Menu className="size-4" />
       </button>
       <button
         type="button"
         onClick={() => setSearchOpen(true)}
-        className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border border-line bg-canvas px-3 text-left text-sm text-muted sm:max-w-md"
+        className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-md border border-line bg-canvas px-3 text-left text-base text-muted sm:h-9 sm:max-w-md sm:text-sm"
       >
         <Search className="size-4" />
         <span className="truncate">Search leads, patients, students</span>
@@ -44,12 +44,12 @@ export function TopBar({ collapsed, onToggle }: { collapsed: boolean; onToggle: 
       </button>
       {admin && productionUser ? (
         <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto">
-          <select aria-label="Desk" value={desk} onChange={(event) => setDesk(event.target.value as DeskKey)} className="h-9 rounded-md border border-line bg-white px-2 text-sm">
+          <select aria-label="Desk" value={desk} onChange={(event) => setDesk(event.target.value as DeskKey)} className="h-11 min-w-0 flex-1 rounded-md border border-line bg-white px-2 text-base sm:h-9 sm:flex-none sm:text-sm">
             <option value="all">All Desks</option>
             <option value="clinic">Clinic</option>
             <option value="institute">Institute</option>
           </select>
-          <select aria-label="Date range" value={rangeKey} onChange={(event) => setRangeKey(event.target.value as typeof rangeKey)} className="h-9 rounded-md border border-line bg-white px-2 text-sm">
+          <select aria-label="Date range" value={rangeKey} onChange={(event) => setRangeKey(event.target.value as typeof rangeKey)} className="h-11 min-w-0 flex-1 rounded-md border border-line bg-white px-2 text-base sm:h-9 sm:flex-none sm:text-sm">
             {RANGE_OPTIONS.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
           </select>
           {rangeKey === "custom" ? (

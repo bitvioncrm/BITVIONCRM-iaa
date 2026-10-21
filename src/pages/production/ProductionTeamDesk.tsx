@@ -68,7 +68,7 @@ export function ProductionTeamPage() {
         title="Team"
         description="Assign waiting leads to the telecaller on the selected desk. Clinic leads stay on Dr. K's Aesthetic Clinic. Institute leads stay on IAA Kochi."
         actions={workspaces.length > 1 ? (
-          <Select className="w-64" value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}>
+          <Select className="w-full sm:w-64" value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}>
             {workspaces.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </Select>
         ) : undefined}
@@ -99,16 +99,16 @@ export function ProductionTeamPage() {
         </table>
       </Card>
       {admin ? (
-        <Card className="flex flex-wrap items-end gap-3 p-4">
-          <label className="text-sm">
+        <Card className="flex flex-col gap-3 p-4 sm:flex-row sm:flex-wrap sm:items-end">
+          <label className="w-full text-sm sm:w-auto">
             Assign to
-            <Select className="mt-1 w-56" value={assignee} onChange={(event) => setAssignee(event.target.value)}>
+            <Select className="mt-1 w-full sm:w-56" value={assignee} onChange={(event) => setAssignee(event.target.value)}>
               {members.map((member) => <option key={member.userId} value={member.userId}>{member.name}</option>)}
             </Select>
           </label>
-          <label className="text-sm">
+          <label className="w-full text-sm sm:w-auto">
             How many
-            <Input className="mt-1 w-28" type="number" min={1} max={Math.max(Number(totals.desks[workspaceId] ?? 0), 1)} value={count} onChange={(event) => setCount(event.target.value)} />
+            <Input className="mt-1 w-full sm:w-28" type="number" min={1} max={Math.max(Number(totals.desks[workspaceId] ?? 0), 1)} value={count} onChange={(event) => setCount(event.target.value)} />
           </label>
           <Button
             type="button"
@@ -251,14 +251,14 @@ export function ProductionDeskPage() {
         title={admin ? "Employee desk" : "My desk"}
         description="Assigned leads from Supabase for the selected counsellor."
         actions={(
-          <div className="flex flex-wrap gap-2">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
             {workspaces.length > 1 ? (
-              <Select className="w-56" value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}>
+              <Select className="w-full sm:w-56" value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}>
                 {workspaces.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
               </Select>
             ) : null}
             {admin ? (
-              <Select className="w-64" value={ownerId} onChange={(event) => setOwnerId(event.target.value)}>
+              <Select className="w-full sm:w-64" value={ownerId} onChange={(event) => setOwnerId(event.target.value)}>
                 {members.map((member) => <option key={member.userId} value={member.userId}>{member.name}</option>)}
               </Select>
             ) : null}
@@ -271,7 +271,22 @@ export function ProductionDeskPage() {
         <Card className="p-4"><p className="text-xs text-muted">Desk</p><p className="mt-1 text-lg font-semibold">{workspace?.name ?? "—"}</p></Card>
         <Card className="p-4"><p className="text-xs text-muted">Owner</p><p className="mt-1 text-lg font-semibold">{owner.name}</p></Card>
       </div>
-      <Card className="overflow-x-auto">
+      <div className="space-y-2 lg:hidden">
+        {loading ? <p className="text-sm text-muted">Loading desk…</p> : null}
+        {!loading && leads.length === 0 ? <p className="rounded-lg border border-line bg-white px-4 py-6 text-sm text-muted">No leads assigned to this desk.</p> : null}
+        {leads.map((lead) => (
+          <article key={lead.id} className="space-y-1 rounded-lg border border-line bg-white p-3">
+            <div className="flex items-start justify-between gap-2">
+              <Link className="font-medium" to={`/leads/${lead.id}`}>{lead.fullName}</Link>
+              <span className="text-xs capitalize text-muted">{lead.status.replaceAll("_", " ")}</span>
+            </div>
+            <PhoneLink phone={lead.phone} />
+            <p className="text-xs text-muted">{lead.location || "No place"} · {lead.position || "No interest"}</p>
+            <Link className="inline-flex min-h-11 items-center text-sm text-accent" to={`/leads/${lead.id}`}>Open</Link>
+          </article>
+        ))}
+      </div>
+      <Card className="hidden overflow-x-auto lg:block">
         <table className="w-full min-w-[860px] text-left text-[13px]">
           <thead className="border-b border-line text-xs text-muted">
             <tr>{["Name", "Phone", "Place", "Interest", "Status", ""].map((heading) => <th key={heading} className="px-3 py-2 font-medium">{heading}</th>)}</tr>

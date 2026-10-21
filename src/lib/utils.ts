@@ -58,7 +58,7 @@ export function titleCase(value: string) {
 }
 
 export const controlClass =
-  "h-9 w-full rounded-md border border-line bg-white px-3 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-navy focus:ring-2 focus:ring-navy/15 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400";
+  "h-11 w-full rounded-md border border-line bg-white px-3 text-base text-ink outline-none transition placeholder:text-slate-400 focus:border-navy focus:ring-2 focus:ring-navy/15 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 sm:h-9 sm:text-sm";
 
 export function formatTalk(seconds: number) {
   const safe = Math.max(0, Math.round(seconds));

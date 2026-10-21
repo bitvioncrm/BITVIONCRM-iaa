@@ -243,7 +243,17 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
                   <p className="text-xs text-muted">Newest records in {bounds.label.toLowerCase()}.</p>
                 </div>
                 {data.recent.length === 0 ? <p className="px-4 py-8 text-sm text-muted">No leads in this range.</p> : (
-                  <table className="w-full min-w-[720px] text-left text-[13px]">
+                  <>
+                    <div className="space-y-2 p-3 lg:hidden">
+                      {data.recent.map((lead) => (
+                        <article key={lead.id} className="rounded-lg border border-line p-3 text-sm">
+                          <Link to={`/leads/${lead.id}`} className="font-medium">{lead.name}</Link>
+                          <p className="text-xs text-muted">{lead.desk} · {lead.status}</p>
+                          <p className="text-xs text-muted capitalize">{lead.source || "No source"} · {lead.campaign || "No campaign"} · {lead.form || "No form"}</p>
+                        </article>
+                      ))}
+                    </div>
+                    <table className="hidden w-full min-w-[720px] text-left text-[13px] lg:table">
                     <thead className="text-xs text-muted"><tr>{["Name", "Desk", "Status", "Source", "Campaign", "Form"].map((heading) => <th key={heading} className="px-4 py-2 font-medium">{heading}</th>)}</tr></thead>
                     <tbody>
                       {data.recent.map((lead) => (
@@ -258,6 +268,7 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
                       ))}
                     </tbody>
                   </table>
+                  </>
                 )}
               </section>
             </>

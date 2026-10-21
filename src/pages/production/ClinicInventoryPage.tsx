@@ -415,7 +415,18 @@ function InventoryShell() {
       ) : null}
 
       {tab === "history" ? (
-        <section className="overflow-x-auto rounded-lg border border-line bg-white">
+        <>
+          <div className="space-y-2 lg:hidden">
+            {history.length === 0 ? <p className="rounded-lg border border-line bg-white px-3 py-8 text-sm text-muted">No stock movements yet.</p> : history.map((move) => (
+              <article key={move.id} className="space-y-1 rounded-lg border border-line bg-white p-3 text-sm">
+                <p className="font-medium">{move.productName}</p>
+                <p className="text-xs text-muted">{new Date(move.createdAt).toLocaleString("en-IN")} · {move.transactionType}</p>
+                <p>Change {move.quantity} · before {move.previousQuantity ?? "—"} · after {move.resultingQuantity ?? "—"}</p>
+                <p className="text-muted">{move.note || "No reason"}</p>
+              </article>
+            ))}
+          </div>
+          <section className="hidden overflow-x-auto rounded-lg border border-line bg-white lg:block">
           <table className="w-full min-w-[760px] text-left text-[13px]">
             <thead className="text-xs text-muted">
               <tr>{["When", "Product", "Type", "Change", "Before", "After", "Reason"].map((heading) => <th key={heading} className="px-3 py-2 font-medium">{heading}</th>)}</tr>
@@ -435,6 +446,7 @@ function InventoryShell() {
             </tbody>
           </table>
         </section>
+        </>
       ) : null}
 
       {workspace ? (

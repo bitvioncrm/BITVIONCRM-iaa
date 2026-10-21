@@ -192,7 +192,37 @@ export function ChannelSettings({ embedded = false }: { embedded?: boolean }) {
         {loading ? <p className="px-4 py-6 text-sm text-muted">Loading connection columns…</p> : null}
         {!loading && desks.length === 0 ? <p className="px-4 py-6 text-sm text-muted">No clinic or institute desk is available for this login.</p> : null}
         {!loading && desks.length > 0 ? (
-          <div className="overflow-x-auto">
+          <>
+            <div className="space-y-6 p-4 lg:hidden">
+              {[clinic, institute].filter((item): item is WorkspaceOption => Boolean(item)).map((desk) => (
+                <section key={desk.id} className="space-y-3 rounded-lg border border-line p-3">
+                  <h3 className="text-sm font-semibold">{desk.workspaceType === "institute" ? "Institute" : "Clinic"} · {desk.name}</h3>
+                  <p className="text-xs font-semibold tracking-wide text-muted uppercase">Meta leads</p>
+                  {META_ROWS.map((row) => (
+                    <label key={`${desk.id}-meta-${row.key}`} className="block text-xs text-muted">
+                      {row.label}
+                      <div className="mt-1">{cell(desk, "meta", row)}</div>
+                    </label>
+                  ))}
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" disabled={busy !== ""} onClick={() => save(desk, "meta")}>{busy === `${desk.id}:meta` ? "Saving…" : "Save Meta"}</Button>
+                    <Button type="button" variant="secondary" disabled={busy !== ""} onClick={() => test(desk, "meta")}>Test Meta</Button>
+                  </div>
+                  <p className="text-xs font-semibold tracking-wide text-muted uppercase">WhatsApp</p>
+                  {WHATSAPP_ROWS.map((row) => (
+                    <label key={`${desk.id}-wa-${row.key}`} className="block text-xs text-muted">
+                      {row.label}
+                      <div className="mt-1">{cell(desk, "whatsapp", row)}</div>
+                    </label>
+                  ))}
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" disabled={busy !== ""} onClick={() => save(desk, "whatsapp")}>{busy === `${desk.id}:whatsapp` ? "Saving…" : "Save WhatsApp"}</Button>
+                    <Button type="button" variant="secondary" disabled={busy !== ""} onClick={() => test(desk, "whatsapp")}>Test WhatsApp</Button>
+                  </div>
+                </section>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto lg:block">
             <table className="w-full min-w-[760px] text-left text-sm">
               <thead className="bg-canvas text-xs tracking-wide text-muted uppercase">
                 <tr>
@@ -259,6 +289,7 @@ export function ChannelSettings({ embedded = false }: { embedded?: boolean }) {
               </tbody>
             </table>
           </div>
+          </>
         ) : null}
       </section>
 

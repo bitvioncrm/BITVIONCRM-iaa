@@ -303,7 +303,7 @@ export function ProductionLeadsPage() {
                   return (
                     <form
                       key={member.userId}
-                      className="flex flex-wrap items-center gap-2"
+                      className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center"
                       onSubmit={(event) => {
                         event.preventDefault();
                         const limit = Number(assignCounts[member.userId] ?? "");
@@ -319,14 +319,14 @@ export function ProductionLeadsPage() {
                           .finally(() => setAssigningId(""));
                       }}
                     >
-                      <p className="min-w-56 text-sm">{member.name} · {productionRoleLabel(member.role)} · {held.toLocaleString("en-IN")} assigned</p>
+                      <p className="text-sm sm:min-w-56">{member.name} · {productionRoleLabel(member.role)} · {held.toLocaleString("en-IN")} assigned</p>
                       <Input
                         type="number"
                         min={1}
                         max={Math.max(waiting, 1)}
                         required
                         placeholder="How many"
-                        className="w-32"
+                        className="w-full sm:w-32"
                         value={assignCounts[member.userId] ?? ""}
                         onChange={(event) => setAssignCounts((current) => ({ ...current, [member.userId]: event.target.value }))}
                       />
@@ -425,7 +425,89 @@ export function ProductionLeadsPage() {
           </div>
         </section>
       ) : null}
-      <div className="overflow-x-auto rounded-lg border border-line bg-white">
+      <div className="space-y-3 lg:hidden">
+        {leads.map((lead) => (
+          <article key={lead.id} className="space-y-3 rounded-lg border border-line bg-white p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <Link to={`/leads/${lead.id}`} className="font-medium">{lead.fullName}</Link>
+                <p className="text-xs text-muted">{lead.status === "excel" || isExcelLead(lead.source, lead.sourcePlatform) ? "Excel sheet" : lead.source === "meta_ads" ? "Meta" : "Added in CRM"}</p>
+              </div>
+              <StatusBadge status={lead.status} />
+            </div>
+            <div className="flex items-center gap-2">
+              <PhoneLink phone={lead.phone} onClick={() => { if (!live && !callBusy) beginCall(lead); }} />
+              {canWhatsApp ? <WhatsAppLink phone={lead.phone} label={`Open WhatsApp for ${lead.fullName}`} /> : null}
+            </div>
+            <Select
+              aria-label={`Stage for ${lead.fullName}`}
+              value={lead.status}
+              onChange={(event) => {
+                const next = event.target.value as LeadStatus;
+                void updateLeadStatus(lead, next)
+                  .then(() => setLeads((current) => current.map((item) => (item.id === lead.id ? { ...item, status: next } : item))))
+                  .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not update the stage"));
+              }}
+            >
+              {STATUS_ORDER.map((item) => <option key={item} value={item}>{STATUS_LABEL[item]}</option>)}
+            </Select>
+            <Select
+              aria-label={`Assign ${lead.fullName}`}
+              value={lead.assignedTo ?? ""}
+              onChange={(event) => {
+                const assignedTo = event.target.value;
+                if (!assignedTo) {
+                  if (!lead.assignedTo) return;
+                  void clearLeadAssignment(lead)
+                    .then(() => setLeads((current) => current.map((item) => (item.id === lead.id ? { ...item, assignedTo: null } : item))))
+                    .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not remove the assignment"));
+                  return;
+                }
+                void assignLead(lead, assignedTo)
+                  .then(() => setLeads((current) => current.map((item) => (item.id === lead.id ? { ...item, assignedTo } : item))))
+                  .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not assign the lead"));
+              }}
+            >
+              <option value="">{lead.assignedTo ? "Remove assignment" : "Unassigned"}</option>
+              {members.filter((member) => member.workspaceId === lead.workspaceId).map((member) => <option key={member.userId} value={member.userId}>{member.name} · {productionRoleLabel(member.role)}</option>)}
+            </Select>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-xs text-muted">{formatClock(callStats[lead.id]?.talkSeconds ?? 0)} talk · {callStats[lead.id]?.dials ?? 0} dials · {callStats[lead.id]?.connected ?? 0} connected</p>
+              {live?.leadId === lead.id ? (
+                <p className="font-semibold tabular">{formatClock(elapsed)}</p>
+              ) : (
+                <Button asChild size="sm" disabled={callBusy || Boolean(live)}>
+                  <a
+                    href={phoneTel(lead.phone) || undefined}
+                    onClick={(event) => {
+                      if (callBusy || live || !phoneTel(lead.phone)) {
+                        event.preventDefault();
+                        if (!phoneTel(lead.phone)) setError("This lead has no phone number to dial.");
+                        return;
+                      }
+                      beginCall(lead);
+                    }}
+                  >
+                    Call
+                  </a>
+                </Button>
+              )}
+              <Button type="button" size="sm" variant="secondary" onClick={() => {
+                const note = window.prompt("Note");
+                if (!note?.trim()) return;
+                void addLeadNote(lead, note).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not save the note"));
+              }}>Note</Button>
+              <Button type="button" size="sm" variant="secondary" onClick={() => {
+                const due = window.prompt("Follow-up time (YYYY-MM-DDTHH:mm)");
+                if (!due) return;
+                void addFollowUp(lead, new Date(due).toISOString(), "Follow-up").catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not save the follow-up"));
+              }}>Follow-up</Button>
+            </div>
+          </article>
+        ))}
+        {leads.length === 0 && !loading ? <p className="rounded-lg border border-line bg-white px-4 py-8 text-center text-sm text-muted">No leads on this page.</p> : null}
+      </div>
+      <div className="hidden overflow-x-auto rounded-lg border border-line bg-white lg:block">
         <table className="w-full min-w-[920px] text-left text-[13px]">
           <thead className="border-b border-line text-xs text-muted">
             <tr>{["Name", "Phone", "Stage", "Assign", "Call", "Follow-up"].map((heading) => <th key={heading} className="px-3 py-2 font-medium">{heading}</th>)}</tr>

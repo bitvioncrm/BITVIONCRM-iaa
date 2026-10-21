@@ -77,7 +77,11 @@ export function ProductionWhatsApp() {
       .then((result) => {
         setChats(result.chats);
         setChatTotal(result.total);
-        setActiveId((current) => result.chats.some((item) => item.id === current) ? current : result.chats[0]?.id ?? "");
+        setActiveId((current) => {
+          if (result.chats.some((item) => item.id === current)) return current;
+          const wide = typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches;
+          return wide ? result.chats[0]?.id ?? "" : "";
+        });
       })
       .catch((reason: unknown) => setNotice(reason instanceof Error ? reason.message : "Could not load chats"));
     void listWhatsAppPosters(desk.id).then(setPosters).catch(() => setPosters([]));
@@ -180,8 +184,8 @@ export function ProductionWhatsApp() {
         </section>
       ) : null}
       {notice ? <p className="rounded-md bg-slate-50 px-3 py-2 text-sm">{notice}</p> : null}
-      <div className="grid h-[calc(100dvh-280px)] min-h-[520px] overflow-hidden rounded-lg border border-[#d1d7db] bg-white lg:grid-cols-[320px_1fr]">
-        <aside className="flex min-h-0 flex-col border-b border-[#d1d7db] lg:border-r lg:border-b-0">
+      <div className={cn("grid overflow-hidden rounded-lg border border-[#d1d7db] bg-white max-lg:min-h-[70dvh] lg:h-[calc(100dvh-280px)] lg:min-h-[520px] lg:grid-cols-[320px_1fr]")}>
+        <aside className={cn("flex min-h-0 flex-col border-b border-[#d1d7db] lg:border-r lg:border-b-0", activeId && "max-lg:hidden")}>
           <header className="bg-[#075E54] px-3 py-3 text-white">
             <p className="text-sm font-semibold">WhatsApp</p>
             {deskMode === "both" ? (
@@ -218,10 +222,11 @@ export function ProductionWhatsApp() {
             {chatTotal > chats.length ? <p className="px-3 py-2 text-xs text-[#667781]">Showing {chats.length} of {chatTotal.toLocaleString("en-IN")}. Search to open someone else.</p> : null}
           </div>
         </aside>
-        <section className="flex min-h-0 flex-col bg-[#efeae2]">
+        <section className={cn("flex min-h-[70dvh] flex-col bg-[#efeae2] lg:min-h-0", !activeId && "max-lg:hidden")}>
           {active ? (
             <>
-              <header className="flex items-center gap-3 bg-[#f0f2f5] px-4 py-3">
+              <header className="flex items-center gap-3 bg-[#f0f2f5] px-3 py-3">
+                <button type="button" className="rounded-md px-2 py-2 text-sm font-medium text-[#075E54] lg:hidden" onClick={() => setActiveId("")}>Back</button>
                 <span className="flex size-9 items-center justify-center rounded-full bg-[#dfe5e7] text-xs font-semibold">{initials(active.fullName)}</span>
                 <span className="min-w-0 flex-1">
                   <p className="text-sm font-semibold">{active.fullName}</p>
@@ -241,7 +246,7 @@ export function ProductionWhatsApp() {
               </div>
               {write ? (
                 <form
-                  className="flex items-end gap-2 bg-[#f0f2f5] p-3"
+                  className="flex flex-col gap-2 bg-[#f0f2f5] p-3 sm:flex-row sm:items-end"
                   onSubmit={(event) => event.preventDefault()}
                 >
                   <select value={posterId} onChange={(event) => setPosterId(event.target.value)} className="h-10 rounded-md border border-line bg-white px-2 text-xs">
@@ -250,7 +255,7 @@ export function ProductionWhatsApp() {
                   </select>
                   <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Message to open in WhatsApp" className="h-10 flex-1 rounded-md border border-line px-3 text-sm outline-none" />
                   {openHref ? (
-                    <a href={openHref} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-md bg-[#25D366] px-3 text-sm font-medium text-white hover:bg-[#1ebe5d]">Open WhatsApp</a>
+                    <a href={openHref} target="_blank" rel="noreferrer" className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[#25D366] px-3 text-sm font-medium text-white hover:bg-[#1ebe5d] sm:h-10">Open WhatsApp</a>
                   ) : <span className="text-xs text-muted">This lead has no phone number.</span>}
                 </form>
               ) : <p className="bg-[#f0f2f5] px-4 py-3 text-xs text-[#667781]">WhatsApp opens for Admin and the telecallers.</p>}

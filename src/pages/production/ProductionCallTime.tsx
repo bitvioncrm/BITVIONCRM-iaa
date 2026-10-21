@@ -171,7 +171,16 @@ export function ProductionCallTime() {
           </div>
         )}
       </section>
-      <section className="overflow-x-auto rounded-lg border border-line bg-white">
+      <section className="space-y-2 lg:hidden">
+        {(report?.calls ?? []).map((call, index) => (
+          <article key={`${call.leadId}-${call.startedAt}-${index}`} className="rounded-lg border border-line bg-white p-3 text-sm">
+            <p className="font-medium">{call.leadId ? <Link to={`/leads/${call.leadId}`}>{call.leadName}</Link> : call.leadName}</p>
+            <p className="text-muted">{outcomeLabel[call.outcome]} · {call.outcome === "connected" ? formatClock(call.talkSeconds) : "No talk time"}</p>
+          </article>
+        ))}
+        {(report?.calls.length ?? 0) === 0 ? <p className="rounded-lg border border-line bg-white px-3 py-6 text-sm text-muted">No completed dials today.</p> : null}
+      </section>
+      <section className="hidden overflow-x-auto rounded-lg border border-line bg-white lg:block">
         <table className="w-full min-w-[640px] text-left text-sm">
           <thead className="border-b border-line text-xs text-muted">
             <tr>

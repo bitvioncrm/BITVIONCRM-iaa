@@ -8,7 +8,7 @@ import type { LeadStatus } from "@/types";
 
 function WorkspaceSelect({ value, onChange, rows }: { value: string; onChange: (value: string) => void; rows: WorkspaceOption[] }) {
   return (
-    <select className="rounded-md border border-line px-2 py-2" value={value} onChange={(event) => onChange(event.target.value)}>
+    <select className="h-11 w-full max-w-full rounded-md border border-line px-2 text-base sm:h-9 sm:w-auto sm:text-sm" value={value} onChange={(event) => onChange(event.target.value)}>
       {rows.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
     </select>
   );
@@ -37,9 +37,9 @@ export function ProductionPipeline() {
       <WorkspaceSelect value={workspaceId} onChange={setWorkspaceId} rows={workspaces} />
       {rows.length === 0 ? <p className="text-sm text-muted">No leads on this page.</p> : null}
       {rows.map((lead) => (
-        <div key={lead.id} className="flex items-center justify-between gap-3 rounded-lg border border-line bg-white px-3 py-2 text-sm">
-          <span>{lead.fullName}</span>
-          <select value={lead.status} onChange={(event) => {
+        <div key={lead.id} className="flex flex-col gap-2 rounded-lg border border-line bg-white px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+          <span className="min-w-0 break-words">{lead.fullName}</span>
+          <select className="h-11 w-full rounded-md border border-line px-2 text-base sm:h-9 sm:w-48 sm:text-sm" value={lead.status} onChange={(event) => {
             const status = event.target.value as LeadStatus;
             void updateLeadStatus(lead, status)
               .then(() => setRows((current) => current.map((item) => item.id === lead.id ? { ...item, status } : item)))
@@ -74,15 +74,15 @@ export function ProductionTasks() {
       <h1 className="text-2xl font-semibold">Tasks</h1>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       <WorkspaceSelect value={workspaceId} onChange={(value) => { setWorkspaceId(value); load(value); }} rows={workspaces} />
-      <form className="flex gap-2" onSubmit={(event) => {
+      <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(event) => {
         event.preventDefault();
         if (!workspace || !productionUser) return;
         void createTask({ organizationId: workspace.organizationId, workspaceId: workspace.id, title, dueAt: new Date().toISOString(), assignedTo: productionUser.userId })
           .then(() => { setTitle(""); load(workspace.id); })
           .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not save the task"));
       }}>
-        <input value={title} onChange={(event) => setTitle(event.target.value)} required placeholder="Task" className="flex-1 rounded-md border border-line px-2 py-2" />
-        <button className="rounded-md bg-navy px-3 py-2 text-sm text-white" type="submit">Add</button>
+        <input value={title} onChange={(event) => setTitle(event.target.value)} required placeholder="Task" className="h-11 flex-1 rounded-md border border-line px-2 text-base sm:h-9 sm:text-sm" />
+        <button className="h-11 rounded-md bg-navy px-3 text-sm text-white sm:h-9" type="submit">Add</button>
       </form>
       {rows.length === 0 ? <p className="text-sm text-muted">No tasks.</p> : rows.map((task) => <p key={task.id} className="text-sm">{task.title} · {task.status}</p>)}
     </div>
@@ -108,10 +108,10 @@ export function ProductionReports() {
       <p className="text-sm text-muted">Revenue comes from invoices, payments, and refunds. Leads are not counted as revenue.</p>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       <WorkspaceSelect value={workspaceId} onChange={setWorkspaceId} rows={workspaces} />
-      <div className="flex gap-2">
-        <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} className="rounded-md border border-line px-2 py-2" />
-        <input type="date" value={to} onChange={(event) => setTo(event.target.value)} className="rounded-md border border-line px-2 py-2" />
-        <button type="button" className="rounded-md bg-navy px-3 py-2 text-sm text-white" onClick={() => {
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} className="h-11 rounded-md border border-line px-2 text-base sm:h-9 sm:text-sm" />
+        <input type="date" value={to} onChange={(event) => setTo(event.target.value)} className="h-11 rounded-md border border-line px-2 text-base sm:h-9 sm:text-sm" />
+        <button type="button" className="h-11 rounded-md bg-navy px-3 text-sm text-white sm:h-9" onClick={() => {
           if (!workspaceId) return;
           void revenueSummary(workspaceId, from, to).then(setSummary).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Revenue requires the latest migration"));
         }}>Load</button>

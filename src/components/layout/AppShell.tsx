@@ -42,8 +42,8 @@ export function AppShell() {
             </button>
           </div>
         ) : null}
-        <main className="flex-1 overflow-y-auto pb-20 lg:pb-0">
-          <div key={pathname} className="page-enter mx-auto w-full max-w-[1440px] px-4 py-5 sm:px-6 lg:px-8">
+        <main className="flex-1 overflow-y-auto pb-24 lg:pb-0">
+          <div key={pathname} className="page-enter mx-auto w-full max-w-[1440px] px-3 py-4 sm:px-6 sm:py-5 lg:px-8">
             {blocked ? <Navigate to="/" replace /> : <Outlet />}
           </div>
         </main>
