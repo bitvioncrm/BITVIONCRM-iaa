@@ -3,7 +3,8 @@ import { Link } from "react-router-dom";
 import { useDesk } from "@/context/DeskContext";
 import { productionRoleLabel } from "@/lib/production-access";
 import { ChannelSettings } from "@/pages/production/ChannelSettings";
-import { assignMetaLead, listDeskTelecallers, loadMetaCentre, retryMetaImport, saveFormMapping, setMappingActive, type DeskCaller, type MetaCentre } from "@/services/meta-admin";
+import { Button } from "@/components/ui/button";
+import { assignMetaLead, listDeskTelecallers, loadMetaCentre, pullMetaLeadsNow, retryMetaImport, saveFormMapping, setMappingActive, type DeskCaller, type MetaCentre } from "@/services/meta-admin";
 import { clearLeadAssignment, listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
 
 const EMPTY: MetaCentre = {
@@ -43,6 +44,7 @@ export function MetaLeadCentre() {
   const [status, setStatus] = useState("");
   const [assigned, setAssigned] = useState("");
   const [reload, setReload] = useState(0);
+  const [pulling, setPulling] = useState(false);
   const silentRef = useRef(false);
 
   useEffect(() => {
@@ -122,9 +124,31 @@ export function MetaLeadCentre() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <p className="text-xs font-medium tracking-wide text-accent uppercase">Meta Lead Centre · {bounds.label}</p>
-        <h1 className="mt-1 text-[26px] font-semibold tracking-tight">Meta leads</h1>
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-medium tracking-wide text-accent uppercase">Meta Lead Centre · {bounds.label}</p>
+          <h1 className="mt-1 text-[26px] font-semibold tracking-tight">Meta leads</h1>
+        </div>
+        <Button
+          type="button"
+          disabled={pulling}
+          onClick={() => {
+            setPulling(true);
+            setNotice("");
+            setError("");
+            void pullMetaLeadsNow()
+              .then((result) => {
+                setNotice(result.stored > 0 ? `${result.stored} new Meta leads pulled.` : "Meta forms are current. Every form lead is already in the CRM.");
+                silentRef.current = true;
+                setReload((value) => value + 1);
+                if (result.stored > 0) window.dispatchEvent(new CustomEvent("bitvion-lead", { detail: { fullName: `${result.stored} Meta leads` } }));
+              })
+              .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Meta leads could not be pulled"))
+              .finally(() => setPulling(false));
+          }}
+        >
+          {pulling ? "Pulling…" : "Pull Meta leads now"}
+        </Button>
       </header>
       <ChannelSettings embedded />
       {error ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}

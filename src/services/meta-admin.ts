@@ -254,3 +254,29 @@ export async function retryMetaImport(leadgenId: string) {
   if (!response.ok) throw new Error(body.status === "configuration_required" ? "Meta integration is not configured." : "The import could not be retried.");
   return body.status ?? "stored";
 }
+
+export async function pullMetaLeadsNow() {
+  const session = await db().auth.getSession();
+  const token = session.data.session?.access_token;
+  if (!token) throw new Error("Sign in again before pulling Meta leads.");
+  const response = await fetch("/.netlify/functions/meta-pull", {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: "{}",
+  });
+  const body = (await response.json().catch(() => ({ status: "failed" }))) as {
+    status?: string;
+    stored?: number;
+    duplicate?: number;
+    failed?: number;
+    forms?: number;
+  };
+  if (!response.ok) throw new Error(body.status === "forbidden" ? "Only admin can pull Meta leads." : "Meta leads could not be pulled.");
+  return {
+    status: body.status ?? "current",
+    stored: body.stored ?? 0,
+    duplicate: body.duplicate ?? 0,
+    failed: body.failed ?? 0,
+    forms: body.forms ?? 0,
+  };
+}
