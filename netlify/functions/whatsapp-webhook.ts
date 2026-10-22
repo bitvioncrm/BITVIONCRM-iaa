@@ -89,7 +89,6 @@ async function createLead(supabaseUrl: string, serviceKey: string, desk: Channel
 async function bindClickDesk(supabaseUrl: string, serviceKey: string, rows: ChannelSecret[], phoneNumberId: string, headline: string) {
   const known = rows.find((row) => row.phone_number_id === phoneNumberId);
   if (known) return known;
-  if (!headline.trim()) return undefined;
   const response = await fetch(
     `${supabaseUrl}/rest/v1/workspaces?select=id,organization_id,name,workspace_type&deleted_at=is.null&workspace_type=in.(clinic,institute)`,
     { headers: serviceHeaders(serviceKey) },
@@ -101,10 +100,12 @@ async function bindClickDesk(supabaseUrl: string, serviceKey: string, rows: Chan
     workspaceType: desk.workspace_type,
     name: desk.name ?? "",
   }));
-  const institute = instituteDeskForCampaign(headline, loaded[0]?.organizationId ?? "", loaded);
+  const institute = headline.trim() ? instituteDeskForCampaign(headline, loaded[0]?.organizationId ?? "", loaded) : undefined;
   const clinic = loaded.find((desk) => desk.workspaceType === "clinic");
-  const target = institute?.workspaceId ?? clinic?.workspaceId ?? "";
-  const row = rows.find((item) => item.workspace_id === target);
+  const openRows = rows.filter((item) => !item.phone_number_id);
+  const preferredId = institute?.workspaceId ?? clinic?.workspaceId ?? openRows[0]?.workspace_id ?? "";
+  const row = rows.find((item) => item.workspace_id === preferredId && (!item.phone_number_id || item.phone_number_id === phoneNumberId))
+    ?? openRows[0];
   if (!row || (row.phone_number_id && row.phone_number_id !== phoneNumberId)) return undefined;
   if (!row.phone_number_id) {
     await fetch(`${supabaseUrl}/rest/v1/workspace_channel_secrets?workspace_id=eq.${row.workspace_id}&channel=eq.whatsapp`, {

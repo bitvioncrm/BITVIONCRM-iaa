@@ -187,6 +187,7 @@ function leadFilter(request: LeadFilter, query: LeadQuery) {
   else if (query.assignedTo) next = next.eq("assigned_to", query.assignedTo);
   if (query.source) next = next.eq("source", query.source);
   if (query.origin === "excel") next = next.or("source.eq.whatsapp,source_platform.eq.excel,status.eq.excel");
+  // Live includes Meta forms and WhatsApp clicks; Excel queue (source=whatsapp / platform=excel) stays out.
   if (query.origin === "live") next = next.neq("source", "whatsapp").neq("source_platform", "excel").neq("status", "excel");
   if (query.origin === "latest") {
     const start = new Date();

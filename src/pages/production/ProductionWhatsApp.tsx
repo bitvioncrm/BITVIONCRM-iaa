@@ -91,7 +91,15 @@ export function ProductionWhatsApp() {
   useEffect(() => {
     const onLead = () => setChatReload((value) => value + 1);
     window.addEventListener("bitvion-lead", onLead);
-    return () => window.removeEventListener("bitvion-lead", onLead);
+    window.addEventListener("bitvion-lead-update", onLead);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") onLead();
+    }, 5000);
+    return () => {
+      window.removeEventListener("bitvion-lead", onLead);
+      window.removeEventListener("bitvion-lead-update", onLead);
+      window.clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {

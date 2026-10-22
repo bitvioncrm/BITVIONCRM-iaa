@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { ADMIN_ONLY_PREFIXES } from "@/components/layout/nav";
 import { roleAllowsPath } from "@/lib/production-access";
+import { LeadRealtime } from "@/components/layout/LeadRealtime";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
@@ -23,6 +24,7 @@ export function AppShell() {
   return (
     <DeskProvider>
     <div className="flex h-dvh overflow-hidden bg-canvas text-ink">
+      {productionUser ? <LeadRealtime /> : null}
       <Sidebar collapsed={collapsed} />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar collapsed={collapsed} onToggle={() => setCollapsed((value) => !value)} />

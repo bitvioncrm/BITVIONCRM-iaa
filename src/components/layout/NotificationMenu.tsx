@@ -1,6 +1,5 @@
 import { Bell } from "lucide-react";
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
 import { useNavigate } from "react-router-dom";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAuth } from "@/context/AuthContext";
@@ -31,42 +30,23 @@ function LiveAlerts() {
         });
     };
     refresh();
-    const onLead = () => refresh();
+    const onLead = (event: Event) => {
+      const detail = (event as CustomEvent<{ fullName?: string; id?: string; body?: string; row?: Record<string, string | null> }>).detail;
+      if (detail?.id && detail.fullName) {
+        setItems((current) => [{ title: detail.fullName!, body: detail.body || "New lead", href: `/leads/${detail.id}` }, ...current].slice(0, 20));
+      }
+      refresh();
+    };
     window.addEventListener("bitvion-lead", onLead);
     window.addEventListener("bitvion-lead-update", onLead);
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") refresh();
-    }, 15000);
+    }, 10000);
     return () => {
       active = false;
       window.removeEventListener("bitvion-lead", onLead);
       window.removeEventListener("bitvion-lead-update", onLead);
       window.clearInterval(timer);
-    };
-  }, []);
-  useEffect(() => {
-    const client = supabase;
-    if (!client) return;
-    if (typeof Notification !== "undefined" && Notification.permission === "default") void Notification.requestPermission();
-    const channel = client
-      .channel("lead-arrivals")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "leads" }, (payload) => {
-        const row = payload.new as Record<string, string | null | undefined>;
-        if (!row.id) return;
-        const fullName = row.full_name || "New lead";
-        const body = row.source === "whatsapp_click" ? "WhatsApp click" : row.source_platform === "meta" || row.source === "meta_ads" ? "Meta form" : "New lead";
-        setItems((current) => [{ title: fullName, body, href: `/leads/${row.id}` }, ...current].slice(0, 20));
-        window.dispatchEvent(new CustomEvent("bitvion-lead", { detail: { id: row.id, fullName, row } }));
-        if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification(body, { body: fullName });
-      })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "leads" }, (payload) => {
-        const row = payload.new as Record<string, string | null | undefined>;
-        if (!row.id) return;
-        window.dispatchEvent(new CustomEvent("bitvion-lead-update", { detail: { id: row.id, row } }));
-      })
-      .subscribe();
-    return () => {
-      void client.removeChannel(channel);
     };
   }, []);
   return (
@@ -83,7 +63,7 @@ function LiveAlerts() {
         </div>
         <div className="max-h-96 overflow-y-auto">
           {items.length === 0 ? <p className="px-3 py-8 text-center text-sm text-muted">No operational alerts.</p> : items.map((item) => (
-            <button key={`${item.href}:${item.body}`} type="button" className="block w-full border-b border-line px-3 py-3 text-left last:border-0 hover:bg-slate-50" onClick={() => navigate(item.href)}>
+            <button key={`${item.href}:${item.body}:${item.title}`} type="button" className="block w-full border-b border-line px-3 py-3 text-left last:border-0 hover:bg-slate-50" onClick={() => navigate(item.href)}>
               <span className="block text-[13px] font-medium">{item.title}</span>
               <span className="mt-0.5 block text-[13px] text-muted">{item.body}</span>
             </button>

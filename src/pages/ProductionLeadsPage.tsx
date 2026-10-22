@@ -221,7 +221,7 @@ export function ProductionLeadsPage() {
       if (document.visibilityState !== "visible") return;
       if (focused instanceof HTMLSelectElement || focused instanceof HTMLInputElement || focused instanceof HTMLTextAreaElement) return;
       refresh();
-    }, 8000);
+    }, 5000);
     return () => {
       window.removeEventListener("bitvion-lead", onLead);
       window.removeEventListener("bitvion-lead-update", onUpdate);
