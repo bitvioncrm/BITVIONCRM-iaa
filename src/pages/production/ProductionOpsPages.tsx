@@ -28,11 +28,39 @@ export function ProductionPipeline() {
   }, []);
   useEffect(() => {
     if (!workspaceId) return;
+    let active = true;
     setLoading(true);
     void listLeads({ page: 1, workspaceId, counted: false })
-      .then((result) => setRows(result.leads))
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load leads"))
-      .finally(() => setLoading(false));
+      .then((result) => {
+        if (active) setRows(result.leads);
+      })
+      .catch((reason: unknown) => {
+        if (active) setError(reason instanceof Error ? reason.message : "Could not load leads");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [workspaceId]);
+  useEffect(() => {
+    if (!workspaceId) return;
+    const refresh = () => {
+      void listLeads({ page: 1, workspaceId, counted: false })
+        .then((result) => setRows(result.leads))
+        .catch(() => undefined);
+    };
+    window.addEventListener("bitvion-lead", refresh);
+    window.addEventListener("bitvion-lead-update", refresh);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") refresh();
+    }, 10000);
+    return () => {
+      window.removeEventListener("bitvion-lead", refresh);
+      window.removeEventListener("bitvion-lead-update", refresh);
+      window.clearInterval(timer);
+    };
   }, [workspaceId]);
   return (
     <div className="space-y-3">

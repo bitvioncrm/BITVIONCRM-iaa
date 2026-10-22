@@ -1,5 +1,6 @@
 import { rangeBounds } from "@/lib/range";
 import { supabase } from "@/lib/supabase";
+import { loadCampaignPulse, type CampaignPulseRow } from "@/services/campaign-pulse";
 import { revenueSummary } from "@/services/production-ops";
 import type { WorkspaceOption } from "@/services/production-leads";
 import type { DeskKey } from "@/context/DeskContext";
@@ -62,6 +63,7 @@ export interface Overview {
   collectionsByDesk: Array<{ name: string; amount: number }>;
   activity: Array<{ label: string; appointments: number; admissions: number }>;
   courses: Array<{ name: string; leads: number; converted: number }>;
+  campaigns: CampaignPulseRow[];
   recent: RecentLead[];
   chartNote: string;
   errors: string[];
@@ -229,29 +231,45 @@ export async function loadOverview(workspaces: WorkspaceOption[], desk: DeskKey,
   let funnel: Overview["funnel"] = [];
   let sources: Overview["sources"] = [];
   let courses: Overview["courses"] = [];
+  let campaigns: Overview["campaigns"] = [];
   let recent: RecentLead[] = [];
   let chartNote = "";
   let deskVolume: Overview["deskVolume"] = [];
   const deskName = new Map(workspaces.map((workspace) => [workspace.id, workspace.workspaceType === "institute" ? "Institute" : "Clinic"]));
   try {
     if (selectedIds.length && leads !== null) {
-      const { data, error } = await db()
-        .from("leads")
-        .select("id, full_name, status, source, source_form, source_campaign, created_at, workspace_id, position")
-        .in("workspace_id", selectedIds)
-        .is("deleted_at", null)
-        .gte("created_at", bounds.from)
-        .lt("created_at", bounds.to)
-        .order("created_at", { ascending: false })
-        .limit(leads > 500 ? 8 : 2000);
-      if (error) throw new Error(error.message);
-      const rows = data ?? [];
-      if (leads > 500) {
-        chartNote = "wide";
-      } else if (leads > rows.length) {
-        chartNote = "wide";
-      } else {
-        const ordered = [...rows].reverse();
+      const liveSelect = "id, full_name, status, source, source_form, source_campaign, created_at, workspace_id, position";
+      const [liveResult, chartResult] = await Promise.all([
+        db()
+          .from("leads")
+          .select(liveSelect)
+          .in("workspace_id", selectedIds)
+          .is("deleted_at", null)
+          .or("source_platform.eq.meta,source.eq.meta_ads,source.eq.whatsapp_click")
+          .gte("created_at", bounds.from)
+          .lt("created_at", bounds.to)
+          .order("created_at", { ascending: false })
+          .limit(2000),
+        leads > 500
+          ? Promise.resolve({ data: [] as Array<Record<string, unknown>>, error: null })
+          : db()
+              .from("leads")
+              .select(liveSelect)
+              .in("workspace_id", selectedIds)
+              .is("deleted_at", null)
+              .gte("created_at", bounds.from)
+              .lt("created_at", bounds.to)
+              .order("created_at", { ascending: false })
+              .limit(2000),
+      ]);
+      if (liveResult.error) throw new Error(liveResult.error.message);
+      if (chartResult.error) throw new Error(chartResult.error.message);
+      const liveRows = liveResult.data ?? [];
+      const chartRows = leads > 500 ? liveRows : (chartResult.data ?? []);
+      if (leads > 500 || leads > chartRows.length) chartNote = "wide";
+
+      if (!chartNote) {
+        const ordered = [...chartRows].reverse();
         const trendMap = new Map<string, { label: string; leads: number; sort: number }>();
         const sourceMap = new Map<string, number>();
         const statusMap = new Map<string, number>();
@@ -282,8 +300,24 @@ export async function loadOverview(workspaces: WorkspaceOption[], desk: DeskKey,
         funnel = FUNNEL.filter((status) => statusMap.has(status)).map((status) => ({ name: FUNNEL_LABEL[status] ?? status, value: statusMap.get(status) ?? 0 }));
         deskVolume = ["Clinic", "Institute"].filter((name) => volumeMap.has(name)).map((name) => ({ name, leads: volumeMap.get(name) ?? 0 }));
         courses = [...courseMap.entries()].map(([name, value]) => ({ name, ...value })).sort((a, b) => b.leads - a.leads).slice(0, 8);
+      } else {
+        const sourceMap = new Map<string, number>();
+        const statusMap = new Map<string, number>();
+        const volumeMap = new Map<string, number>();
+        for (const row of liveRows) {
+          const source = String(row.source || "other");
+          sourceMap.set(source, (sourceMap.get(source) ?? 0) + 1);
+          const status = String(row.status);
+          statusMap.set(status, (statusMap.get(status) ?? 0) + 1);
+          const deskLabel = deskName.get(String(row.workspace_id)) ?? "Clinic";
+          volumeMap.set(deskLabel, (volumeMap.get(deskLabel) ?? 0) + 1);
+        }
+        sources = [...sourceMap.entries()].map(([name, value]) => ({ name: name.replace(/_/g, " "), value })).sort((a, b) => b.value - a.value);
+        funnel = FUNNEL.filter((status) => statusMap.has(status)).map((status) => ({ name: FUNNEL_LABEL[status] ?? status, value: statusMap.get(status) ?? 0 }));
+        deskVolume = ["Clinic", "Institute"].filter((name) => volumeMap.has(name)).map((name) => ({ name, leads: volumeMap.get(name) ?? 0 }));
       }
-      recent = rows.slice(0, 8).map((row) => ({
+
+      recent = liveRows.slice(0, 8).map((row) => ({
         id: String(row.id),
         name: String(row.full_name),
         status: FUNNEL_LABEL[String(row.status)] ?? String(row.status),
@@ -297,6 +331,12 @@ export async function loadOverview(workspaces: WorkspaceOption[], desk: DeskKey,
   } catch (reason) {
     chartNote = reason instanceof Error ? reason.message : "Charts could not be loaded";
     errors.push(chartNote);
+  }
+
+  try {
+    campaigns = selectedIds.length ? await loadCampaignPulse(workspaces, selectedIds, bounds.from, bounds.to) : [];
+  } catch (reason) {
+    errors.push(reason instanceof Error ? `Campaigns: ${reason.message}` : "Campaign pulse could not be loaded");
   }
 
   let activity: Overview["activity"] = [];
@@ -367,6 +407,7 @@ export async function loadOverview(workspaces: WorkspaceOption[], desk: DeskKey,
     collectionsByDesk: collections === null ? [] : collectionsByDesk.filter((row) => desk === "all" || row.name.toLowerCase() === desk),
     activity,
     courses,
+    campaigns,
     recent,
     chartNote,
     errors,
@@ -396,6 +437,13 @@ export async function loadLiveAlerts(workspaces: WorkspaceOption[]) {
     }
     const failed = await db().from("meta_import_events").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).in("status", ["failed", "unmapped"]);
     if ((failed.count ?? 0) > 0) alerts.push({ title: "Meta imports need review", body: `${failed.count} failed or unmapped imports`, href: "/meta" });
+    const whatsapp = await db()
+      .from("workspace_channel_secrets")
+      .select("workspace_id, phone_number_id, status")
+      .eq("channel", "whatsapp")
+      .in("workspace_id", all);
+    const missing = (whatsapp.data ?? []).filter((row) => !String(row.phone_number_id || "").trim());
+    if (missing.length) alerts.push({ title: "WhatsApp lead number", body: "Connect the Phone number ID so click leads arrive live.", href: "/settings" });
   }
   return alerts.slice(0, 8);
 }

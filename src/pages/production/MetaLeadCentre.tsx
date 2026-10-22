@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useDesk } from "@/context/DeskContext";
 import { productionRoleLabel } from "@/lib/production-access";
@@ -43,10 +43,13 @@ export function MetaLeadCentre() {
   const [status, setStatus] = useState("");
   const [assigned, setAssigned] = useState("");
   const [reload, setReload] = useState(0);
+  const silentRef = useRef(false);
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
+    const silent = silentRef.current;
+    silentRef.current = false;
+    if (!silent) setLoading(true);
     void listWorkspaces()
       .then((rows) => {
         if (!active) return;
@@ -72,6 +75,23 @@ export function MetaLeadCentre() {
       active = false;
     };
   }, [assigned, bounds.from, bounds.to, campaign, desk, form, reload, status]);
+
+  useEffect(() => {
+    const refresh = () => {
+      silentRef.current = true;
+      setReload((value) => value + 1);
+    };
+    window.addEventListener("bitvion-lead", refresh);
+    window.addEventListener("bitvion-lead-update", refresh);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") refresh();
+    }, 10000);
+    return () => {
+      window.removeEventListener("bitvion-lead", refresh);
+      window.removeEventListener("bitvion-lead-update", refresh);
+      window.clearInterval(timer);
+    };
+  }, []);
 
   const connected = centre.status === "connected";
   const showCounts = connected || centre.leads.length > 0 || centre.failed > 0;

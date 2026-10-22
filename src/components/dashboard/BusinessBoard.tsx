@@ -63,12 +63,14 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
     load(true);
     const onLead = () => load(false);
     window.addEventListener("bitvion-lead", onLead);
+    window.addEventListener("bitvion-lead-update", onLead);
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") load(false);
-    }, 20000);
+    }, 10000);
     return () => {
       active = false;
       window.removeEventListener("bitvion-lead", onLead);
+      window.removeEventListener("bitvion-lead-update", onLead);
       window.clearInterval(timer);
     };
   }, [bounds, desk, rangeKey]);
@@ -159,19 +161,20 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
 
           {variant === "full" ? (
             <>
-              {data.chartNote ? null : <>
               <div className="grid gap-4 xl:grid-cols-2">
-                <Chart title="Lead acquisition" subtitle={bounds.label} empty={chartsReady && data.trend.length ? "" : "No leads in this range"}>
-                  <LineChart data={data.trend}>
-                    <CartesianGrid stroke="#eef0f3" vertical={false} />
-                    <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: "#667085", fontSize: 12 }} />
-                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fill: "#667085", fontSize: 12 }} />
-                    <Tooltip contentStyle={tooltipStyle} />
-                    <Line type="monotone" dataKey="leads" name="Leads" stroke="#1d4ed8" strokeWidth={2} dot={false} />
-                  </LineChart>
-                </Chart>
-                {desk === "all" && chartsReady && data.deskVolume.length ? (
-                  <Chart title="Clinic vs institute" subtitle="Lead volume in this range" empty="">
+                {chartsReady ? (
+                  <Chart title="Lead acquisition" empty={data.trend.length ? "" : "No leads in this range"}>
+                    <LineChart data={data.trend}>
+                      <CartesianGrid stroke="#eef0f3" vertical={false} />
+                      <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: "#667085", fontSize: 12 }} />
+                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fill: "#667085", fontSize: 12 }} />
+                      <Tooltip contentStyle={tooltipStyle} />
+                      <Line type="monotone" dataKey="leads" name="Leads" stroke="#1d4ed8" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </Chart>
+                ) : null}
+                {desk === "all" && data.deskVolume.length ? (
+                  <Chart title="Clinic vs institute" empty="">
                     <BarChart data={data.deskVolume}>
                       <CartesianGrid stroke="#eef0f3" vertical={false} />
                       <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fill: "#667085", fontSize: 12 }} />
@@ -181,7 +184,7 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
                     </BarChart>
                   </Chart>
                 ) : null}
-                <Chart title="Lead status" subtitle="Status of leads created in this range" empty={chartsReady && data.funnel.length ? "" : "No status data in this range"}>
+                <Chart title="Live lead status" empty={data.funnel.length ? "" : "No live Meta or WhatsApp leads in this range"}>
                   <BarChart data={data.funnel} layout="vertical" margin={{ left: 24 }}>
                     <CartesianGrid stroke="#eef0f3" horizontal={false} />
                     <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} tick={{ fill: "#667085", fontSize: 12 }} />
@@ -190,7 +193,7 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
                     <Bar dataKey="value" name="Leads" fill="#1d4ed8" radius={[0, 4, 4, 0]} barSize={14} />
                   </BarChart>
                 </Chart>
-                <Chart title="Collections by desk" subtitle="Payments recorded in this range" empty={data.collectionsByDesk.some((row) => row.amount > 0) ? "" : "No payments in this range"}>
+                <Chart title="Collections by desk" empty={data.collectionsByDesk.some((row) => row.amount > 0) ? "" : "No payments in this range"}>
                   <BarChart data={data.collectionsByDesk}>
                     <CartesianGrid stroke="#eef0f3" vertical={false} />
                     <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fill: "#667085", fontSize: 12 }} />
@@ -199,7 +202,7 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
                     <Bar dataKey="amount" name="Collected" fill="#12263f" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </Chart>
-                <Chart title="Lead sources" subtitle="Where this range's leads came from" empty={chartsReady && data.sources.length ? "" : "No source data in this range"}>
+                <Chart title="Live lead sources" empty={data.sources.length ? "" : "No live Meta or WhatsApp leads in this range"}>
                   <BarChart data={data.sources}>
                     <CartesianGrid stroke="#eef0f3" vertical={false} />
                     <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fill: "#667085", fontSize: 11 }} interval={0} />
@@ -208,7 +211,7 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
                     <Bar dataKey="value" name="Leads" fill="#8aa0b8" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </Chart>
-                <Chart title="Appointments and admissions" subtitle={bounds.label} empty={data.activity.length ? "" : "No appointments or admissions in this range"}>
+                <Chart title="Appointments and admissions" empty={data.activity.length ? "" : "No appointments or admissions in this range"}>
                   <LineChart data={data.activity}>
                     <CartesianGrid stroke="#eef0f3" vertical={false} />
                     <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: "#667085", fontSize: 12 }} />
@@ -239,10 +242,46 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
                   </table>
                 </section>
               ) : null}
-              </>}
               <section className="overflow-x-auto rounded-lg border border-line bg-white">
                 <div className="border-b border-line px-4 py-3">
-                  <h3 className="text-sm font-semibold">Latest leads</h3>
+                  <h3 className="text-sm font-semibold">Live campaigns</h3>
+                </div>
+                {data.campaigns.length === 0 ? <p className="px-4 py-8 text-sm text-muted">No Meta or WhatsApp campaigns in this range.</p> : (
+                  <>
+                    <div className="space-y-2 p-3 lg:hidden">
+                      {data.campaigns.slice(0, 12).map((row) => (
+                        <article key={`${row.workspaceId}:${row.campaign}`} className="rounded-lg border border-line p-3 text-sm">
+                          <p className="font-medium">{row.campaign}</p>
+                          <p className="text-xs text-muted">{row.desk} · {row.total} leads · {row.fresh} new</p>
+                          <p className="mt-1 text-xs text-accent">{row.action}</p>
+                        </article>
+                      ))}
+                    </div>
+                    <table className="hidden w-full min-w-[860px] text-left text-[13px] lg:table">
+                      <thead className="text-xs text-muted">
+                        <tr>{["Campaign", "Desk", "Leads", "New", "Contacted", "Converted", "Unassigned", "Next step"].map((heading) => <th key={heading} className="px-4 py-2 font-medium">{heading}</th>)}</tr>
+                      </thead>
+                      <tbody>
+                        {data.campaigns.slice(0, 20).map((row) => (
+                          <tr key={`${row.workspaceId}:${row.campaign}`} className="border-t border-line">
+                            <td className="px-4 py-2 font-medium">{row.campaign}{row.hot ? " · live" : ""}</td>
+                            <td className="px-4 py-2">{row.desk}</td>
+                            <td className="px-4 py-2 tabular">{row.total}</td>
+                            <td className="px-4 py-2 tabular">{row.fresh}</td>
+                            <td className="px-4 py-2 tabular">{row.contacted}</td>
+                            <td className="px-4 py-2 tabular">{row.converted}</td>
+                            <td className="px-4 py-2 tabular">{row.unassigned}</td>
+                            <td className="px-4 py-2 text-accent">{row.action}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
+                )}
+              </section>
+              <section className="overflow-x-auto rounded-lg border border-line bg-white">
+                <div className="border-b border-line px-4 py-3">
+                  <h3 className="text-sm font-semibold">Latest live leads</h3>
                 </div>
                 {data.recent.length === 0 ? <p className="px-4 py-8 text-sm text-muted">No leads in this range.</p> : (
                   <>

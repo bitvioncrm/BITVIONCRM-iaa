@@ -19,7 +19,30 @@ function LiveAlerts() {
   const navigate = useNavigate();
   const [items, setItems] = useState<Array<{ title: string; body: string; href: string }>>([]);
   useEffect(() => {
-    void listWorkspaces().then((rows) => loadLiveAlerts(rows)).then(setItems).catch(() => setItems([]));
+    let active = true;
+    const refresh = () => {
+      void listWorkspaces()
+        .then((rows) => loadLiveAlerts(rows))
+        .then((rows) => {
+          if (active) setItems(rows);
+        })
+        .catch(() => {
+          if (active) setItems([]);
+        });
+    };
+    refresh();
+    const onLead = () => refresh();
+    window.addEventListener("bitvion-lead", onLead);
+    window.addEventListener("bitvion-lead-update", onLead);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") refresh();
+    }, 15000);
+    return () => {
+      active = false;
+      window.removeEventListener("bitvion-lead", onLead);
+      window.removeEventListener("bitvion-lead-update", onLead);
+      window.clearInterval(timer);
+    };
   }, []);
   useEffect(() => {
     const client = supabase;
@@ -31,9 +54,10 @@ function LiveAlerts() {
         const row = payload.new as Record<string, string | null | undefined>;
         if (!row.id) return;
         const fullName = row.full_name || "New lead";
-        setItems((current) => [{ title: fullName, body: row.source === "whatsapp_click" ? "WhatsApp click" : "New lead", href: `/leads/${row.id}` }, ...current].slice(0, 20));
+        const body = row.source === "whatsapp_click" ? "WhatsApp click" : row.source_platform === "meta" || row.source === "meta_ads" ? "Meta form" : "New lead";
+        setItems((current) => [{ title: fullName, body, href: `/leads/${row.id}` }, ...current].slice(0, 20));
         window.dispatchEvent(new CustomEvent("bitvion-lead", { detail: { id: row.id, fullName, row } }));
-        if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification("New lead", { body: fullName });
+        if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification(body, { body: fullName });
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "leads" }, (payload) => {
         const row = payload.new as Record<string, string | null | undefined>;
