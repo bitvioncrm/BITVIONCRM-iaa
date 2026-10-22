@@ -4,6 +4,7 @@ import { useDesk } from "@/context/DeskContext";
 import { productionRoleLabel } from "@/lib/production-access";
 import { ChannelSettings } from "@/pages/production/ChannelSettings";
 import { Button } from "@/components/ui/button";
+import { formatLeadArrived } from "@/lib/dates";
 import { assignMetaLead, listDeskTelecallers, loadMetaCentre, pullMetaLeadsNow, retryMetaImport, saveFormMapping, setMappingActive, type DeskCaller, type MetaCentre } from "@/services/meta-admin";
 import { clearLeadAssignment, listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
 
@@ -236,7 +237,7 @@ export function MetaLeadCentre() {
             return (
               <article key={lead.id} className="space-y-2 rounded-lg border border-line p-3">
                 <Link to={`/leads/${lead.id}`} className="font-medium">{lead.name}</Link>
-                <p className="text-xs text-muted">{workspaceName(lead.workspaceId)} · {lead.status}</p>
+                <p className="text-xs text-muted">{formatLeadArrived(lead.createdAt)} · {workspaceName(lead.workspaceId)} · {lead.status}</p>
                 <p className="text-xs text-muted">{lead.campaign || "No campaign"} · {lead.form || "No form"}</p>
                 <select
                   aria-label={`Assign ${lead.name}`}
@@ -294,7 +295,7 @@ export function MetaLeadCentre() {
         <div className="hidden overflow-x-auto rounded-lg border border-line bg-white lg:block">
           {centre.leads.length === 0 ? <p className="px-4 py-8 text-sm text-muted">No Meta leads in this desk and date range.</p> : (
             <table className="w-full min-w-[880px] text-left text-[13px]">
-              <thead className="text-xs text-muted"><tr>{["Name", "Desk", "Status", "Campaign", "Form", "Telecaller"].map((heading) => <th key={heading} className="px-3 py-2 font-medium">{heading}</th>)}</tr></thead>
+              <thead className="text-xs text-muted"><tr>{["Name", "Came", "Desk", "Status", "Campaign", "Form", "Telecaller"].map((heading) => <th key={heading} className="px-3 py-2 font-medium">{heading}</th>)}</tr></thead>
               <tbody>
                 {centre.leads.map((lead) => {
                   const workspace = workspaces.find((item) => item.id === lead.workspaceId);
@@ -303,6 +304,7 @@ export function MetaLeadCentre() {
                   return (
                     <tr key={lead.id} className="border-t border-line">
                       <td className="px-3 py-2 font-medium"><Link to={`/leads/${lead.id}`} className="hover:text-accent">{lead.name}</Link></td>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs text-muted">{formatLeadArrived(lead.createdAt)}</td>
                       <td className="px-3 py-2">{workspaceName(lead.workspaceId)}</td>
                       <td className="px-3 py-2">{lead.status}</td>
                       <td className="px-3 py-2">{lead.campaign || "—"}</td>

@@ -49,6 +49,19 @@ export function formatSmart(iso: string | null | undefined, now = new Date()) {
   return format(date, "d MMM yyyy");
 }
 
+/** Lead arrival time for lists and alerts — clock time when it came in. */
+export function formatLeadArrived(iso: string | null | undefined, now = new Date()) {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  const clock = format(date, "h:mm a");
+  if (isSameDay(date, now)) return `Today, ${clock}`;
+  const diff = now.getTime() - date.getTime();
+  if (diff >= 0 && diff < 36 * 60 * 60 * 1000) {
+    return `${formatDistanceToNow(date, { addSuffix: true })} · ${clock}`;
+  }
+  return format(date, "d MMM yyyy, h:mm a");
+}
+
 export function toDateTimeLocal(isoOrDate: string | Date = new Date()) {
   const date = typeof isoOrDate === "string" ? new Date(isoOrDate) : isoOrDate;
   const pad = (value: number) => String(value).padStart(2, "0");

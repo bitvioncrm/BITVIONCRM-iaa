@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { toast } from "sonner";
+import { formatLeadArrived } from "@/lib/dates";
 import { supabase } from "@/lib/supabase";
 
 /** Keeps one live channel open for every signed-in screen so Meta and WhatsApp leads paint instantly. */
@@ -25,9 +26,10 @@ export function LeadRealtime() {
               ? "Meta form"
               : "New lead";
         const campaign = String(row.source_campaign || "").trim();
+        const arrived = formatLeadArrived(String(row.created_at || new Date().toISOString()));
         window.dispatchEvent(new CustomEvent("bitvion-lead", { detail: { id: row.id, fullName, row, body } }));
         toast.success(`${body}: ${fullName}`, {
-          description: campaign || "Open Leads to call now",
+          description: [arrived, campaign].filter(Boolean).join(" · ") || "Open Leads to call now",
           duration: 10000,
           action: {
             label: "Open",
@@ -37,7 +39,7 @@ export function LeadRealtime() {
           },
         });
         if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-          const note = new Notification(body, { body: campaign ? `${fullName} · ${campaign}` : fullName, tag: String(row.id) });
+          const note = new Notification(body, { body: `${fullName} · ${arrived}${campaign ? ` · ${campaign}` : ""}`, tag: String(row.id) });
           note.onclick = () => {
             window.focus();
             window.location.assign(`/leads/${row.id}`);

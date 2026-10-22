@@ -41,6 +41,7 @@ import { CallResultButtons } from "@/components/calls/CallResultButtons";
 import { useAuth } from "@/context/AuthContext";
 import { useDialEndedAt } from "@/components/calls/useDialEndedAt";
 import { formatClock, outcomeFromPhoneReturn, type CallOutcome, type CallTotals } from "@/lib/call-time";
+import { formatLeadArrived } from "@/lib/dates";
 import { phoneTel } from "@/lib/phone";
 import { canOperateWhatsApp, canWriteWhatsApp, productionRoleLabel, whatsAppDesk } from "@/lib/production-access";
 import { activeCall, endCall, leadCallStats, startCall, type LiveCall } from "@/services/production-ops";
@@ -509,6 +510,7 @@ export function ProductionLeadsPage() {
               <div className="min-w-0">
                 <Link to={`/leads/${lead.id}`} className="font-medium">{lead.fullName}</Link>
                 <p className="text-xs text-muted">{leadOriginLabel(lead.status, lead.source, lead.sourcePlatform)}</p>
+                <p className="text-xs text-muted">{formatLeadArrived(lead.createdAt)}</p>
               </div>
               <StatusBadge status={lead.status} />
             </div>
@@ -587,7 +589,7 @@ export function ProductionLeadsPage() {
       <div className="hidden overflow-x-auto rounded-lg border border-line bg-white lg:block">
         <table className="w-full min-w-[920px] text-left text-[13px]">
           <thead className="border-b border-line text-xs text-muted">
-            <tr>{["Name", "Phone", "Stage", "Assign", "Call", "Follow-up"].map((heading) => <th key={heading} className="px-3 py-2 font-medium">{heading}</th>)}</tr>
+            <tr>{["Name", "Came", "Phone", "Stage", "Assign", "Call", "Follow-up"].map((heading) => <th key={heading} className="px-3 py-2 font-medium">{heading}</th>)}</tr>
           </thead>
           <tbody>
             {leads.map((lead) => (
@@ -596,6 +598,7 @@ export function ProductionLeadsPage() {
                   <Link to={`/leads/${lead.id}`}>{lead.fullName}</Link>
                   <p className="text-xs text-muted">{leadOriginLabel(lead.status, lead.source, lead.sourcePlatform)}</p>
                 </td>
+                <td className="px-3 py-2 whitespace-nowrap text-xs text-muted">{formatLeadArrived(lead.createdAt)}</td>
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2">
                     <PhoneLink phone={lead.phone} onClick={() => { if (!live && !callBusy) beginCall(lead); }} />

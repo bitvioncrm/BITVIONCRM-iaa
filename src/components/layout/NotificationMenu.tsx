@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAuth } from "@/context/AuthContext";
 import { useCrm } from "@/context/CrmContext";
-import { formatSmart } from "@/lib/dates";
+import { formatLeadArrived, formatSmart } from "@/lib/dates";
 import { loadLiveAlerts } from "@/services/overview";
 import { listWorkspaces } from "@/services/production-leads";
 
@@ -16,7 +16,7 @@ export function NotificationMenu() {
 
 function LiveAlerts() {
   const navigate = useNavigate();
-  const [items, setItems] = useState<Array<{ title: string; body: string; href: string }>>([]);
+  const [items, setItems] = useState<Array<{ title: string; body: string; href: string; at?: string }>>([]);
   useEffect(() => {
     let active = true;
     const refresh = () => {
@@ -33,7 +33,8 @@ function LiveAlerts() {
     const onLead = (event: Event) => {
       const detail = (event as CustomEvent<{ fullName?: string; id?: string; body?: string; row?: Record<string, string | null> }>).detail;
       if (detail?.id && detail.fullName) {
-        setItems((current) => [{ title: detail.fullName!, body: detail.body || "New lead", href: `/leads/${detail.id}` }, ...current].slice(0, 20));
+        const at = formatLeadArrived(String(detail.row?.created_at || new Date().toISOString()));
+        setItems((current) => [{ title: detail.fullName!, body: `${detail.body || "New lead"} · ${at}`, href: `/leads/${detail.id}`, at }, ...current].slice(0, 20));
       }
       refresh();
     };
