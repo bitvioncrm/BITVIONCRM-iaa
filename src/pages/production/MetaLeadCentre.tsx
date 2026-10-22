@@ -5,7 +5,7 @@ import { productionRoleLabel } from "@/lib/production-access";
 import { ChannelSettings } from "@/pages/production/ChannelSettings";
 import { Button } from "@/components/ui/button";
 import { formatLeadArrived } from "@/lib/dates";
-import { assignMetaLead, listDeskTelecallers, loadMetaCentre, pullMetaLeadsNow, retryMetaImport, saveFormMapping, setMappingActive, type DeskCaller, type MetaCentre } from "@/services/meta-admin";
+import { assignMetaLead, linkWhatsAppFromMeta, listDeskTelecallers, loadMetaCentre, pullMetaLeadsNow, retryMetaImport, saveFormMapping, setMappingActive, type DeskCaller, type MetaCentre } from "@/services/meta-admin";
 import { clearLeadAssignment, listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
 
 const EMPTY: MetaCentre = {
@@ -46,6 +46,7 @@ export function MetaLeadCentre() {
   const [assigned, setAssigned] = useState("");
   const [reload, setReload] = useState(0);
   const [pulling, setPulling] = useState(false);
+  const [linking, setLinking] = useState(false);
   const silentRef = useRef(false);
 
   useEffect(() => {
@@ -130,26 +131,50 @@ export function MetaLeadCentre() {
           <p className="text-xs font-medium tracking-wide text-accent uppercase">Meta Lead Centre · {bounds.label}</p>
           <h1 className="mt-1 text-[26px] font-semibold tracking-tight">Meta leads</h1>
         </div>
-        <Button
-          type="button"
-          disabled={pulling}
-          onClick={() => {
-            setPulling(true);
-            setNotice("");
-            setError("");
-            void pullMetaLeadsNow()
-              .then((result) => {
-                setNotice(result.stored > 0 ? `${result.stored} new Meta leads pulled.` : "Meta forms are current. Every form lead is already in the CRM.");
-                silentRef.current = true;
-                setReload((value) => value + 1);
-                if (result.stored > 0) window.dispatchEvent(new CustomEvent("bitvion-lead", { detail: { fullName: `${result.stored} Meta leads` } }));
-              })
-              .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Meta leads could not be pulled"))
-              .finally(() => setPulling(false));
-          }}
-        >
-          {pulling ? "Pulling…" : "Pull Meta leads now"}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={linking}
+            onClick={() => {
+              setLinking(true);
+              setNotice("");
+              setError("");
+              void linkWhatsAppFromMeta()
+                .then((result) => {
+                  if (result.linked > 0) setNotice(`${result.linked} WhatsApp desk${result.linked === 1 ? "" : "s"} linked from Meta. Click leads can arrive live.`);
+                  else if (result.phones > 0) setNotice("WhatsApp numbers were found in Meta. Match the display number in Settings, then save.");
+                  else setNotice("No Cloud API WhatsApp number is available on this Meta token yet. Use Instant Forms for lead phone numbers, or paste Phone number ID from WhatsApp Manager → API setup.");
+                  silentRef.current = true;
+                  setReload((value) => value + 1);
+                })
+                .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "WhatsApp could not be linked"))
+                .finally(() => setLinking(false));
+            }}
+          >
+            {linking ? "Linking…" : "Link WhatsApp from Meta"}
+          </Button>
+          <Button
+            type="button"
+            disabled={pulling}
+            onClick={() => {
+              setPulling(true);
+              setNotice("");
+              setError("");
+              void pullMetaLeadsNow()
+                .then((result) => {
+                  setNotice(result.stored > 0 ? `${result.stored} new Meta leads pulled.` : "Meta forms are current. Every form lead is already in the CRM.");
+                  silentRef.current = true;
+                  setReload((value) => value + 1);
+                  if (result.stored > 0) window.dispatchEvent(new CustomEvent("bitvion-lead", { detail: { fullName: `${result.stored} Meta leads` } }));
+                })
+                .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Meta leads could not be pulled"))
+                .finally(() => setPulling(false));
+            }}
+          >
+            {pulling ? "Pulling…" : "Pull Meta leads now"}
+          </Button>
+        </div>
       </header>
       <ChannelSettings embedded />
       {error ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}

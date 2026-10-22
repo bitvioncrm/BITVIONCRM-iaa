@@ -280,3 +280,27 @@ export async function pullMetaLeadsNow() {
     forms: body.forms ?? 0,
   };
 }
+
+export async function linkWhatsAppFromMeta() {
+  const session = await db().auth.getSession();
+  const token = session.data.session?.access_token;
+  if (!token) throw new Error("Sign in again before linking WhatsApp.");
+  const response = await fetch("/.netlify/functions/whatsapp-link", {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: "{}",
+  });
+  const body = (await response.json().catch(() => ({ linked: 0, phones: 0, reason: "failed" }))) as {
+    linked?: number;
+    phones?: number;
+    webhook?: string;
+    reason?: string;
+  };
+  if (!response.ok) throw new Error(body.reason === "forbidden" ? "Only admin can link WhatsApp." : "WhatsApp numbers could not be linked from Meta.");
+  return {
+    linked: body.linked ?? 0,
+    phones: body.phones ?? 0,
+    webhook: body.webhook ?? "",
+    reason: body.reason ?? "",
+  };
+}
