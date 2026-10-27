@@ -8,7 +8,7 @@ export function phoneLookup(from: string) {
   return { full, tail, display: full ? `+${full}` : "" };
 }
 
-export function whatsappLeadFields(input: { name: string; from: string; headline?: string; sourceId?: string }) {
+export function whatsappLeadFields(input: { name: string; from: string; headline?: string; sourceId?: string; campaign?: string }) {
   const phone = phoneLookup(input.from);
   return {
     full_name: input.name.trim() || "WhatsApp lead",
@@ -16,7 +16,7 @@ export function whatsappLeadFields(input: { name: string; from: string; headline
     whatsapp: phone.display,
     source: "whatsapp_click",
     source_platform: "whatsapp",
-    source_campaign: (input.headline || input.sourceId || "").trim(),
+    source_campaign: (input.campaign || input.headline || input.sourceId || "").trim(),
     status: "new",
   };
 }

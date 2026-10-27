@@ -24,7 +24,7 @@ type InboundMessage = {
   id?: string;
   from?: string;
   text?: { body?: string };
-  referral?: { headline?: string; source_id?: string };
+  referral?: { headline?: string; body?: string; source_id?: string; source_type?: string };
 };
 
 type WebhookValue = {
@@ -50,12 +50,25 @@ async function findLeadId(supabaseUrl: string, serviceKey: string, workspaceId: 
   return live?.id ?? "";
 }
 
-async function createLead(supabaseUrl: string, serviceKey: string, desk: ChannelSecret, message: InboundMessage, name: string) {
+async function lookupAd(token: string, adId: string) {
+  const response = await fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(adId)}?fields=name,campaign{name},adset{name,promoted_object}`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) return { campaign: "", pageId: "" };
+  const body = (await response.json()) as { name?: string; campaign?: { name?: string }; adset?: { name?: string; promoted_object?: { page_id?: string } } };
+  return {
+    campaign: body.campaign?.name || body.adset?.name || body.name || "",
+    pageId: body.adset?.promoted_object?.page_id || "",
+  };
+}
+
+async function createLead(supabaseUrl: string, serviceKey: string, desk: ChannelSecret, message: InboundMessage, name: string, campaign = "") {
   const fields = whatsappLeadFields({
     name,
     from: message.from ?? "",
     headline: message.referral?.headline,
     sourceId: message.referral?.source_id,
+    campaign,
   });
   if (!fields.phone) return "";
   const response = await fetch(`${supabaseUrl}/rest/v1/leads`, {
@@ -101,7 +114,11 @@ async function loadDeskRows(supabaseUrl: string, serviceKey: string) {
   }));
 }
 
-async function resolveClickDesk(supabaseUrl: string, serviceKey: string, rows: ChannelSecret[], phoneNumberId: string, headline: string) {
+async function resolveClickDesk(supabaseUrl: string, serviceKey: string, rows: ChannelSecret[], phoneNumberId: string, headline: string, pageWorkspaceId = "") {
+  if (pageWorkspaceId) {
+    const pageRow = rows.find((item) => item.workspace_id === pageWorkspaceId);
+    if (pageRow) return pageRow;
+  }
   const loaded = await loadDeskRows(supabaseUrl, serviceKey);
   const institute = headline.trim() ? instituteDeskForCampaign(headline, loaded[0]?.organizationId ?? "", loaded) : undefined;
   if (institute) {
@@ -163,13 +180,6 @@ export default async (request: Request) => {
     }
     for (const message of value.messages ?? []) {
       if (!message.id || !message.from) continue;
-      const matched = phoneNumberId
-        ? await resolveClickDesk(supabaseUrl, serviceKey, whatsappRows, phoneNumberId, message.referral?.headline ?? "")
-        : undefined;
-      if (!matched) {
-        unmapped += 1;
-        continue;
-      }
       const seen = await fetch(
         `${supabaseUrl}/rest/v1/processed_events?provider=eq.whatsapp&external_event_id=eq.${encodeURIComponent(message.id)}&select=id&limit=1`,
         { headers: serviceHeaders(serviceKey) },
@@ -177,10 +187,20 @@ export default async (request: Request) => {
       const seenRows = seen.ok ? ((await seen.json()) as unknown[]) : [];
       if (Array.isArray(seenRows) && seenRows.length > 0) continue;
 
+      const meta = stored.find((row) => row.channel === "meta" && row.access_token);
+      const ad = meta?.access_token && message.referral?.source_id ? await lookupAd(meta.access_token, message.referral.source_id) : { campaign: "", pageId: "" };
+      const pageWorkspaceId = ad.pageId ? stored.find((row) => row.channel === "meta" && row.page_id === ad.pageId)?.workspace_id ?? "" : "";
+      const matched = phoneNumberId
+        ? await resolveClickDesk(supabaseUrl, serviceKey, whatsappRows, phoneNumberId, ad.campaign || message.referral?.headline || "", pageWorkspaceId)
+        : undefined;
+      if (!matched) {
+        unmapped += 1;
+        continue;
+      }
       const contact = value.contacts?.find((item) => item.wa_id === message.from);
       const name = contact?.profile?.name ?? "";
       let leadId = await findLeadId(supabaseUrl, serviceKey, matched.workspace_id, message.from);
-      if (!leadId) leadId = await createLead(supabaseUrl, serviceKey, matched, message, name);
+      if (!leadId) leadId = await createLead(supabaseUrl, serviceKey, matched, message, name, ad.campaign);
       if (!leadId) return json(502, { status: "lead_insert_failed" });
 
       const storedMessage = await fetch(`${supabaseUrl}/rest/v1/messages`, {
@@ -192,7 +212,7 @@ export default async (request: Request) => {
           lead_id: leadId,
           channel: "whatsapp",
           direction: "inbound",
-          body: messageBody(message.text?.body ?? "", message.referral?.headline ?? ""),
+          body: messageBody(message.text?.body || message.referral?.body || "", message.referral?.headline ?? ""),
           provider_message_id: message.id,
           status: "received",
         }),
