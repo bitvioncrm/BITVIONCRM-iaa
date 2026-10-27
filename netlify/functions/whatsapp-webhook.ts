@@ -86,35 +86,40 @@ async function createLead(supabaseUrl: string, serviceKey: string, desk: Channel
   return leadId;
 }
 
-async function bindClickDesk(supabaseUrl: string, serviceKey: string, rows: ChannelSecret[], phoneNumberId: string, headline: string) {
-  const known = rows.find((row) => row.phone_number_id === phoneNumberId);
-  if (known) return known;
+async function loadDeskRows(supabaseUrl: string, serviceKey: string) {
   const response = await fetch(
     `${supabaseUrl}/rest/v1/workspaces?select=id,organization_id,name,workspace_type&deleted_at=is.null&workspace_type=in.(clinic,institute)`,
     { headers: serviceHeaders(serviceKey) },
   );
-  if (!response.ok) return undefined;
-  const loaded = ((await response.json()) as Array<{ id: string; organization_id: string; name: string; workspace_type: string }>).map((desk) => ({
+  if (!response.ok) return [];
+  return ((await response.json()) as Array<{ id: string; organization_id: string; name: string; workspace_type: string }>).map((desk) => ({
     workspaceId: desk.id,
     organizationId: desk.organization_id,
     workspaceType: desk.workspace_type,
     name: desk.name ?? "",
   }));
+}
+
+async function resolveClickDesk(supabaseUrl: string, serviceKey: string, rows: ChannelSecret[], phoneNumberId: string, headline: string) {
+  const loaded = await loadDeskRows(supabaseUrl, serviceKey);
   const institute = headline.trim() ? instituteDeskForCampaign(headline, loaded[0]?.organizationId ?? "", loaded) : undefined;
+  if (institute) {
+    const instituteRow = rows.find((item) => item.workspace_id === institute.workspaceId);
+    if (instituteRow) return instituteRow;
+  }
+  const known = rows.find((row) => row.phone_number_id === phoneNumberId);
+  if (known) return known;
   const clinic = loaded.find((desk) => desk.workspaceType === "clinic");
   const openRows = rows.filter((item) => !item.phone_number_id);
-  const preferredId = institute?.workspaceId ?? clinic?.workspaceId ?? openRows[0]?.workspace_id ?? "";
-  const row = rows.find((item) => item.workspace_id === preferredId && (!item.phone_number_id || item.phone_number_id === phoneNumberId))
-    ?? openRows[0];
-  if (!row || (row.phone_number_id && row.phone_number_id !== phoneNumberId)) return undefined;
-  if (!row.phone_number_id) {
-    await fetch(`${supabaseUrl}/rest/v1/workspace_channel_secrets?workspace_id=eq.${row.workspace_id}&channel=eq.whatsapp`, {
-      method: "PATCH",
-      headers: serviceHeaders(serviceKey),
-      body: JSON.stringify({ phone_number_id: phoneNumberId, status: "connected", updated_at: new Date().toISOString() }),
-    });
-    row.phone_number_id = phoneNumberId;
-  }
+  const preferredId = clinic?.workspaceId ?? openRows[0]?.workspace_id ?? "";
+  const row = rows.find((item) => item.workspace_id === preferredId && !item.phone_number_id) ?? openRows[0];
+  if (!row || !phoneNumberId) return undefined;
+  await fetch(`${supabaseUrl}/rest/v1/workspace_channel_secrets?workspace_id=eq.${row.workspace_id}&channel=eq.whatsapp`, {
+    method: "PATCH",
+    headers: serviceHeaders(serviceKey),
+    body: JSON.stringify({ phone_number_id: phoneNumberId, status: "connected", updated_at: new Date().toISOString() }),
+  });
+  row.phone_number_id = phoneNumberId;
   return row;
 }
 
@@ -156,7 +161,6 @@ export default async (request: Request) => {
 
   for (const value of values) {
     const phoneNumberId = value.metadata?.phone_number_id ?? "";
-    const desk = whatsappRows.find((row) => row.phone_number_id && row.phone_number_id === phoneNumberId);
     for (const status of value.statuses ?? []) {
       if (!status.id) continue;
       await fetch(`${supabaseUrl}/rest/v1/messages?provider_message_id=eq.${encodeURIComponent(status.id)}`, {
@@ -167,10 +171,9 @@ export default async (request: Request) => {
     }
     for (const message of value.messages ?? []) {
       if (!message.id || !message.from) continue;
-      let matched = desk;
-      if (!matched && phoneNumberId) {
-        matched = await bindClickDesk(supabaseUrl, serviceKey, whatsappRows, phoneNumberId, message.referral?.headline ?? "");
-      }
+      const matched = phoneNumberId
+        ? await resolveClickDesk(supabaseUrl, serviceKey, whatsappRows, phoneNumberId, message.referral?.headline ?? "")
+        : undefined;
       if (!matched) {
         unmapped += 1;
         continue;

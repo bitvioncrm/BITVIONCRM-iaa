@@ -442,8 +442,8 @@ export async function loadLiveAlerts(workspaces: WorkspaceOption[]) {
       .select("workspace_id, phone_number_id, status")
       .eq("channel", "whatsapp")
       .in("workspace_id", all);
-    const missing = (whatsapp.data ?? []).filter((row) => !String(row.phone_number_id || "").trim());
-    if (missing.length) alerts.push({ title: "WhatsApp lead number", body: "Connect the Phone number ID so click leads arrive live.", href: "/settings" });
+    const connected = (whatsapp.data ?? []).some((row) => String(row.phone_number_id || "").trim());
+    if (!connected) alerts.push({ title: "WhatsApp lead number", body: "Connect the Phone number ID so click leads arrive live.", href: "/settings" });
   }
   return alerts.slice(0, 8);
 }
