@@ -28,6 +28,12 @@ export async function loadChannelSecrets(supabaseUrl: string, serviceKey: string
   return Array.isArray(rows) ? rows : [];
 }
 
+export function sendingLine(rows: ChannelSecret[]) {
+  const ready = rows.filter((row) => row.access_token && row.phone_number_id);
+  const clinic = ready.find((row) => row.display_phone.replace(/\D/g, "").endsWith("9562429928") || row.phone_number_id === "1347562095115257");
+  return clinic ?? ready[0];
+}
+
 export function uniqueSecrets(values: string[]) {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }

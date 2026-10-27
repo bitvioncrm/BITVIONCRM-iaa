@@ -58,7 +58,7 @@ function AdminDashboard() {
 function DoctorDashboard() {
   const { workspaces, error } = useWorkspaces();
   const clinic = workspaces.find((item) => item.workspaceType === "clinic") ?? workspaces[0];
-  const [range, setRange] = useState<RangeKey>("this_month");
+  const [range, setRange] = useState<RangeKey>("today");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [pulse, setPulse] = useState({ consulted: 0, patients: 0, pending: 0, units: 0, days: [] as Array<{ day: string; sold: number }> });
@@ -71,7 +71,7 @@ function DoctorDashboard() {
     <Shell title="Doctor">
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       <div className="flex flex-wrap gap-2">
-        {([["7d", "Weekly"], ["this_month", "Monthly"], ["this_year", "Yearly"], ["custom", "Custom"]] as const).map(([key, label]) => (
+        {([["today", "Today"], ["7d", "Weekly"], ["this_month", "Monthly"], ["this_year", "Yearly"], ["custom", "Custom"]] as const).map(([key, label]) => (
           <button key={key} type="button" className={`rounded-md border px-3 py-2 text-sm ${range === key ? "border-navy bg-navy text-white" : "border-line bg-white"}`} onClick={() => setRange(key)}>{label}</button>
         ))}
         {range === "custom" ? (

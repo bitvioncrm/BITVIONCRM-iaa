@@ -1,4 +1,4 @@
-import { loadChannelSecrets } from "../lib/channel-secrets.ts";
+import { loadChannelSecrets, sendingLine } from "../lib/channel-secrets.ts";
 
 function required(name: string) {
   return process.env[name]?.trim() || "";
@@ -43,8 +43,7 @@ export default async (request: Request) => {
   const offset = Math.max(0, Number(body.offset ?? 0));
   const workspaceId = body.workspaceId && UUID.test(body.workspaceId) ? body.workspaceId : "";
 
-  const stored = await loadChannelSecrets(supabaseUrl, serviceKey, "whatsapp");
-  const secret = stored.find((row) => row.access_token && row.phone_number_id) ?? stored[0];
+  const secret = sendingLine(await loadChannelSecrets(supabaseUrl, serviceKey, "whatsapp"));
   if (!secret?.access_token || !secret.phone_number_id) return json(503, { status: "configuration_required", detail: "Save the WhatsApp token on the clinic desk." });
 
   const headers = { apikey: serviceKey, authorization: `Bearer ${serviceKey}` };

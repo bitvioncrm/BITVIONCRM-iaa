@@ -1,4 +1,4 @@
-import { loadChannelSecrets } from "../lib/channel-secrets.ts";
+import { loadChannelSecrets, sendingLine } from "../lib/channel-secrets.ts";
 
 function required(name: string) {
   return process.env[name]?.trim() || "";
@@ -61,13 +61,13 @@ export default async (request: Request) => {
   if (!isAdmin && !onDesk) return json(403, { status: "forbidden" });
 
   const stored = await loadChannelSecrets(supabaseUrl, serviceKey, "whatsapp");
+  const line = sendingLine(stored);
   const deskSecret = stored.find((row) => row.workspace_id === lead.workspace_id && row.access_token && row.phone_number_id);
   const sharedToken = required("WHATSAPP_TOKEN");
-  const connected = stored.find((row) => row.access_token && row.phone_number_id);
-  const phoneId = deskSecret?.phone_number_id || (isAdmin ? connected?.phone_number_id : "") || (desk === "institute"
+  const phoneId = (isAdmin ? line?.phone_number_id : deskSecret?.phone_number_id) || (desk === "institute"
     ? required("WHATSAPP_INSTITUTE_PHONE_NUMBER_ID")
     : required("WHATSAPP_CLINIC_PHONE_NUMBER_ID") || required("WHATSAPP_PHONE_NUMBER_ID"));
-  const accessToken = deskSecret?.access_token || (isAdmin ? connected?.access_token : "") || (desk === "institute"
+  const accessToken = (isAdmin ? line?.access_token : deskSecret?.access_token) || (desk === "institute"
     ? required("WHATSAPP_INSTITUTE_TOKEN") || sharedToken
     : required("WHATSAPP_CLINIC_TOKEN") || sharedToken);
   if (!phoneId || !accessToken) return json(503, { status: "configuration_required" });
