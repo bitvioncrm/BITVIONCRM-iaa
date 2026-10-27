@@ -33,7 +33,7 @@ type TabKey = "overview" | "catalogue" | "cart" | "history";
 type SortKey = "name" | "price" | "stock";
 
 function canManageInventory(roleKey: string) {
-  return canOperateWhatsApp(roleKey) || roleKey === "doctor";
+  return canOperateWhatsApp(roleKey) || roleKey === "doctor" || roleKey === "duty_doctor" || roleKey === "receptionist";
 }
 
 function ProductImage({ path, name, size = "card" }: { path: string; name: string; size?: "card" | "thumb" | "preview" }) {

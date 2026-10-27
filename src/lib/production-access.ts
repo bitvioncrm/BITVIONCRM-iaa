@@ -12,7 +12,7 @@ export function canWriteWhatsApp(roleKey: string) {
 
 export function whatsAppDesk(roleKey: string) {
   if (canOperateWhatsApp(roleKey)) return "both";
-  if (roleKey === "doctor" || roleKey === "receptionist" || deskCallerRoles("clinic").includes(roleKey)) return "clinic";
+  if (roleKey === "doctor" || roleKey === "duty_doctor" || roleKey === "receptionist" || deskCallerRoles("clinic").includes(roleKey)) return "clinic";
   if (deskCallerRoles("institute").includes(roleKey)) return "institute";
   return "none";
 }
@@ -25,8 +25,8 @@ export function canSendBulk(roleKey: string, count: number) {
 
 export function pathsForRole(roleKey: string) {
   if (canOperateWhatsApp(roleKey)) return ADMIN;
-  if (roleKey === "doctor") return ["/", "/clinic", "/inventory"];
-  if (roleKey === "receptionist") return ["/", "/clinic"];
+  if (roleKey === "doctor" || roleKey === "duty_doctor") return ["/", "/clinic", "/inventory"];
+  if (roleKey === "receptionist") return ["/", "/leads", "/pipeline", "/follow-ups", "/calls", "/whatsapp", "/clinic", "/inventory", "/billing"];
   if (roleKey === "clinic_telecaller" || roleKey === "clinic_bde") return ["/", "/leads", "/pipeline", "/follow-ups", "/calls", "/whatsapp"];
   if (roleKey === "institute_telecaller" || roleKey === "institute_bde" || roleKey === "institute_user") return ["/", "/leads", "/pipeline", "/follow-ups", "/calls", "/whatsapp", "/institute"];
   return ["/"];
@@ -45,6 +45,7 @@ export function deskCallerRoles(workspaceType: string) {
 export function productionRoleLabel(roleKey: string) {
   if (roleKey === "super_admin" || roleKey === "admin") return "Admin";
   if (roleKey === "doctor") return "Doctor";
+  if (roleKey === "duty_doctor") return "Duty doctor";
   if (roleKey === "receptionist") return "Receptionist";
   if (roleKey === "clinic_telecaller" || roleKey === "clinic_bde") return "Clinic Telecaller";
   if (roleKey === "institute_telecaller" || roleKey === "institute_bde" || roleKey === "institute_user") return "Institute Telecaller";

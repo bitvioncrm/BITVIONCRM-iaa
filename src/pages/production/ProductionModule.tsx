@@ -1,9 +1,11 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { ClinicCare } from "@/components/clinic/ClinicCare";
 import { BusinessBoard } from "@/components/dashboard/BusinessBoard";
 import { useAuth } from "@/context/AuthContext";
 import { canOperateWhatsApp } from "@/lib/production-access";
 import { listDoctors, listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
 import { inr } from "@/lib/money";
+import { addLedgerEntry, listLedger } from "@/services/clinic-care";
 import { changeStock, createAppointment, createCourse, createExam, createInvoice, createPatient, createProduct, createStudent, issueCertificate, listAppointments, listCertificates, listDocuments, listExams, listPatients, listProducts, listStockMoves, listStudents, recordMark, recordPayment, recordRefund, removeProduct, saveConsultation, seedClinicSkincareStock, setDocumentStatus, signedDocumentUrl, updateAppointmentStatus, updateProductPricing, uploadPrivateFile, type InventoryProduct } from "@/services/production-ops";
 
 export function ProductionModule({ module }: { module: "clinic" | "institute" | "inventory" | "billing" }) {
@@ -47,7 +49,7 @@ export function ProductionModule({ module }: { module: "clinic" | "institute" | 
 function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
   const { productionUser } = useAuth();
   const key = productionUser?.roleKey ?? "admin";
-  const doctor = key === "doctor";
+  const clinical = key === "doctor" || key === "duty_doctor";
   const reception = key === "receptionist";
   const [patients, setPatients] = useState<Array<{ id: string; patient_code: string; full_name: string; mobile: string }>>([]);
   const [appointments, setAppointments] = useState<Array<{ id: string; starts_at: string; status: string; reason: string }>>([]);
@@ -63,12 +65,12 @@ function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <div className="space-y-2 rounded-lg border border-line bg-white p-4">
-        <h2 className="font-semibold">{doctor ? "Patients" : "Register patient"}</h2>
+        <h2 className="font-semibold">{clinical ? "Patients" : "Register patient"}</h2>
         <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); reloadPatients(query); }}>
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search patients" className="w-full rounded-md border border-line px-2 py-2" />
           <button className="rounded-md border border-line px-3 py-2 text-sm" type="submit">Search</button>
         </form>
-        {doctor ? null : (
+        {clinical ? null : (
           <form className="space-y-2" onSubmit={(event) => submit(event, async (data) => {
             const code = await createPatient({
               organizationId: workspace.organizationId,
@@ -114,8 +116,8 @@ function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
         const rows = await listAppointments(workspace.id);
         setAppointments(rows as typeof appointments);
       }, onError)}>
-        <h2 className="font-semibold">{doctor ? "Today's queue" : "Appointments"}</h2>
-        {doctor ? null : (
+        <h2 className="font-semibold">{clinical ? "Today's queue" : "Appointments"}</h2>
+        {clinical ? null : (
           <>
             <select name="patient" className="w-full rounded-md border border-line px-2 py-2" value={patientId} onChange={(event) => setPatientId(event.target.value)}>
               <option value="">Patient</option>
@@ -137,7 +139,7 @@ function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
             <select value={item.status} onChange={(event) => {
               void updateAppointmentStatus(item.id, event.target.value).then(async () => setAppointments(await listAppointments(workspace.id) as typeof appointments)).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not update the appointment"));
             }}>
-              {(doctor ? ["arrived", "in_consultation", "completed", "no_show"] : ["scheduled", "confirmed", "arrived", "cancelled", "no_show"]).map((status) => <option key={status} value={status}>{status}</option>)}
+              {(clinical ? ["arrived", "in_consultation", "completed", "no_show"] : ["scheduled", "confirmed", "arrived", "cancelled", "no_show"]).map((status) => <option key={status} value={status}>{status}</option>)}
             </select>
           </div>
         ))}
@@ -166,6 +168,13 @@ function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
           <button className="rounded-md bg-navy px-3 py-2 text-sm text-white" type="submit">Save consultation</button>
         </form>
       )}
+      <ClinicCare
+        workspace={workspace}
+        patients={patients}
+        doctors={doctors}
+        onSaved={onNotice}
+        onError={onError}
+      />
     </div>
   );
 }
@@ -540,9 +549,17 @@ function InventoryPanel({ workspace, onError, onNotice }: PanelProps) {
 function BillingPanel({ workspace, onError, onNotice }: PanelProps) {
   const [patients, setPatients] = useState<Array<{ id: string; full_name: string }>>([]);
   const [invoiceId, setInvoiceId] = useState("");
+  const [rows, setRows] = useState<Array<{ id: string; kind: "income" | "expense"; amount: number; note: string; patientName: string; createdAt: string }>>([]);
+  const loadLedger = () => void listLedger(workspace.id).then(setRows).catch(() => setRows([]));
   useEffect(() => {
-    void listPatients(workspace.id, "").then((rows) => setPatients(rows as typeof patients)).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load patients"));
+    void listPatients(workspace.id, "").then((loaded) => setPatients(loaded as typeof patients)).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load patients"));
+    loadLedger();
+    const onCare = () => loadLedger();
+    window.addEventListener("bitvion-care", onCare);
+    return () => window.removeEventListener("bitvion-care", onCare);
   }, [onError, workspace.id]);
+  const income = rows.filter((row) => row.kind === "income").reduce((sum, row) => sum + row.amount, 0);
+  const expense = rows.filter((row) => row.kind === "expense").reduce((sum, row) => sum + row.amount, 0);
   return (
     <div className="space-y-4">
     <form className="space-y-2 rounded-lg border border-line bg-white p-4" onSubmit={(event) => submit(event, async (data) => {
@@ -578,6 +595,31 @@ function BillingPanel({ workspace, onError, onNotice }: PanelProps) {
       <input name="amount" type="number" required placeholder="Amount" className="w-full rounded-md border border-line px-2 py-2" />
       <button className="rounded-md bg-navy px-3 py-2 text-sm text-white" type="submit">Record refund</button>
     </form>
+    <section className="space-y-3 rounded-lg border border-line bg-white p-4">
+      <h2 className="font-semibold">Income and expenses</h2>
+      <p className="text-sm text-muted">Income ₹{income.toLocaleString("en-IN")} · Expenses ₹{expense.toLocaleString("en-IN")} · Balance ₹{(income - expense).toLocaleString("en-IN")}</p>
+      <form className="grid gap-2 md:grid-cols-2" onSubmit={(event) => submit(event, async (data) => {
+        await addLedgerEntry({
+          organizationId: workspace.organizationId,
+          workspaceId: workspace.id,
+          patientId: (data.get("patient") as string) || null,
+          kind: data.get("kind") === "expense" ? "expense" : "income",
+          amount: Number(data.get("amount")),
+          note: data.get("note") as string,
+        });
+        onNotice("Entry saved.");
+        loadLedger();
+      }, onError)}>
+        <select name="kind" className="rounded-md border border-line px-2 py-2"><option value="income">Income</option><option value="expense">Expense</option></select>
+        <select name="patient" className="rounded-md border border-line px-2 py-2"><option value="">No patient</option>{patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.full_name}</option>)}</select>
+        <input name="amount" type="number" min="0" required placeholder="Amount" className="rounded-md border border-line px-2 py-2" />
+        <input name="note" required placeholder="What this payment is for" className="rounded-md border border-line px-2 py-2" />
+        <button className="rounded-md bg-navy px-3 py-2 text-sm text-white" type="submit">Save entry</button>
+      </form>
+      {rows.length === 0 ? <p className="text-sm text-muted">No income or expense entries yet.</p> : rows.map((row) => (
+        <p key={row.id} className="text-sm">{row.kind === "income" ? "Income" : "Expense"} · ₹{row.amount.toLocaleString("en-IN")} · {row.patientName || "No patient"} · {row.note}</p>
+      ))}
+    </section>
     </div>
   );
 }

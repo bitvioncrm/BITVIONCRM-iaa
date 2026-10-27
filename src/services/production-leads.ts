@@ -147,10 +147,11 @@ export async function listDoctors(workspaceId: string) {
   return (data ?? []).flatMap((row) => {
     const roles = row.roles as { key: string } | { key: string }[] | null;
     const role = Array.isArray(roles) ? roles[0]?.key : roles?.key;
-    if (role !== "doctor") return [];
+    if (role !== "doctor" && role !== "duty_doctor") return [];
     const profiles = row.profiles as { full_name: string } | { full_name: string }[] | null;
     const name = Array.isArray(profiles) ? profiles[0]?.full_name : profiles?.full_name;
-    return [{ userId: row.user_id as string, name: name ?? "Doctor" }];
+    const label = role === "duty_doctor" ? "Duty doctor" : "Main doctor";
+    return [{ userId: row.user_id as string, name: `${name ?? "Doctor"} · ${label}` }];
   });
 }
 
