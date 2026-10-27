@@ -38,13 +38,14 @@ export default async (request: Request) => {
   const keys = roles.map((row) => roleKey(row.roles)).filter(Boolean);
   const isAdmin = keys.includes("admin") || keys.includes("super_admin");
 
-  const body = (await request.json()) as { leadId?: string; to?: string; text?: string; template?: string; bulkSize?: number };
+  const body = (await request.json()) as { leadId?: string; to?: string; text?: string; template?: string; bulkSize?: number; imageUrl?: string };
   const bulkSize = Number(body.bulkSize ?? 1);
   if (!isAdmin && bulkSize > 50) return json(403, { status: "bulk_admin_only" });
   if (!body.leadId || !UUID.test(body.leadId) || !body.to) return json(400, { status: "invalid" });
   const text = body.text?.trim() ?? "";
   const template = body.template?.trim() ?? "";
-  if ((!text && !template) || text.length > 1000) return json(400, { status: "invalid" });
+  const imageUrl = body.imageUrl?.trim() ?? "";
+  if ((!text && !template && !imageUrl) || text.length > 1000) return json(400, { status: "invalid" });
   const phone = body.to.replace(/\D/g, "");
   if (phone.length < 10 || phone.length > 15) return json(400, { status: "invalid_phone" });
 
@@ -62,23 +63,30 @@ export default async (request: Request) => {
   const stored = await loadChannelSecrets(supabaseUrl, serviceKey, "whatsapp");
   const deskSecret = stored.find((row) => row.workspace_id === lead.workspace_id && row.access_token && row.phone_number_id);
   const sharedToken = required("WHATSAPP_TOKEN");
-  const phoneId = deskSecret?.phone_number_id || (desk === "institute"
+  const connected = stored.find((row) => row.access_token && row.phone_number_id);
+  const phoneId = deskSecret?.phone_number_id || (isAdmin ? connected?.phone_number_id : "") || (desk === "institute"
     ? required("WHATSAPP_INSTITUTE_PHONE_NUMBER_ID")
     : required("WHATSAPP_CLINIC_PHONE_NUMBER_ID") || required("WHATSAPP_PHONE_NUMBER_ID"));
-  const accessToken = deskSecret?.access_token || (desk === "institute"
+  const accessToken = deskSecret?.access_token || (isAdmin ? connected?.access_token : "") || (desk === "institute"
     ? required("WHATSAPP_INSTITUTE_TOKEN") || sharedToken
     : required("WHATSAPP_CLINIC_TOKEN") || sharedToken);
   if (!phoneId || !accessToken) return json(503, { status: "configuration_required" });
 
   const payload = template
     ? { messaging_product: "whatsapp", to: phone, type: "template", template: { name: template, language: { code: "en" } } }
-    : { messaging_product: "whatsapp", to: phone, type: "text", text: { body: text } };
+    : imageUrl
+      ? { messaging_product: "whatsapp", to: phone, type: "image", image: { link: imageUrl, caption: text } }
+      : { messaging_product: "whatsapp", to: phone, type: "text", text: { body: text } };
   const sent = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
     method: "POST",
     headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!sent.ok) return json(502, { status: "provider_rejected" });
+  if (!sent.ok) {
+    const errorBody = (await sent.json().catch(() => ({}))) as { error?: { message?: string } };
+    const detail = (errorBody.error?.message || "WhatsApp rejected the message").replace(/access_token=[^&\s]+/g, "").slice(0, 160);
+    return json(502, { status: "provider_rejected", detail });
+  }
   const provider = (await sent.json()) as { messages?: Array<{ id: string }> };
   await fetch(`${supabaseUrl}/rest/v1/messages`, {
     method: "POST",
@@ -89,7 +97,7 @@ export default async (request: Request) => {
       lead_id: lead.id,
       channel: "whatsapp",
       direction: "outbound",
-      body: text || template,
+      body: [text, imageUrl ? "Poster attached" : "", template].filter(Boolean).join("\n") || template,
       provider_message_id: provider.messages?.[0]?.id ?? "",
       status: "sent",
     }),

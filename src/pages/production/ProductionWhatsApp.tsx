@@ -15,6 +15,8 @@ import {
   listWhatsAppThread,
   saveWhatsAppNumber,
   saveWhatsAppPoster,
+  sendWhatsAppBulk,
+  sendWhatsAppMessage,
   type WhatsAppBubble,
   type WhatsAppChat,
   type WhatsAppNumber,
@@ -53,6 +55,8 @@ export function ProductionWhatsApp() {
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("");
   const [chatReload, setChatReload] = useState(0);
+  const [page, setPage] = useState(1);
+  const [bulkRunning, setBulkRunning] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const visibleDesks = useMemo(() => workspaces.filter((item) => deskMode === "both" || item.workspaceType === deskMode), [deskMode, workspaces]);
   const desk = visibleDesks.find((item) => item.id === deskId) ?? visibleDesks[0];
@@ -69,12 +73,14 @@ export function ProductionWhatsApp() {
   }, []);
 
   useEffect(() => {
-    if (!desk && visibleDesks[0]) setDeskId(visibleDesks[0].id);
+    if (!desk && !admin && visibleDesks[0]) setDeskId(visibleDesks[0].id);
+    if (admin && !deskId) setDeskId("all");
   }, [desk, visibleDesks]);
 
   useEffect(() => {
-    if (!desk) return;
-    void listWhatsAppChats(desk.id, search)
+    const workspaceId = !admin || deskId !== "all" ? desk?.id ?? "" : "";
+    if (!admin && !desk) return;
+    void listWhatsAppChats(workspaceId, search, admin ? "all" : "clicks", page)
       .then((result) => {
         setChats(result.chats);
         setChatTotal(result.total);
@@ -85,8 +91,9 @@ export function ProductionWhatsApp() {
         });
       })
       .catch((reason: unknown) => setNotice(reason instanceof Error ? reason.message : "Could not load chats"));
-    void listWhatsAppPosters(desk.id).then(setPosters).catch(() => setPosters([]));
-  }, [desk, search, chatReload]);
+    const posterDesk = desk ?? visibleDesks[0];
+    if (posterDesk) void listWhatsAppPosters(posterDesk.id).then(setPosters).catch(() => setPosters([]));
+  }, [admin, desk, deskId, page, search, chatReload]);
 
   useEffect(() => {
     const onLead = () => setChatReload((value) => value + 1);
@@ -192,7 +199,35 @@ export function ProductionWhatsApp() {
               {posters.map((poster) => <option key={poster.id} value={poster.id}>{poster.filename}</option>)}
             </select>
             {posters.find((poster) => poster.id === bulkPosterId)?.url ? <img src={posters.find((poster) => poster.id === bulkPosterId)?.url} alt="" className="h-16 rounded-md border border-line object-cover" /> : null}
-            <p className="text-xs text-muted">{chatTotal.toLocaleString("en-IN")} WhatsApp click leads on {desk?.name ?? "this desk"}.</p>
+            <p className="text-xs text-muted">{chatTotal.toLocaleString("en-IN")} {admin ? "CRM leads" : "WhatsApp click leads"}{deskId !== "all" && desk ? ` on ${desk.name}` : ""}.</p>
+            {admin ? (
+              <button
+                type="button"
+                className="rounded-md bg-[#075E54] px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+                disabled={bulkRunning || (!bulkText.trim() && !bulkPosterId)}
+                onClick={() => {
+                  const poster = posters.find((item) => item.id === bulkPosterId);
+                  if (!window.confirm(`Send this WhatsApp to ${chatTotal.toLocaleString("en-IN")} leads?`)) return;
+                  setBulkRunning(true);
+                  const run = async () => {
+                    let offset = 0;
+                    let sent = 0;
+                    let failed = 0;
+                    for (let step = 0; step < 800; step += 1) {
+                      const batch = await sendWhatsAppBulk({ text: bulkText.trim(), imageUrl: poster?.url || "", workspaceId: deskId === "all" ? undefined : desk?.id, offset });
+                      sent += batch.sent;
+                      failed += batch.failed;
+                      setNotice(`Sent ${sent.toLocaleString("en-IN")} · failed ${failed.toLocaleString("en-IN")} of ${batch.total.toLocaleString("en-IN")}`);
+                      if (batch.done || batch.sent === 0) break;
+                      offset = batch.next;
+                    }
+                  };
+                  void run().catch((reason: unknown) => setNotice(reason instanceof Error ? reason.message : "Bulk send stopped")).finally(() => setBulkRunning(false));
+                }}
+              >
+                {bulkRunning ? "Sending…" : "Send bulk"}
+              </button>
+            ) : null}
           </div>
         </section>
       ) : null}
@@ -203,8 +238,11 @@ export function ProductionWhatsApp() {
             <p className="text-sm font-semibold">WhatsApp</p>
             {deskMode === "both" ? (
               <div className="mt-2 flex gap-1">
+                {admin ? (
+                  <button type="button" onClick={() => { setDeskId("all"); setPage(1); }} className={cn("rounded-full px-2 py-1 text-[11px]", deskId === "all" ? "bg-white text-[#075E54]" : "bg-white/15")}>All leads</button>
+                ) : null}
                 {visibleDesks.map((item) => (
-                  <button key={item.id} type="button" onClick={() => setDeskId(item.id)} className={cn("rounded-full px-2 py-1 text-[11px]", item.id === desk?.id ? "bg-white text-[#075E54]" : "bg-white/15")}>
+                  <button key={item.id} type="button" onClick={() => { setDeskId(item.id); setPage(1); }} className={cn("rounded-full px-2 py-1 text-[11px]", item.id === desk?.id && deskId !== "all" ? "bg-white text-[#075E54]" : "bg-white/15")}>
                     {item.workspaceType === "clinic" ? "Clinic" : "Institute"}
                   </button>
                 ))}
@@ -213,7 +251,7 @@ export function ProductionWhatsApp() {
           </header>
           <label className="flex items-center gap-2 border-b border-[#d1d7db] px-3 py-2 text-sm text-muted">
             <Search className="size-4" />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or phone" className="w-full bg-transparent outline-none" />
+            <input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search name or phone" className="w-full bg-transparent outline-none" />
           </label>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {chats.map((chat) => (
@@ -233,7 +271,15 @@ export function ProductionWhatsApp() {
               </div>
             ))}
             {chats.length === 0 ? <p className="px-3 py-6 text-sm text-[#667781]">No chats on this number.</p> : null}
-            {chatTotal > chats.length ? <p className="px-3 py-2 text-xs text-[#667781]">Showing {chats.length} of {chatTotal.toLocaleString("en-IN")}. Search to open someone else.</p> : null}
+            {chatTotal > chats.length ? (
+              <div className="flex items-center justify-between px-3 py-2 text-xs text-[#667781]">
+                <span>{chats.length} of {chatTotal.toLocaleString("en-IN")}</span>
+                <span className="flex gap-2">
+                  <button type="button" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Previous</button>
+                  <button type="button" disabled={page * 20 >= chatTotal} onClick={() => setPage((value) => value + 1)}>Next</button>
+                </span>
+              </div>
+            ) : null}
           </div>
         </aside>
         <section className={cn("flex min-h-[70dvh] flex-col bg-[#efeae2] lg:min-h-0", !activeId && "max-lg:hidden")}>
@@ -244,7 +290,7 @@ export function ProductionWhatsApp() {
                 <span className="flex size-9 items-center justify-center rounded-full bg-[#dfe5e7] text-xs font-semibold">{initials(active.fullName)}</span>
                 <span className="min-w-0 flex-1">
                   <p className="text-sm font-semibold">{active.fullName}</p>
-                  <p className="text-xs text-[#667781]">{active.phone} · {desk?.name}</p>
+                  <p className="text-xs text-[#667781]">{active.phone}{visibleDesks.find((item) => item.id === active.workspaceId) ? ` · ${visibleDesks.find((item) => item.id === active.workspaceId)?.name}` : ""}</p>
                 </span>
                 {write ? <WhatsAppLink phone={active.phone} text={openText} label={`Open WhatsApp for ${active.fullName}`} /> : null}
               </header>
@@ -268,6 +314,27 @@ export function ProductionWhatsApp() {
                     {posters.map((poster) => <option key={poster.id} value={poster.id}>{poster.filename}</option>)}
                   </select>
                   <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Message to open in WhatsApp" className="h-10 flex-1 rounded-md border border-line px-3 text-sm outline-none" />
+                  {admin && active?.phone ? (
+                    <button
+                      type="button"
+                      className="inline-flex h-11 items-center justify-center rounded-md bg-[#075E54] px-3 text-sm font-medium text-white sm:h-10"
+                      onClick={() => {
+                        const poster = posters.find((item) => item.id === posterId);
+                        setBusy("send");
+                        void sendWhatsAppMessage({ leadId: active.id, to: active.phone, text: draft.trim(), bulkSize: 1, imageUrl: poster?.url })
+                          .then((status) => {
+                            setNotice(status === "sent" ? "Message sent in WhatsApp." : "WhatsApp did not accept the message. Check the access token.");
+                            if (status === "sent") setDraft("");
+                            return listWhatsAppThread(active.id);
+                          })
+                          .then(setThread)
+                          .catch((reason: unknown) => setNotice(reason instanceof Error ? reason.message : "Could not send"))
+                          .finally(() => setBusy(""));
+                      }}
+                    >
+                      {busy === "send" ? "Sending…" : "Send"}
+                    </button>
+                  ) : null}
                   {openHref ? (
                     <a href={openHref} target="_blank" rel="noreferrer" className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[#25D366] px-3 text-sm font-medium text-white hover:bg-[#1ebe5d] sm:h-10">Open WhatsApp</a>
                   ) : <span className="text-xs text-muted">This lead has no phone number.</span>}

@@ -11,6 +11,7 @@ export interface WhatsAppChat {
   id: string;
   fullName: string;
   phone: string;
+  workspaceId: string;
   createdAt: string;
   preview: string;
 }
@@ -29,8 +30,13 @@ export interface WhatsAppPoster {
   url: string;
 }
 
-export async function listWhatsAppChats(workspaceId: string, search: string) {
-  const result = await listLeads({ page: 1, workspaceId, search, origin: "live", source: "whatsapp_click" });
+export async function listWhatsAppChats(workspaceId: string, search: string, scope: "clicks" | "all" = "clicks", page = 1) {
+  const result = await listLeads({
+    page,
+    workspaceId: workspaceId || undefined,
+    search,
+    ...(scope === "clicks" ? { origin: "live" as const, source: "whatsapp_click" } : {}),
+  });
   const ids = result.leads.map((lead) => lead.id);
   const preview = new Map<string, string>();
   if (ids.length) {
@@ -53,6 +59,7 @@ export async function listWhatsAppChats(workspaceId: string, search: string) {
       id: lead.id,
       fullName: lead.fullName,
       phone: lead.phone,
+      workspaceId: lead.workspaceId,
       createdAt: lead.createdAt,
       preview: preview.get(lead.id) ?? "",
     })) satisfies WhatsAppChat[],
@@ -89,7 +96,7 @@ export async function listWhatsAppPosters(workspaceId: string) {
   const posters: WhatsAppPoster[] = [];
   for (const row of data ?? []) {
     const path = String(row.storage_path ?? "");
-    const signed = path ? await client().storage.from("documents").createSignedUrl(path, 60 * 30) : { data: null };
+    const signed = path ? await client().storage.from("documents").createSignedUrl(path, 60 * 60 * 6) : { data: null };
     posters.push({ id: String(row.id), filename: String(row.filename ?? "Poster"), url: signed.data?.signedUrl ?? "" });
   }
   return posters;
@@ -150,7 +157,21 @@ export async function saveWhatsAppNumber(workspaceId: string, displayPhone: stri
   if (error) throw new Error(error.message);
 }
 
-export async function sendWhatsAppMessage(input: { leadId: string; to: string; text: string; bulkSize: number }) {
+export async function sendWhatsAppBulk(input: { text: string; imageUrl?: string; workspaceId?: string; offset: number }) {
+  const session = await client().auth.getSession();
+  const token = session.data.session?.access_token;
+  if (!token) throw new Error("Sign in again before sending.");
+  const response = await fetch("/.netlify/functions/whatsapp-bulk", {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const body = (await response.json()) as { status?: string; sent?: number; failed?: number; next?: number; total?: number; detail?: string };
+  if (!response.ok) throw new Error(body.detail || body.status || "Bulk send failed");
+  return { sent: body.sent ?? 0, failed: body.failed ?? 0, next: body.next ?? input.offset, total: body.total ?? 0, done: (body.next ?? 0) >= (body.total ?? 0) };
+}
+
+export async function sendWhatsAppMessage(input: { leadId: string; to: string; text: string; bulkSize: number; imageUrl?: string }) {
   const session = await client().auth.getSession();
   const token = session.data.session?.access_token;
   if (!token) throw new Error("Sign in again before sending.");
@@ -159,6 +180,7 @@ export async function sendWhatsAppMessage(input: { leadId: string; to: string; t
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: JSON.stringify(input),
   });
-  const body = (await response.json()) as { status?: string };
+  const body = (await response.json()) as { status?: string; detail?: string };
+  if (body.detail && body.status !== "sent") return body.detail;
   return body.status ?? "request_failed";
 }

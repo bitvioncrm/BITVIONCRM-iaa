@@ -26,7 +26,7 @@ export function canSendBulk(roleKey: string, count: number) {
 export function pathsForRole(roleKey: string) {
   if (canOperateWhatsApp(roleKey)) return ADMIN;
   if (roleKey === "doctor" || roleKey === "duty_doctor") return ["/", "/clinic", "/inventory"];
-  if (roleKey === "receptionist") return ["/", "/leads", "/pipeline", "/follow-ups", "/calls", "/whatsapp", "/clinic", "/inventory", "/billing"];
+  if (roleKey === "receptionist") return ["/", "/leads", "/pipeline", "/follow-ups", "/calls", "/clinic", "/inventory", "/billing"];
   if (roleKey === "clinic_telecaller" || roleKey === "clinic_bde") return ["/", "/leads", "/pipeline", "/follow-ups", "/calls", "/whatsapp"];
   if (roleKey === "institute_telecaller" || roleKey === "institute_bde" || roleKey === "institute_user") return ["/", "/leads", "/pipeline", "/follow-ups", "/calls", "/whatsapp", "/institute"];
   return ["/"];

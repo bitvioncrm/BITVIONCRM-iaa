@@ -145,6 +145,45 @@ export async function listLedger(workspaceId: string) {
   });
 }
 
+export async function loadDoctorPulse(workspaceId: string, fromDate: string, toDate: string, fromIso: string, toIso: string) {
+  const [visits, pending] = await Promise.all([
+    db()
+      .from("patient_procedures")
+      .select("id, patient_id, performed_on, patient_procedure_items(quantity)")
+      .eq("workspace_id", workspaceId)
+      .gte("performed_on", fromDate)
+      .lte("performed_on", toDate)
+      .limit(1000),
+    db()
+      .from("appointments")
+      .select("id", { count: "exact", head: true })
+      .eq("workspace_id", workspaceId)
+      .gte("starts_at", fromIso)
+      .lt("starts_at", toIso)
+      .in("status", ["scheduled", "confirmed", "arrived", "in_consultation"]),
+  ]);
+  if (visits.error) throw new Error(visits.error.message);
+  if (pending.error) throw new Error(pending.error.message);
+  const rows = visits.data ?? [];
+  const patients = new Set(rows.map((row) => String(row.patient_id)));
+  const byDay = new Map<string, number>();
+  let units = 0;
+  for (const row of rows) {
+    const items = (row.patient_procedure_items as Array<{ quantity?: number }> | null) ?? [];
+    const sold = items.reduce((sum, item) => sum + Number(item.quantity ?? 0), 0);
+    units += sold;
+    const day = String(row.performed_on);
+    byDay.set(day, (byDay.get(day) ?? 0) + sold);
+  }
+  return {
+    consulted: rows.length,
+    patients: patients.size,
+    pending: pending.count ?? 0,
+    units,
+    days: [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([day, sold]) => ({ day, sold })),
+  };
+}
+
 export async function addLedgerEntry(input: {
   organizationId: string;
   workspaceId: string;

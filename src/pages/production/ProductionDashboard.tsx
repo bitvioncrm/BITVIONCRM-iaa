@@ -4,8 +4,10 @@ import { BusinessBoard } from "@/components/dashboard/BusinessBoard";
 import { useAuth } from "@/context/AuthContext";
 import { useDesk } from "@/context/DeskContext";
 import { listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
+import { loadDoctorPulse } from "@/services/clinic-care";
 import { formatClock } from "@/lib/call-time";
-import { callDeskReport, countRows, listAppointments, listFollowUps, listProducts } from "@/services/production-ops";
+import { rangeBounds, type RangeKey } from "@/lib/range";
+import { callDeskReport, countRows, listAppointments, listFollowUps } from "@/services/production-ops";
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -32,7 +34,7 @@ function Shell({ title, children }: { title: string; children: ReactNode }) {
 export function ProductionDashboard() {
   const { productionUser } = useAuth();
   const key = productionUser?.roleKey ?? "";
-  if (key === "doctor") return <DoctorDashboard />;
+  if (key === "doctor" || key === "duty_doctor") return <DoctorDashboard />;
   if (key === "receptionist") return <ReceptionDashboard />;
   if (key === "clinic_telecaller" || key === "clinic_bde") return <ClinicCallerDashboard />;
   if (key === "institute_telecaller" || key === "institute_bde" || key === "institute_user") return <InstituteCallerDashboard />;
@@ -56,27 +58,41 @@ function AdminDashboard() {
 function DoctorDashboard() {
   const { workspaces, error } = useWorkspaces();
   const clinic = workspaces.find((item) => item.workspaceType === "clinic") ?? workspaces[0];
-  const [appointments, setAppointments] = useState<Array<{ id: string; starts_at: string; status: string; reason: string }>>([]);
-  const [lowStock, setLowStock] = useState(0);
+  const [range, setRange] = useState<RangeKey>("this_month");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const [pulse, setPulse] = useState({ consulted: 0, patients: 0, pending: 0, units: 0, days: [] as Array<{ day: string; sold: number }> });
   useEffect(() => {
     if (!clinic) return;
-    void listAppointments(clinic.id).then((rows) => setAppointments(rows as typeof appointments)).catch(() => setAppointments([]));
-    void listProducts(clinic.id).then((rows) => setLowStock(rows.filter((row) => Number(row.current_stock) <= Number(row.minimum_stock)).length)).catch(() => setLowStock(0));
-  }, [clinic]);
-  const today = new Date().toISOString().slice(0, 10);
-  const todays = appointments.filter((item) => String(item.starts_at).slice(0, 10) === today);
+    const bounds = rangeBounds(range, customFrom, customTo);
+    void loadDoctorPulse(clinic.id, bounds.fromDate, bounds.toDate, bounds.from, bounds.to).then(setPulse).catch(() => setPulse({ consulted: 0, patients: 0, pending: 0, units: 0, days: [] }));
+  }, [clinic, range, customFrom, customTo]);
   return (
     <Shell title="Doctor">
       {error ? <p className="text-sm text-danger">{error}</p> : null}
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Stat label="Today's appointments" value={String(todays.length)} />
-        <Stat label="Queue" value={String(appointments.filter((item) => item.status === "arrived" || item.status === "in_consultation").length)} />
-        <Stat label="Low stock" value={String(lowStock)} />
+      <div className="flex flex-wrap gap-2">
+        {([["7d", "Weekly"], ["this_month", "Monthly"], ["this_year", "Yearly"], ["custom", "Custom"]] as const).map(([key, label]) => (
+          <button key={key} type="button" className={`rounded-md border px-3 py-2 text-sm ${range === key ? "border-navy bg-navy text-white" : "border-line bg-white"}`} onClick={() => setRange(key)}>{label}</button>
+        ))}
+        {range === "custom" ? (
+          <>
+            <input type="date" className="rounded-md border border-line px-2 py-2" value={customFrom} onChange={(event) => setCustomFrom(event.target.value)} />
+            <input type="date" className="rounded-md border border-line px-2 py-2" value={customTo} onChange={(event) => setCustomTo(event.target.value)} />
+          </>
+        ) : null}
       </div>
-      <div className="flex flex-wrap gap-2"><Tile to="/clinic" label="Patients and consultations" /><Tile to="/inventory" label="Stock" /><Tile to="/whatsapp" label="View WhatsApp" /></div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat label="Total consulted" value={String(pulse.consulted)} />
+        <Stat label="Patients consulted" value={String(pulse.patients)} />
+        <Stat label="Pending" value={String(pulse.pending)} />
+        <Stat label="Products sold" value={String(pulse.units)} />
+      </div>
+      <div className="flex flex-wrap gap-2"><Tile to="/clinic" label="Patients and consultations" /><Tile to="/inventory" label="Stock" /></div>
       <section className="rounded-lg border border-line bg-white p-4">
-        <h2 className="text-sm font-semibold">Today</h2>
-        {todays.length === 0 ? <p className="mt-2 text-sm text-muted">No appointments loaded for today.</p> : todays.map((item) => <p key={item.id} className="mt-2 text-sm">{item.starts_at} · {item.status} · {item.reason}</p>)}
+        <h2 className="text-sm font-semibold">Products sold per day</h2>
+        {pulse.days.length === 0 ? <p className="mt-2 text-sm text-muted">No products sold in this range.</p> : pulse.days.map((row) => (
+          <p key={row.day} className="mt-2 text-sm">{row.day} · {row.sold} sold</p>
+        ))}
       </section>
     </Shell>
   );
@@ -100,7 +116,7 @@ function ReceptionDashboard() {
         <Stat label="Appointments" value={String(appointments.length)} />
         <Stat label="Arrived" value={String(appointments.filter((item) => item.status === "arrived").length)} />
       </div>
-      <div className="flex flex-wrap gap-2"><Tile to="/clinic" label="Register and appointments" /><Tile to="/whatsapp" label="View WhatsApp" /></div>
+      <div className="flex flex-wrap gap-2"><Tile to="/clinic" label="Register and appointments" /><Tile to="/billing" label="Income and expenses" /><Tile to="/inventory" label="Stock" /></div>
     </Shell>
   );
 }
