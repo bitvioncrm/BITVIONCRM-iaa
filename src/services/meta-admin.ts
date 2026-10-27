@@ -37,6 +37,7 @@ export interface DeskCaller {
 export interface MetaLeadRow {
   id: string;
   name: string;
+  phone: string;
   status: string;
   campaign: string;
   form: string;
@@ -79,7 +80,7 @@ export async function loadMetaCentre(workspaces: WorkspaceOption[], workspaceIds
   const organizationId = workspaces[0]?.organizationId ?? "";
   const clinicIds = workspaces.filter((item) => item.workspaceType === "clinic" && workspaceIds.includes(item.id)).map((item) => item.id);
   const instituteIds = workspaces.filter((item) => item.workspaceType === "institute" && workspaceIds.includes(item.id)).map((item) => item.id);
-  const emptyCounts = { leads: null, fresh: null, today: null, unassigned: null, assigned: null, contacted: null, converted: null };
+  const emptyCounts = { leads: null, fresh: null, today: null, clicks: null, clicksToday: null, unassigned: null, assigned: null, contacted: null, converted: null };
   const centre: MetaCentre = {
     status: "configuration_required",
     detail: "Meta integration is not configured.",
@@ -137,25 +138,33 @@ export async function loadMetaCentre(workspaces: WorkspaceOption[], workspaceIds
   const today = new Date();
   const start = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
   const end = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1).toISOString();
+  const clickCount = async (ids: string[], startAt: string, endAt: string) => {
+    if (!ids.length) return 0;
+    const { count, error } = await db().from("leads").select("id", { count: "exact", head: true }).in("workspace_id", ids).is("deleted_at", null).eq("source", "whatsapp_click").gte("created_at", startAt).lt("created_at", endAt);
+    if (error) throw new Error(error.message);
+    return count ?? 0;
+  };
   const pack = async (ids: string[]) => ({
     leads: await metaCount(ids, from, to),
     fresh: await metaCount(ids, from, to, (query) => query.eq("status", "new")),
     today: await metaCount(ids, start, end),
+    clicks: await clickCount(ids, from, to),
+    clicksToday: await clickCount(ids, start, end),
     unassigned: await metaCount(ids, from, to, (query) => query.is("assigned_to", null)),
     assigned: await metaCount(ids, from, to, (query) => query.not("assigned_to", "is", null)),
     contacted: await metaCount(ids, from, to, (query) => query.eq("status", "contacted")),
     converted: await metaCount(ids, from, to, (query) => query.eq("status", "converted")),
   });
-  const zeros = { leads: 0, fresh: 0, today: 0, unassigned: 0, assigned: 0, contacted: 0, converted: 0 };
+  const zeros = { leads: 0, fresh: 0, today: 0, clicks: 0, clicksToday: 0, unassigned: 0, assigned: 0, contacted: 0, converted: 0 };
   centre.clinic = clinicIds.length ? await pack(clinicIds) : zeros;
   centre.institute = instituteIds.length ? await pack(instituteIds) : zeros;
 
   let request = db()
     .from("leads")
-    .select("id, full_name, status, source_campaign, source_form, created_at, workspace_id, assigned_to")
+    .select("id, full_name, phone, status, source_campaign, source_form, created_at, workspace_id, assigned_to")
     .in("workspace_id", workspaceIds.length ? workspaceIds : ["00000000-0000-0000-0000-000000000000"])
     .is("deleted_at", null)
-    .or("source.eq.meta_ads,source_platform.eq.meta")
+    .or("source.eq.meta_ads,source_platform.eq.meta,source.eq.whatsapp_click")
     .gte("created_at", from)
     .lt("created_at", to)
     .order("created_at", { ascending: false })
@@ -170,6 +179,7 @@ export async function loadMetaCentre(workspaces: WorkspaceOption[], workspaceIds
   centre.leads = (leads.data ?? []).map((row) => ({
     id: String(row.id),
     name: String(row.full_name),
+    phone: String(row.phone || ""),
     status: String(row.status),
     campaign: String(row.source_campaign || ""),
     form: String(row.source_form || ""),

@@ -41,12 +41,13 @@ async function findLeadId(supabaseUrl: string, serviceKey: string, workspaceId: 
     ? `or=(phone_digits.eq.${phone.full},phone_digits.eq.${phone.tail},phone_digits.like.*${phone.tail})`
     : `phone_digits=eq.${phone.full}`;
   const response = await fetch(
-    `${supabaseUrl}/rest/v1/leads?workspace_id=eq.${workspaceId}&deleted_at=is.null&select=id&limit=1&${match}`,
+    `${supabaseUrl}/rest/v1/leads?workspace_id=eq.${workspaceId}&deleted_at=is.null&select=id,status,source,source_platform&limit=8&${match}`,
     { headers: serviceHeaders(serviceKey) },
   );
   if (!response.ok) return "";
-  const rows = (await response.json()) as Array<{ id?: string }>;
-  return rows[0]?.id ?? "";
+  const rows = (await response.json()) as Array<{ id?: string; status?: string; source?: string; source_platform?: string }>;
+  const live = rows.find((row) => row.status !== "excel" && row.source_platform !== "excel" && !(row.source === "whatsapp" && !row.source_platform));
+  return live?.id ?? "";
 }
 
 async function createLead(supabaseUrl: string, serviceKey: string, desk: ChannelSecret, message: InboundMessage, name: string) {

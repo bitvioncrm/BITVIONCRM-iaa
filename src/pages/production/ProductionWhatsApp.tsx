@@ -192,7 +192,7 @@ export function ProductionWhatsApp() {
               {posters.map((poster) => <option key={poster.id} value={poster.id}>{poster.filename}</option>)}
             </select>
             {posters.find((poster) => poster.id === bulkPosterId)?.url ? <img src={posters.find((poster) => poster.id === bulkPosterId)?.url} alt="" className="h-16 rounded-md border border-line object-cover" /> : null}
-            <p className="text-xs text-muted">{chatTotal.toLocaleString("en-IN")} leads on {desk?.name ?? "this desk"}.</p>
+            <p className="text-xs text-muted">{chatTotal.toLocaleString("en-IN")} WhatsApp click leads on {desk?.name ?? "this desk"}.</p>
           </div>
         </section>
       ) : null}
@@ -225,7 +225,8 @@ export function ProductionWhatsApp() {
                       <span className="truncate text-sm font-medium">{chat.fullName}</span>
                       <span className="text-[11px] text-[#667781]">{format(new Date(chat.createdAt), "dd/MM")}</span>
                     </span>
-                    <span className="block truncate text-xs text-[#667781]">{chat.preview || chat.phone}</span>
+                    <span className="block truncate text-xs text-[#667781]">{chat.phone}</span>
+                    {chat.preview ? <span className="block truncate text-xs text-[#667781]">{chat.preview}</span> : null}
                   </span>
                 </button>
                 {write ? <WhatsAppLink phone={chat.phone} text={messageText(bulkText, bulkPosterId)} label={`Open WhatsApp for ${chat.fullName}`} /> : null}

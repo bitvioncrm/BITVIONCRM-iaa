@@ -23,6 +23,7 @@ const PENDING_APPOINTMENTS = ["scheduled", "confirmed", "arrived", "in_consultat
 export interface RecentLead {
   id: string;
   name: string;
+  phone: string;
   status: string;
   source: string;
   form: string;
@@ -238,7 +239,7 @@ export async function loadOverview(workspaces: WorkspaceOption[], desk: DeskKey,
   const deskName = new Map(workspaces.map((workspace) => [workspace.id, workspace.workspaceType === "institute" ? "Institute" : "Clinic"]));
   try {
     if (selectedIds.length && leads !== null) {
-      const liveSelect = "id, full_name, status, source, source_form, source_campaign, created_at, workspace_id, position";
+      const liveSelect = "id, full_name, phone, status, source, source_form, source_campaign, created_at, workspace_id, position";
       const [liveResult, chartResult] = await Promise.all([
         db()
           .from("leads")
@@ -320,6 +321,7 @@ export async function loadOverview(workspaces: WorkspaceOption[], desk: DeskKey,
       recent = liveRows.slice(0, 8).map((row) => ({
         id: String(row.id),
         name: String(row.full_name),
+        phone: String(row.phone || ""),
         status: FUNNEL_LABEL[String(row.status)] ?? String(row.status),
         source: String(row.source || "").replace(/_/g, " "),
         form: String(row.source_form || ""),

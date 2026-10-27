@@ -30,7 +30,7 @@ export interface WhatsAppPoster {
 }
 
 export async function listWhatsAppChats(workspaceId: string, search: string) {
-  const result = await listLeads({ page: 1, workspaceId, search });
+  const result = await listLeads({ page: 1, workspaceId, search, origin: "live", source: "whatsapp_click" });
   const ids = result.leads.map((lead) => lead.id);
   const preview = new Map<string, string>();
   if (ids.length) {

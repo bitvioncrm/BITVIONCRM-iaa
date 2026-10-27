@@ -262,7 +262,7 @@ export function MetaLeadCentre() {
             return (
               <article key={lead.id} className="space-y-2 rounded-lg border border-line p-3">
                 <Link to={`/leads/${lead.id}`} className="font-medium">{lead.name}</Link>
-                <p className="text-xs text-muted">{formatLeadArrived(lead.createdAt)} · {workspaceName(lead.workspaceId)} · {lead.status}</p>
+                <p className="text-xs text-muted">{lead.phone || "No number"} · {formatLeadArrived(lead.createdAt)} · {workspaceName(lead.workspaceId)} · {lead.status}</p>
                 <p className="text-xs text-muted">{lead.campaign || "No campaign"} · {lead.form || "No form"}</p>
                 <select
                   aria-label={`Assign ${lead.name}`}
@@ -318,9 +318,9 @@ export function MetaLeadCentre() {
           })}
         </div>
         <div className="hidden overflow-x-auto rounded-lg border border-line bg-white lg:block">
-          {centre.leads.length === 0 ? <p className="px-4 py-8 text-sm text-muted">No Meta leads in this desk and date range.</p> : (
+          {centre.leads.length === 0 ? <p className="px-4 py-8 text-sm text-muted">No Meta forms or WhatsApp clicks in this desk and date range.</p> : (
             <table className="w-full min-w-[880px] text-left text-[13px]">
-              <thead className="text-xs text-muted"><tr>{["Name", "Came", "Desk", "Status", "Campaign", "Form", "Telecaller"].map((heading) => <th key={heading} className="px-3 py-2 font-medium">{heading}</th>)}</tr></thead>
+              <thead className="text-xs text-muted"><tr>{["Name", "Phone", "Came", "Desk", "Status", "Campaign", "Form", "Telecaller"].map((heading) => <th key={heading} className="px-3 py-2 font-medium">{heading}</th>)}</tr></thead>
               <tbody>
                 {centre.leads.map((lead) => {
                   const workspace = workspaces.find((item) => item.id === lead.workspaceId);
@@ -329,6 +329,7 @@ export function MetaLeadCentre() {
                   return (
                     <tr key={lead.id} className="border-t border-line">
                       <td className="px-3 py-2 font-medium"><Link to={`/leads/${lead.id}`} className="hover:text-accent">{lead.name}</Link></td>
+                      <td className="px-3 py-2 whitespace-nowrap">{lead.phone || "—"}</td>
                       <td className="px-3 py-2 whitespace-nowrap text-xs text-muted">{formatLeadArrived(lead.createdAt)}</td>
                       <td className="px-3 py-2">{workspaceName(lead.workspaceId)}</td>
                       <td className="px-3 py-2">{lead.status}</td>
@@ -438,7 +439,9 @@ function Panel({ title, counts }: { title: string; counts: Record<string, number
       <h2 className="border-b border-line px-3 py-2 text-sm font-semibold">{title}</h2>
       <div className="grid grid-cols-2 sm:grid-cols-4">
         <Count label="New Meta leads" value={counts.fresh} />
-        <Count label="Imported today" value={counts.today} />
+        <Count label="Forms today" value={counts.today} />
+        <Count label="WhatsApp clicks" value={counts.clicks} />
+        <Count label="Clicks today" value={counts.clicksToday} />
         <Count label="Unassigned" value={counts.unassigned} />
         <Count label="Assigned" value={counts.assigned} />
         <Count label="Contacted" value={counts.contacted} />

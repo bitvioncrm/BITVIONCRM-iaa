@@ -290,17 +290,18 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
                       {data.recent.map((lead) => (
                         <article key={lead.id} className="rounded-lg border border-line p-3 text-sm">
                           <Link to={`/leads/${lead.id}`} className="font-medium">{lead.name}</Link>
-                          <p className="text-xs text-muted">{formatLeadArrived(lead.createdAt)} · {lead.desk} · {lead.status}</p>
+                          <p className="text-xs text-muted">{lead.phone || "No number"} · {formatLeadArrived(lead.createdAt)} · {lead.desk} · {lead.status}</p>
                           <p className="text-xs text-muted capitalize">{lead.source || "No source"} · {lead.campaign || "No campaign"} · {lead.form || "No form"}</p>
                         </article>
                       ))}
                     </div>
                     <table className="hidden w-full min-w-[720px] text-left text-[13px] lg:table">
-                    <thead className="text-xs text-muted"><tr>{["Name", "Came", "Desk", "Status", "Source", "Campaign", "Form"].map((heading) => <th key={heading} className="px-4 py-2 font-medium">{heading}</th>)}</tr></thead>
+                    <thead className="text-xs text-muted"><tr>{["Name", "Phone", "Came", "Desk", "Status", "Source", "Campaign", "Form"].map((heading) => <th key={heading} className="px-4 py-2 font-medium">{heading}</th>)}</tr></thead>
                     <tbody>
                       {data.recent.map((lead) => (
                         <tr key={lead.id} className="border-t border-line">
                           <td className="px-4 py-2 font-medium"><Link to={`/leads/${lead.id}`} className="hover:text-accent">{lead.name}</Link></td>
+                          <td className="px-4 py-2 whitespace-nowrap">{lead.phone || "—"}</td>
                           <td className="px-4 py-2 whitespace-nowrap text-xs text-muted">{formatLeadArrived(lead.createdAt)}</td>
                           <td className="px-4 py-2">{lead.desk}</td>
                           <td className="px-4 py-2">{lead.status}</td>
