@@ -26,7 +26,9 @@ import {
   createLead,
   downloadWorkspaceCsv,
   leadAssignmentTotals,
+  leadSourceTotals,
   type AssignmentTotals,
+  type LeadSourceTotals,
   listAssignableMembers,
   listLeads,
   listRecentLeadDays,
@@ -70,6 +72,7 @@ export function ProductionLeadsPage() {
   const [total, setTotal] = useState(0);
   const [leads, setLeads] = useState<ProductionLead[]>([]);
   const [days, setDays] = useState<LeadDayCount[]>([]);
+  const [sources, setSources] = useState<LeadSourceTotals>({ all: 0, meta: 0, excel: 0, whatsapp: 0 });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -114,6 +117,7 @@ export function ProductionLeadsPage() {
   useEffect(() => {
     if (!workspaces.length) return;
     void listRecentLeadDays(workspaces).then(setDays).catch(() => setDays([]));
+    void leadSourceTotals().then(setSources).catch(() => setSources({ all: 0, meta: 0, excel: 0, whatsapp: 0 }));
   }, [reload, workspaces]);
 
   useEffect(() => {
@@ -343,6 +347,7 @@ export function ProductionLeadsPage() {
           <button type="button" className="font-medium text-accent" onClick={() => { setSource(""); setUnassigned(false); setPage(1); }}>Clear</button>
         </p>
       ) : null}
+      <p className="text-sm text-muted">{sources.all.toLocaleString("en-IN")} leads in the CRM · {sources.meta.toLocaleString("en-IN")} Meta forms · {sources.excel.toLocaleString("en-IN")} Excel · {sources.whatsapp.toLocaleString("en-IN")} WhatsApp clicks.</p>
       {days.length ? (
         <div className="grid gap-2 sm:grid-cols-5">
           {days.map((day) => (
@@ -351,6 +356,7 @@ export function ProductionLeadsPage() {
               <p className="text-2xl font-semibold">{day.total}</p>
               <p className="text-xs text-muted">Clinic {day.clinic}</p>
               <p className="text-xs text-muted">Institute {day.institute}</p>
+              <p className="text-xs text-muted">WhatsApp {day.whatsapp}</p>
             </button>
           ))}
         </div>

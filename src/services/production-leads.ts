@@ -242,6 +242,28 @@ export interface LeadDayCount {
   total: number;
   clinic: number;
   institute: number;
+  whatsapp: number;
+}
+
+export interface LeadSourceTotals {
+  all: number;
+  meta: number;
+  excel: number;
+  whatsapp: number;
+}
+
+export async function leadSourceTotals(): Promise<LeadSourceTotals> {
+  const base = () => client().from("leads").select("id", { count: "exact", head: true }).is("deleted_at", null);
+  const [all, meta, excel, whatsapp] = await Promise.all([
+    base(),
+    base().or("source.eq.meta_ads,source_platform.eq.meta"),
+    base().or("source.eq.whatsapp,source_platform.eq.excel,status.eq.excel"),
+    base().eq("source", "whatsapp_click"),
+  ]);
+  for (const result of [all, meta, excel, whatsapp]) {
+    if (result.error) throw new Error(result.error.message);
+  }
+  return { all: all.count ?? 0, meta: meta.count ?? 0, excel: excel.count ?? 0, whatsapp: whatsapp.count ?? 0 };
 }
 
 function istDayKey(iso: string) {
@@ -262,11 +284,11 @@ export async function listRecentLeadDays(workspaces: Array<{ id: string; workspa
     .limit(2000);
   if (error) throw new Error(error.message);
   const desk = new Map(workspaces.map((item) => [item.id, item.workspaceType]));
-  const buckets = new Map<string, { clinic: number; institute: number }>();
+  const buckets = new Map<string, { clinic: number; institute: number; whatsapp: number }>();
   for (let offset = 0; offset < 5; offset += 1) {
     const day = new Date();
     day.setDate(day.getDate() - (4 - offset));
-    buckets.set(istDayKey(day.toISOString()), { clinic: 0, institute: 0 });
+    buckets.set(istDayKey(day.toISOString()), { clinic: 0, institute: 0, whatsapp: 0 });
   }
   const today = istDayKey(new Date().toISOString());
   for (const row of data ?? []) {
@@ -279,6 +301,7 @@ export async function listRecentLeadDays(workspaces: Array<{ id: string; workspa
     const key = istDayKey(when);
     const bucket = buckets.get(key);
     if (!bucket) continue;
+    if (source === "whatsapp_click") bucket.whatsapp += 1;
     const type = desk.get(String(row.workspace_id));
     if (type === "clinic") bucket.clinic += 1;
     if (type === "institute") bucket.institute += 1;
@@ -286,7 +309,7 @@ export async function listRecentLeadDays(workspaces: Array<{ id: string; workspa
   return [...buckets.entries()].map(([key, value]) => {
     const [year, month, day] = key.split("-").map(Number);
     const label = new Date(Date.UTC(year, month - 1, day)).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
-    return { key, label: key === today ? `${label} · today` : label, total: value.clinic + value.institute, clinic: value.clinic, institute: value.institute } satisfies LeadDayCount;
+    return { key, label: key === today ? `${label} · today` : label, total: value.clinic + value.institute, clinic: value.clinic, institute: value.institute, whatsapp: value.whatsapp } satisfies LeadDayCount;
   });
 }
 

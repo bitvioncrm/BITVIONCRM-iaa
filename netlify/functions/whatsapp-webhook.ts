@@ -111,17 +111,8 @@ async function resolveClickDesk(supabaseUrl: string, serviceKey: string, rows: C
   const known = rows.find((row) => row.phone_number_id === phoneNumberId);
   if (known) return known;
   const clinic = loaded.find((desk) => desk.workspaceType === "clinic");
-  const openRows = rows.filter((item) => !item.phone_number_id);
-  const preferredId = clinic?.workspaceId ?? openRows[0]?.workspace_id ?? "";
-  const row = rows.find((item) => item.workspace_id === preferredId && !item.phone_number_id) ?? openRows[0];
-  if (!row || !phoneNumberId) return undefined;
-  await fetch(`${supabaseUrl}/rest/v1/workspace_channel_secrets?workspace_id=eq.${row.workspace_id}&channel=eq.whatsapp`, {
-    method: "PATCH",
-    headers: serviceHeaders(serviceKey),
-    body: JSON.stringify({ phone_number_id: phoneNumberId, status: "connected", updated_at: new Date().toISOString() }),
-  });
-  row.phone_number_id = phoneNumberId;
-  return row;
+  if (!phoneNumberId || !clinic) return undefined;
+  return rows.find((item) => item.workspace_id === clinic.workspaceId);
 }
 
 export default async (request: Request) => {
