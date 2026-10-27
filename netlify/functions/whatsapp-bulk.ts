@@ -1,4 +1,4 @@
-import { loadChannelSecrets, sendingLine } from "../lib/channel-secrets.ts";
+import { loadChannelSecrets, rememberWhatsAppToken, sendingLine, tokenCandidates } from "../lib/channel-secrets.ts";
 
 function required(name: string) {
   return process.env[name]?.trim() || "";
@@ -43,8 +43,11 @@ export default async (request: Request) => {
   const offset = Math.max(0, Number(body.offset ?? 0));
   const workspaceId = body.workspaceId && UUID.test(body.workspaceId) ? body.workspaceId : "";
 
-  const secret = sendingLine(await loadChannelSecrets(supabaseUrl, serviceKey, "whatsapp"));
-  if (!secret?.access_token || !secret.phone_number_id) return json(503, { status: "configuration_required", detail: "Save the WhatsApp token on the clinic desk." });
+  const whatsappRows = await loadChannelSecrets(supabaseUrl, serviceKey, "whatsapp");
+  const metaRows = await loadChannelSecrets(supabaseUrl, serviceKey, "meta");
+  const secret = sendingLine(whatsappRows);
+  const tokens = tokenCandidates(secret, metaRows);
+  if (!secret?.phone_number_id || !tokens.length) return json(503, { status: "configuration_required", detail: "Save a WhatsApp access token for +91 95624 29928." });
 
   const headers = { apikey: serviceKey, authorization: `Bearer ${serviceKey}` };
   const filter = workspaceId ? `&workspace_id=eq.${workspaceId}` : "";
@@ -67,21 +70,36 @@ export default async (request: Request) => {
     const payload = imageUrl
       ? { messaging_product: "whatsapp", to: phone, type: "image", image: { link: imageUrl, caption: text } }
       : { messaging_product: "whatsapp", to: phone, type: "text", text: { body: text } };
-    const graph = await fetch(`https://graph.facebook.com/v21.0/${secret.phone_number_id}/messages`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${secret.access_token}`, "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!graph.ok) {
+    let graph: Response | null = null;
+    let used = "";
+    for (const token of tokens) {
+      const attempt = await fetch(`https://graph.facebook.com/v21.0/${secret.phone_number_id}/messages`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (attempt.ok) {
+        graph = attempt;
+        used = token;
+        if (token !== secret.access_token) tokens.splice(0, tokens.length, token);
+        break;
+      }
+      if (!detail) {
+        const errorBody = (await attempt.json()) as { error?: { message?: string; code?: number } };
+        detail = (errorBody.error?.message || "WhatsApp rejected the message").replace(/access_token=[^&\s]+/g, "").slice(0, 160);
+        if (errorBody.error?.code !== 190) break;
+      } else {
+        const errorBody = (await attempt.json()) as { error?: { code?: number } };
+        if (errorBody.error?.code !== 190) break;
+      }
+    }
+    if (!graph || !used) {
       failed += 1;
       providerFailed += 1;
-      if (!detail) {
-        const errorBody = (await graph.json()) as { error?: { message?: string } };
-        detail = (errorBody.error?.message || "WhatsApp rejected the message").replace(/access_token=[^&\s]+/g, "").slice(0, 160);
-      }
       if (sent === 0 && providerFailed >= 3) break;
       continue;
     }
+    if (used !== secret.access_token) await rememberWhatsAppToken(supabaseUrl, serviceKey, secret.workspace_id, used, "WhatsApp connected: +91 95624 29928.");
     const provider = (await graph.json()) as { messages?: Array<{ id: string }> };
     await fetch(`${supabaseUrl}/rest/v1/messages`, {
       method: "POST",

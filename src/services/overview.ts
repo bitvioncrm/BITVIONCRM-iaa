@@ -439,12 +439,8 @@ export async function loadLiveAlerts(workspaces: WorkspaceOption[]) {
     }
     const failed = await db().from("meta_import_events").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).in("status", ["failed", "unmapped"]);
     if ((failed.count ?? 0) > 0) alerts.push({ title: "Meta imports need review", body: `${failed.count} failed or unmapped imports`, href: "/meta" });
-    const whatsapp = await db()
-      .from("workspace_channel_secrets")
-      .select("workspace_id, phone_number_id, status")
-      .eq("channel", "whatsapp")
-      .in("workspace_id", all);
-    const connected = (whatsapp.data ?? []).some((row) => String(row.phone_number_id || "").trim());
+    const whatsapp = await db().rpc("whatsapp_lines");
+    const connected = ((whatsapp.data ?? []) as Array<{ connected?: boolean }>).some((row) => row.connected);
     if (!connected) alerts.push({ title: "WhatsApp lead number", body: "Connect the Phone number ID so click leads arrive live.", href: "/settings" });
   }
   return alerts.slice(0, 8);

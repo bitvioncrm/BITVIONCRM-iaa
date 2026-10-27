@@ -1,4 +1,4 @@
-import { loadChannelSecrets, sendingLine } from "../lib/channel-secrets.ts";
+import { loadChannelSecrets, rememberWhatsAppToken, sendingLine, tokenCandidates } from "../lib/channel-secrets.ts";
 
 function required(name: string) {
   return process.env[name]?.trim() || "";
@@ -60,33 +60,42 @@ export default async (request: Request) => {
   const onDesk = roles.some((row) => row.workspace_id === lead.workspace_id && (desk === "clinic" ? CLINIC_ROLES : INSTITUTE_ROLES).includes(roleKey(row.roles)));
   if (!isAdmin && !onDesk) return json(403, { status: "forbidden" });
 
-  const stored = await loadChannelSecrets(supabaseUrl, serviceKey, "whatsapp");
-  const line = sendingLine(stored);
-  const deskSecret = stored.find((row) => row.workspace_id === lead.workspace_id && row.access_token && row.phone_number_id);
-  const sharedToken = required("WHATSAPP_TOKEN");
-  const phoneId = (isAdmin ? line?.phone_number_id : deskSecret?.phone_number_id) || (desk === "institute"
+  const whatsappRows = await loadChannelSecrets(supabaseUrl, serviceKey, "whatsapp");
+  const metaRows = await loadChannelSecrets(supabaseUrl, serviceKey, "meta");
+  const line = sendingLine(whatsappRows);
+  const phoneId = line?.phone_number_id || (desk === "institute"
     ? required("WHATSAPP_INSTITUTE_PHONE_NUMBER_ID")
     : required("WHATSAPP_CLINIC_PHONE_NUMBER_ID") || required("WHATSAPP_PHONE_NUMBER_ID"));
-  const accessToken = (isAdmin ? line?.access_token : deskSecret?.access_token) || (desk === "institute"
-    ? required("WHATSAPP_INSTITUTE_TOKEN") || sharedToken
-    : required("WHATSAPP_CLINIC_TOKEN") || sharedToken);
-  if (!phoneId || !accessToken) return json(503, { status: "configuration_required" });
+  const tokens = tokenCandidates(line, metaRows);
+  const envToken = desk === "institute" ? required("WHATSAPP_INSTITUTE_TOKEN") || required("WHATSAPP_TOKEN") : required("WHATSAPP_CLINIC_TOKEN") || required("WHATSAPP_TOKEN");
+  if (envToken && !tokens.includes(envToken)) tokens.push(envToken);
+  if (!phoneId || !tokens.length) return json(503, { status: "configuration_required", detail: "Save a WhatsApp access token for +91 95624 29928." });
 
   const payload = template
     ? { messaging_product: "whatsapp", to: phone, type: "template", template: { name: template, language: { code: "en" } } }
     : imageUrl
       ? { messaging_product: "whatsapp", to: phone, type: "image", image: { link: imageUrl, caption: text } }
       : { messaging_product: "whatsapp", to: phone, type: "text", text: { body: text } };
-  const sent = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!sent.ok) {
-    const errorBody = (await sent.json().catch(() => ({}))) as { error?: { message?: string } };
-    const detail = (errorBody.error?.message || "WhatsApp rejected the message").replace(/access_token=[^&\s]+/g, "").slice(0, 160);
-    return json(502, { status: "provider_rejected", detail });
+  let sent: Response | null = null;
+  let working = "";
+  let detail = "WhatsApp rejected the message.";
+  for (const token of tokens) {
+    const attempt = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (attempt.ok) {
+      sent = attempt;
+      working = token;
+      break;
+    }
+    const errorBody = (await attempt.json().catch(() => ({}))) as { error?: { message?: string; code?: number } };
+    detail = (errorBody.error?.message || "WhatsApp rejected the message.").replace(/access_token=[^&\s]+/g, "").slice(0, 180);
+    if (errorBody.error?.code !== 190) break;
   }
+  if (!sent || !working) return json(502, { status: "provider_rejected", detail });
+  if (line && working !== line.access_token) await rememberWhatsAppToken(supabaseUrl, serviceKey, line.workspace_id, working, "WhatsApp connected: +91 95624 29928.");
   const provider = (await sent.json()) as { messages?: Array<{ id: string }> };
   await fetch(`${supabaseUrl}/rest/v1/messages`, {
     method: "POST",
