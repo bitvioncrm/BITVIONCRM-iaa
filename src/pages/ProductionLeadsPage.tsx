@@ -29,10 +29,12 @@ import {
   type AssignmentTotals,
   listAssignableMembers,
   listLeads,
+  listRecentLeadDays,
   loadLeadList,
   PAGE_SIZE,
   listWorkspaces,
   updateLeadStatus,
+  type LeadDayCount,
   type MemberOption,
   type ProductionLead,
   type WorkspaceOption,
@@ -67,6 +69,7 @@ export function ProductionLeadsPage() {
   const [pages, setPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [leads, setLeads] = useState<ProductionLead[]>([]);
+  const [days, setDays] = useState<LeadDayCount[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -107,6 +110,11 @@ export function ProductionLeadsPage() {
     const visible = desk === "all" ? workspaces : workspaces.filter((item) => item.workspaceType === desk);
     setWorkspaceId((current) => visible.some((item) => item.id === current) ? current : desk === "all" ? "" : visible[0]?.id ?? "");
   }, [desk, workspaces]);
+
+  useEffect(() => {
+    if (!workspaces.length) return;
+    void listRecentLeadDays(workspaces).then(setDays).catch(() => setDays([]));
+  }, [reload, workspaces]);
 
   useEffect(() => {
     if (!workspaces.length) {
@@ -335,7 +343,18 @@ export function ProductionLeadsPage() {
           <button type="button" className="font-medium text-accent" onClick={() => { setSource(""); setUnassigned(false); setPage(1); }}>Clear</button>
         </p>
       ) : null}
-      {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
+      {days.length ? (
+        <div className="grid gap-2 sm:grid-cols-5">
+          {days.map((day) => (
+            <button key={day.key} type="button" className="rounded-lg border border-line bg-white px-3 py-2 text-left" onClick={() => { setRangeKey("custom"); setCustomFrom(day.key); setCustomTo(day.key); setOrigin("live"); setPage(1); }}>
+              <p className="text-xs text-muted">{day.label}</p>
+              <p className="text-2xl font-semibold">{day.total}</p>
+              <p className="text-xs text-muted">Clinic {day.clinic}</p>
+              <p className="text-xs text-muted">Institute {day.institute}</p>
+            </button>
+          ))}
+        </div>
+      ) : null}
       {notice ? <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</p> : null}
       <div className="grid gap-2 rounded-lg border border-line bg-white p-3 md:grid-cols-3 xl:grid-cols-6">
         <Select value={workspaceId} onChange={(event) => { setWorkspaceId(event.target.value); setPage(1); }} aria-label="Desk">

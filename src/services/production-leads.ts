@@ -236,6 +236,60 @@ export async function listLeads(query: LeadQuery) {
   return { leads, total, pages: Math.max(1, Math.ceil(total / PAGE_SIZE)), pageSize: PAGE_SIZE };
 }
 
+export interface LeadDayCount {
+  key: string;
+  label: string;
+  total: number;
+  clinic: number;
+  institute: number;
+}
+
+function istDayKey(iso: string) {
+  const shifted = new Date(new Date(iso).getTime() + (5 * 60 + 30) * 60 * 1000);
+  return shifted.toISOString().slice(0, 10);
+}
+
+export async function listRecentLeadDays(workspaces: Array<{ id: string; workspaceType: string }>) {
+  const start = new Date();
+  start.setDate(start.getDate() - 6);
+  start.setHours(0, 0, 0, 0);
+  const from = start.toISOString();
+  const { data, error } = await client()
+    .from("leads")
+    .select("created_at, source_created_at, workspace_id, source, source_platform, status")
+    .is("deleted_at", null)
+    .or(`created_at.gte.${from},source_created_at.gte.${from}`)
+    .limit(2000);
+  if (error) throw new Error(error.message);
+  const desk = new Map(workspaces.map((item) => [item.id, item.workspaceType]));
+  const buckets = new Map<string, { clinic: number; institute: number }>();
+  for (let offset = 0; offset < 5; offset += 1) {
+    const day = new Date();
+    day.setDate(day.getDate() - (4 - offset));
+    buckets.set(istDayKey(day.toISOString()), { clinic: 0, institute: 0 });
+  }
+  const today = istDayKey(new Date().toISOString());
+  for (const row of data ?? []) {
+    const source = String(row.source ?? "");
+    const platform = String(row.source_platform ?? "");
+    const status = String(row.status ?? "");
+    if (status === "excel" || platform === "excel" || (source === "whatsapp" && platform === "")) continue;
+    const when = String(row.source_created_at || row.created_at || "");
+    if (!when) continue;
+    const key = istDayKey(when);
+    const bucket = buckets.get(key);
+    if (!bucket) continue;
+    const type = desk.get(String(row.workspace_id));
+    if (type === "clinic") bucket.clinic += 1;
+    if (type === "institute") bucket.institute += 1;
+  }
+  return [...buckets.entries()].map(([key, value]) => {
+    const [year, month, day] = key.split("-").map(Number);
+    const label = new Date(Date.UTC(year, month - 1, day)).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+    return { key, label: key === today ? `${label} · today` : label, total: value.clinic + value.institute, clinic: value.clinic, institute: value.institute } satisfies LeadDayCount;
+  });
+}
+
 export async function getLead(id: string) {
   const { data, error } = await client().from("leads").select("*").eq("id", id).is("deleted_at", null).maybeSingle();
   if (error) throw new Error(error.message);
