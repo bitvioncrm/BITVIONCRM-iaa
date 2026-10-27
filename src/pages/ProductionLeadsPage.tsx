@@ -61,7 +61,7 @@ export function ProductionLeadsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [status, setStatus] = useState(params.get("status") ?? "");
   const [source, setSource] = useState(params.get("source") ?? "");
-  const [origin, setOrigin] = useState<LeadOrigin>("live");
+  const [origin, setOrigin] = useState<LeadOrigin>("all");
   const [unassigned, setUnassigned] = useState(params.get("assigned") === "unassigned");
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
@@ -83,6 +83,10 @@ export function ProductionLeadsPage() {
   const quietRefresh = useRef(false);
   const viewRef = useRef({ workspaceId: "", desk, status: "", source: "", origin, unassigned: false, search: "", workspaces: [] as WorkspaceOption[] });
   viewRef.current = { workspaceId, desk, status, source, origin, unassigned, search: searchQuery, workspaces };
+
+  useEffect(() => {
+    setRangeKey("all");
+  }, [setRangeKey]);
 
   useEffect(() => {
     if (callerDesk === "clinic" || callerDesk === "institute") {
@@ -305,7 +309,7 @@ export function ProductionLeadsPage() {
     <div className="space-y-4">
       <PageHeader
         title="Leads"
-        description={loading ? "Loading leads." : `${total.toLocaleString("en-IN")} ${status ? `${STATUS_LABEL[status as LeadStatus]} leads` : (LEAD_ORIGINS.find((item) => item.value === origin)?.label.toLowerCase() ?? "leads")}${origin === "latest" && !status ? " from today" : origin === "live" && !status ? "" : ` in ${bounds.label}`}.`}
+        description={loading ? "Loading leads." : `${total.toLocaleString("en-IN")} ${LEAD_ORIGINS.find((item) => item.value === origin)?.label.toLowerCase() ?? "leads"} · ${desk === "clinic" ? "Clinic" : desk === "institute" ? "Institute" : "All desks"} · ${bounds.label}.`}
         actions={
           <>
             <Button type="button" variant="secondary" onClick={() => setReload((value) => value + 1)}>Refresh</Button>

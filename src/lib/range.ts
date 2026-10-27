@@ -1,6 +1,7 @@
-export type RangeKey = "today" | "yesterday" | "7d" | "30d" | "this_month" | "last_month" | "this_year" | "custom";
+export type RangeKey = "all" | "today" | "yesterday" | "7d" | "30d" | "this_month" | "last_month" | "this_year" | "custom";
 
 export const RANGE_OPTIONS: Array<{ key: RangeKey; label: string }> = [
+  { key: "all", label: "All days" },
   { key: "today", label: "Today" },
   { key: "yesterday", label: "Yesterday" },
   { key: "7d", label: "Last 7 days" },
@@ -25,7 +26,10 @@ export function rangeBounds(key: RangeKey, customFrom = "", customTo = "", now =
   const endExclusive = (day: Date) => new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1);
   let from = startOfDay(now);
   let to = endExclusive(now);
-  if (key === "yesterday") {
+  if (key === "all") {
+    from = new Date(2000, 0, 1);
+    to = endExclusive(now);
+  } else if (key === "yesterday") {
     from = new Date(from.getFullYear(), from.getMonth(), from.getDate() - 1);
     to = startOfDay(now);
   } else if (key === "7d") {

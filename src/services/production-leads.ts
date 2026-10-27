@@ -195,7 +195,7 @@ function leadFilter(request: LeadFilter, query: LeadQuery) {
     start.setHours(0, 0, 0, 0);
     const today = start.toISOString().replace(/\.\d{3}Z$/, "Z");
     next = next.or(`created_at.gte.${today},imported_at.gte.${today}`);
-  } else if (query.origin !== "live") {
+  } else {
     if (query.createdFrom) next = next.gte("created_at", query.createdFrom);
     if (query.createdTo) next = next.lt("created_at", query.createdTo);
   }
