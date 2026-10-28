@@ -14,7 +14,7 @@ if (roleAllowsPath("doctor", "/institute")) throw new Error("doctor institute");
 if (!roleAllowsPath("clinic_bde", "/leads")) throw new Error("bde leads");
 if (pathsForRole("institute_user").includes("/clinic")) throw new Error("institute clinic");
 if (!pathsForRole("super_admin").includes("/billing")) throw new Error("super billing");
-if (pathsForRole("receptionist").includes("/billing")) throw new Error("receptionist billing");
+if (!pathsForRole("receptionist").includes("/billing")) throw new Error("receptionist billing");
 if (pathsForRole("doctor").includes("/billing")) throw new Error("doctor billing");
 if (roleAllowsPath("doctor", "/whatsapp") || roleAllowsPath("receptionist", "/whatsapp")) throw new Error("whatsapp is for admin and telecallers");
 if (!roleAllowsPath("clinic_telecaller", "/whatsapp") || !roleAllowsPath("institute_telecaller", "/whatsapp") || !roleAllowsPath("admin", "/whatsapp")) {
@@ -36,9 +36,10 @@ if (!instituteCallers.includes("institute_telecaller") || deskCallerRoles("billi
 if (!canWriteWhatsApp("clinic_telecaller") || !canWriteWhatsApp("institute_telecaller") || canWriteWhatsApp("doctor") || canWriteWhatsApp("receptionist")) {
   throw new Error("whatsapp write");
 }
-if (!canSendBulk("clinic_telecaller", WHATSAPP_BULK_ADMIN_LIMIT) || canSendBulk("institute_telecaller", WHATSAPP_BULK_ADMIN_LIMIT + 1) || !canSendBulk("admin", WHATSAPP_BULK_ADMIN_LIMIT + 1)) {
-  throw new Error("bulk over 50 is admin only");
+if (!canSendBulk("clinic_telecaller", WHATSAPP_BULK_ADMIN_LIMIT + 1) || !canSendBulk("institute_telecaller", WHATSAPP_BULK_ADMIN_LIMIT + 1) || !canSendBulk("admin", WHATSAPP_BULK_ADMIN_LIMIT + 1)) {
+  throw new Error("whatsapp roles can bulk from the clinic number");
 }
+if (canSendBulk("doctor", 1) || canSendBulk("receptionist", WHATSAPP_BULK_ADMIN_LIMIT + 1)) throw new Error("bulk stays with whatsapp roles");
 
 const calls = summarizeCalls([
   { status: "completed", outcome: "connected", duration_seconds: 90 },

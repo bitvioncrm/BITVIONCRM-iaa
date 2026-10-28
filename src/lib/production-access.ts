@@ -19,8 +19,7 @@ export function whatsAppDesk(roleKey: string) {
 
 export function canSendBulk(roleKey: string, count: number) {
   if (count < 1) return false;
-  if (count > WHATSAPP_BULK_ADMIN_LIMIT) return canOperateWhatsApp(roleKey);
-  return canWriteWhatsApp(roleKey);
+  return canWriteWhatsApp(roleKey) || (count > WHATSAPP_BULK_ADMIN_LIMIT && canOperateWhatsApp(roleKey));
 }
 
 export function pathsForRole(roleKey: string) {
