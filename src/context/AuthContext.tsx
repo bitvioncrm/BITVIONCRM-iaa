@@ -20,6 +20,7 @@ export interface ProductionUser {
 }
 
 interface AuthValue {
+  ready: boolean;
   session: Session | null;
   productionUser: ProductionUser | null;
   previewRole: Role;
@@ -39,6 +40,7 @@ function appRole(key: string): Role {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const [ready, setReady] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [productionUser, setProductionUser] = useState<ProductionUser | null>(null);
   const [previewRole, setPreviewRole] = useState<Role>("administrator");
@@ -46,7 +48,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     localStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(SESSION_KEY);
-    if (!supabase) return;
+    if (!supabase) {
+      setReady(true);
+      return;
+    }
     void supabase.auth.getSession().then(async ({ data }) => {
       const user = data.session?.user;
       if (!user?.email) return;
@@ -55,11 +60,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProductionUser({ userId: user.id, email: user.email, roleKey: key });
       setSession(next);
       setPreviewRole(next.role);
-    });
+    }).finally(() => setReady(true));
   }, []);
 
   const value = useMemo<AuthValue>(
     () => ({
+      ready,
       session,
       productionUser,
       previewRole,
@@ -95,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       setPreviewRole,
     }),
-    [previewRole, productionUser, session],
+    [previewRole, productionUser, ready, session],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

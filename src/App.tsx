@@ -24,7 +24,8 @@ import { MetaLeadCentre } from "@/pages/production/MetaLeadCentre";
 import { ProductionModule } from "@/pages/production/ProductionModule";
 
 function RequireAuth() {
-  const { session } = useAuth();
+  const { ready, session } = useAuth();
+  if (!ready) return <p className="p-8 text-sm text-muted">Loading the CRM…</p>;
   if (!session) return <Navigate to="/login" replace />;
   return (
     <CrmProvider>

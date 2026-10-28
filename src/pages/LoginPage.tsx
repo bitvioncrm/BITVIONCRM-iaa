@@ -17,7 +17,7 @@ const schema = z.object({
 });
 
 export function LoginPage() {
-  const { session, login, resetPassword } = useAuth();
+  const { ready, session, login, resetPassword } = useAuth();
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
@@ -28,6 +28,7 @@ export function LoginPage() {
     defaultValues: { email: "", password: "", remember: true },
   });
 
+  if (!ready) return <p className="p-8 text-sm text-muted">Loading the CRM…</p>;
   if (session) return <Navigate to="/" replace />;
 
   return (

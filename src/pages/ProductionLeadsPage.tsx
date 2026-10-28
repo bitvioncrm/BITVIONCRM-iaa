@@ -82,6 +82,8 @@ export function ProductionLeadsPage() {
   const [assigningId, setAssigningId] = useState("");
   const [totals, setTotals] = useState<AssignmentTotals>({ unassigned: 0, desks: {}, assigned: {} });
   const [notice, setNotice] = useState("");
+  const [sheet, setSheet] = useState<{ lead: ProductionLead; kind: "note" | "follow" } | null>(null);
+  const [sheetValue, setSheetValue] = useState("");
   const [callStats, setCallStats] = useState<Record<string, CallTotals>>({});
   const [live, setLive] = useState<LiveCall | null>(null);
   const [now, setNow] = useState(0);
@@ -362,6 +364,41 @@ export function ProductionLeadsPage() {
         </div>
       ) : null}
       {notice ? <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</p> : null}
+      {sheet ? (
+        <form
+          className="flex flex-wrap items-end gap-2 rounded-lg border border-line bg-white p-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const value = sheetValue.trim();
+            if (!value) return;
+            if (sheet.kind === "follow" && Number.isNaN(new Date(value).getTime())) {
+              setError("Choose a follow-up time.");
+              return;
+            }
+            const action = sheet.kind === "note"
+              ? addLeadNote(sheet.lead, value)
+              : addFollowUp(sheet.lead, new Date(value).toISOString(), "Follow-up");
+            void action
+              .then(() => {
+                setNotice(sheet.kind === "note" ? `Note saved for ${sheet.lead.fullName}.` : `Follow-up saved for ${sheet.lead.fullName}.`);
+                setSheet(null);
+                setSheetValue("");
+              })
+              .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not save"));
+          }}
+        >
+          <label className="min-w-64 flex-1 text-sm">
+            {sheet.kind === "note" ? `Note for ${sheet.lead.fullName}` : `Follow-up for ${sheet.lead.fullName}`}
+            {sheet.kind === "note" ? (
+              <textarea value={sheetValue} onChange={(event) => setSheetValue(event.target.value)} rows={2} className="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm outline-none" placeholder="Write the note" />
+            ) : (
+              <Input className="mt-1" type="datetime-local" value={sheetValue} onChange={(event) => setSheetValue(event.target.value)} />
+            )}
+          </label>
+          <Button type="submit">Save</Button>
+          <Button type="button" variant="secondary" onClick={() => setSheet(null)}>Cancel</Button>
+        </form>
+      ) : null}
       <div className="grid gap-2 rounded-lg border border-line bg-white p-3 md:grid-cols-3 xl:grid-cols-6">
         <Select value={workspaceId} onChange={(event) => { setWorkspaceId(event.target.value); setPage(1); }} aria-label="Desk">
           {canAssign && desk === "all" ? <option value="">All authorized desks</option> : null}
@@ -600,16 +637,8 @@ export function ProductionLeadsPage() {
                   </a>
                 </Button>
               )}
-              <Button type="button" size="sm" variant="secondary" onClick={() => {
-                const note = window.prompt("Note");
-                if (!note?.trim()) return;
-                void addLeadNote(lead, note).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not save the note"));
-              }}>Note</Button>
-              <Button type="button" size="sm" variant="secondary" onClick={() => {
-                const due = window.prompt("Follow-up time (YYYY-MM-DDTHH:mm)");
-                if (!due) return;
-                void addFollowUp(lead, new Date(due).toISOString(), "Follow-up").catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not save the follow-up"));
-              }}>Follow-up</Button>
+              <Button type="button" size="sm" variant="secondary" onClick={() => { setSheet({ lead, kind: "note" }); setSheetValue(""); }}>Note</Button>
+              <Button type="button" size="sm" variant="secondary" onClick={() => { setSheet({ lead, kind: "follow" }); setSheetValue(""); }}>Follow-up</Button>
             </div>
           </article>
         ))}
@@ -693,30 +722,10 @@ export function ProductionLeadsPage() {
                   )}
                 </td>
                 <td className="px-3 py-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => {
-                      const note = window.prompt("Note");
-                      if (!note?.trim()) return;
-                      void addLeadNote(lead, note).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not save the note"));
-                    }}
-                  >
-                    Note
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => {
-                      const due = window.prompt("Follow-up time (YYYY-MM-DDTHH:mm)");
-                      if (!due) return;
-                      void addFollowUp(lead, new Date(due).toISOString(), "Follow-up").catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not save the follow-up"));
-                    }}
-                  >
-                    Follow-up
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" size="sm" variant="secondary" onClick={() => { setSheet({ lead, kind: "note" }); setSheetValue(""); }}>Note</Button>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => { setSheet({ lead, kind: "follow" }); setSheetValue(""); }}>Follow-up</Button>
+                  </div>
                 </td>
               </tr>
             ))}
