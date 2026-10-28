@@ -145,6 +145,18 @@ export async function listLedger(workspaceId: string) {
   });
 }
 
+export async function loadRecentPatients(workspaceId: string) {
+  const { data, error } = await db()
+    .from("patients")
+    .select("id, patient_code, full_name, mobile, created_at")
+    .eq("workspace_id", workspaceId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .limit(8);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Array<{ id: string; patient_code: string; full_name: string; mobile: string; created_at: string }>;
+}
+
 export async function loadDoctorPulse(workspaceId: string, fromDate: string, toDate: string, fromIso: string, toIso: string) {
   const [visits, pending] = await Promise.all([
     db()

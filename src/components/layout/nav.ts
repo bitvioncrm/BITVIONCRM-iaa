@@ -92,12 +92,20 @@ export const ADMIN_ONLY_PREFIXES = ["/desk", "/pipeline", "/follow-ups", "/campa
 
 export function productionGroups(roleKey: string) {
   const allowed = new Set(pathsForRole(roleKey));
-  const clinical = roleKey === "doctor" || roleKey === "duty_doctor";
+  const home = roleKey === "doctor" || roleKey === "duty_doctor"
+    ? "Consultations"
+    : roleKey === "receptionist"
+      ? "Reception"
+      : roleKey === "clinic_telecaller" || roleKey === "clinic_bde"
+        ? "Clinic desk"
+        : roleKey === "institute_telecaller" || roleKey === "institute_bde" || roleKey === "institute_user"
+          ? "Institute desk"
+          : "";
   return NAV_GROUPS.map((group) => ({
     label: group.label,
     items: group.items
       .filter((item) => allowed.has(item.to))
-      .map((item) => (clinical && item.to === "/" ? { ...item, label: "Consultations" } : item)),
+      .map((item) => (home && item.to === "/" ? { ...item, label: home } : item)),
   })).filter((group) => group.items.length > 0);
 }
 

@@ -4,10 +4,10 @@ import { BusinessBoard } from "@/components/dashboard/BusinessBoard";
 import { useAuth } from "@/context/AuthContext";
 import { useDesk } from "@/context/DeskContext";
 import { listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
-import { loadDoctorPulse } from "@/services/clinic-care";
+import { loadDoctorPulse, loadRecentPatients } from "@/services/clinic-care";
 import { formatClock } from "@/lib/call-time";
 import { rangeBounds, type RangeKey } from "@/lib/range";
-import { callDeskReport, countRows, listAppointments, listFollowUps, listPatients } from "@/services/production-ops";
+import { callDeskReport, countRows, listAppointments, listFollowUps } from "@/services/production-ops";
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -62,12 +62,12 @@ function DoctorDashboard() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [pulse, setPulse] = useState({ consulted: 0, patients: 0, pending: 0, units: 0, days: [] as Array<{ day: string; sold: number }> });
-  const [registered, setRegistered] = useState<Array<{ id: string; full_name: string; mobile: string; patient_code: string }>>([]);
+  const [registered, setRegistered] = useState<Array<{ id: string; patient_code: string; full_name: string; mobile: string }>>([]);
   useEffect(() => {
     if (!clinic) return;
     const bounds = rangeBounds(range, customFrom, customTo);
     void loadDoctorPulse(clinic.id, bounds.fromDate, bounds.toDate, bounds.from, bounds.to).then(setPulse).catch(() => setPulse({ consulted: 0, patients: 0, pending: 0, units: 0, days: [] }));
-    void listPatients(clinic.id, "").then((rows) => setRegistered(rows as typeof registered)).catch(() => setRegistered([]));
+    void loadRecentPatients(clinic.id).then(setRegistered).catch(() => setRegistered([]));
   }, [clinic, range, customFrom, customTo]);
   return (
     <Shell title="Doctor">
@@ -91,7 +91,7 @@ function DoctorDashboard() {
       </div>
       <div className="flex flex-wrap gap-2"><Tile to="/clinic" label="Patients and consultations" /><Tile to="/inventory" label="Stock" /></div>
       <section className="rounded-lg border border-line bg-white p-4">
-        <h2 className="text-sm font-semibold">Patients from reception</h2>
+        <h2 className="text-sm font-semibold">Patients registered at reception</h2>
         {registered.length === 0 ? <p className="mt-2 text-sm text-muted">No patients registered yet.</p> : registered.map((patient) => (
           <p key={patient.id} className="mt-2 text-sm">{patient.patient_code} · {patient.full_name} · {patient.mobile}</p>
         ))}
@@ -111,10 +111,12 @@ function ReceptionDashboard() {
   const clinic = workspaces.find((item) => item.workspaceType === "clinic") ?? workspaces[0];
   const [appointments, setAppointments] = useState<Array<{ id: string; starts_at: string; status: string; reason: string }>>([]);
   const [patients, setPatients] = useState(0);
+  const [registered, setRegistered] = useState<Array<{ id: string; patient_code: string; full_name: string; mobile: string }>>([]);
   useEffect(() => {
     if (!clinic) return;
     void listAppointments(clinic.id).then((rows) => setAppointments(rows as typeof appointments)).catch(() => setAppointments([]));
     void countRows("patients", clinic.id).then(setPatients);
+    void loadRecentPatients(clinic.id).then(setRegistered).catch(() => setRegistered([]));
   }, [clinic]);
   return (
     <Shell title="Reception">
@@ -125,6 +127,12 @@ function ReceptionDashboard() {
         <Stat label="Arrived" value={String(appointments.filter((item) => item.status === "arrived").length)} />
       </div>
       <div className="flex flex-wrap gap-2"><Tile to="/clinic" label="Register and appointments" /><Tile to="/billing" label="Income and expenses" /><Tile to="/inventory" label="Stock" /></div>
+      <section className="rounded-lg border border-line bg-white p-4">
+        <h2 className="text-sm font-semibold">Latest patients</h2>
+        {registered.length === 0 ? <p className="mt-2 text-sm text-muted">No patients registered yet.</p> : registered.map((patient) => (
+          <p key={patient.id} className="mt-2 text-sm">{patient.patient_code} · {patient.full_name} · {patient.mobile}</p>
+        ))}
+      </section>
     </Shell>
   );
 }
