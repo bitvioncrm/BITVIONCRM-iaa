@@ -161,45 +161,49 @@ export function ProductionWhatsApp() {
     void run().catch((reason: unknown) => setNotice(reason instanceof Error ? reason.message : "Bulk send stopped")).finally(() => setBulkRunning(false));
   };
 
+  const chip = (on: boolean) => cn("rounded-full px-3 py-1 text-xs font-medium", on ? "bg-[#d9fdd3] text-[#008069]" : "bg-[#f0f2f5] text-[#54656f]");
+
   return (
-    <div className="space-y-3">
-      {notice ? <p className="rounded-md bg-slate-50 px-3 py-2 text-sm">{notice}</p> : null}
-      <div className={cn("grid overflow-hidden rounded-lg border border-[#d1d7db] bg-white max-lg:min-h-[70dvh] lg:h-[calc(100dvh-120px)] lg:min-h-[560px] lg:grid-cols-[320px_1fr]")}>
-        <aside className={cn("flex min-h-0 flex-col border-b border-[#d1d7db] lg:border-r lg:border-b-0", (activeId || panel === "bulk") && "max-lg:hidden")}>
-          <header className="bg-[#075E54] px-3 py-3 text-white">
-            <p className="text-sm font-semibold">WhatsApp</p>
-            <p className="text-[11px] text-white/80">{fromLine} · sending line</p>
-            {write ? (
-              <div className="mt-2 flex flex-wrap gap-1">
-                <button type="button" onClick={() => { setPanel("chat"); if (admin) setDeskId("all"); setPage(1); }} className={cn("rounded-full px-2 py-1 text-[11px]", panel === "chat" && (deskId === "all" || !admin) ? "bg-white text-[#075E54]" : "bg-white/15")}>Chats</button>
-                <button type="button" onClick={() => { setPanel("bulk"); setActiveId(""); }} className={cn("rounded-full px-2 py-1 text-[11px]", panel === "bulk" ? "bg-white text-[#075E54]" : "bg-white/15")}>Bulk</button>
-                {deskMode === "both" ? visibleDesks.map((item) => (
-                  <button key={item.id} type="button" onClick={() => { setPanel("chat"); setDeskId(item.id); setPage(1); }} className={cn("rounded-full px-2 py-1 text-[11px]", panel === "chat" && item.id === desk?.id && deskId !== "all" ? "bg-white text-[#075E54]" : "bg-white/15")}>
-                    {item.workspaceType === "clinic" ? "Clinic" : "Institute"}
-                  </button>
-                )) : null}
-              </div>
-            ) : null}
+    <div className="-mx-3 -mt-4 mb-[-6rem] bg-[#d1d7db] sm:-mx-6 lg:-mx-8 lg:mb-0 lg:h-[calc(100dvh-4.25rem)]">
+      {notice ? <p className="bg-[#d9fdd3] px-4 py-2 text-center text-xs text-[#111b21]">{notice}</p> : null}
+      <div className={cn("mx-auto grid h-[calc(100dvh-8.5rem)] max-w-[1600px] overflow-hidden bg-white shadow-sm lg:h-full lg:grid-cols-[400px_1fr]")}>
+        <aside className={cn("flex min-h-0 flex-col border-[#e9edef] lg:border-r", (activeId || panel === "bulk") && "max-lg:hidden")}>
+          <header className="flex items-center justify-between bg-[#f0f2f5] px-4 py-3">
+            <div>
+              <p className="text-[15px] font-semibold text-[#111b21]">WhatsApp</p>
+              <p className="text-xs text-[#667781]">{fromLine}</p>
+            </div>
+            <span className="rounded-full bg-[#25D366] px-2 py-1 text-[11px] font-semibold text-white">{chatTotal.toLocaleString("en-IN")}</span>
           </header>
-          <label className="flex items-center gap-2 border-b border-[#d1d7db] px-3 py-2 text-sm text-muted">
-            <Search className="size-4" />
-            <input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search name or phone" className="w-full bg-transparent outline-none" />
-          </label>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {chats.map((chat) => (
-              <div key={chat.id} className={cn("flex items-center gap-2 border-b border-[#f0f2f5] pr-2 hover:bg-[#f5f6f6]", panel === "chat" && chat.id === activeId && "bg-[#f0f2f5]")}>
-                <button type="button" onClick={() => { setPanel("chat"); setActiveId(chat.id); }} className="flex min-w-0 flex-1 items-center gap-3 px-3 py-3 text-left">
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#dfe5e7] text-xs font-semibold text-[#54656f]">{initials(chat.fullName)}</span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center justify-between gap-2">
-                      <span className="truncate text-sm font-medium">{chat.fullName}</span>
-                      <span className="text-[11px] text-[#667781]">{format(new Date(chat.createdAt), "dd/MM")}</span>
-                    </span>
-                    <span className="block truncate text-xs text-[#667781]">{chat.phone}</span>
-                    {chat.preview ? <span className="block truncate text-xs text-[#667781]">{chat.preview}</span> : null}
-                  </span>
+          {write ? (
+            <div className="flex gap-2 overflow-x-auto bg-white px-3 py-2">
+              <button type="button" onClick={() => { setPanel("chat"); if (admin) setDeskId("all"); setPage(1); }} className={chip(panel === "chat" && (deskId === "all" || !admin))}>All</button>
+              <button type="button" onClick={() => { setPanel("bulk"); setActiveId(""); }} className={chip(panel === "bulk")}>Bulk</button>
+              {deskMode === "both" ? visibleDesks.map((item) => (
+                <button key={item.id} type="button" onClick={() => { setPanel("chat"); setDeskId(item.id); setPage(1); }} className={chip(panel === "chat" && item.id === desk?.id && deskId !== "all")}>
+                  {item.workspaceType === "clinic" ? "Clinic" : "Institute"}
                 </button>
-              </div>
+              )) : null}
+            </div>
+          ) : null}
+          <label className="px-3 pb-2">
+            <span className="flex items-center gap-3 rounded-lg bg-[#f0f2f5] px-3 py-2 text-sm text-[#54656f]">
+              <Search className="size-4" />
+              <input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search or start a new chat" className="w-full bg-transparent text-[#111b21] outline-none placeholder:text-[#667781]" />
+            </span>
+          </label>
+          <div className="min-h-0 flex-1 overflow-y-auto bg-white">
+            {chats.map((chat) => (
+              <button key={chat.id} type="button" onClick={() => { setPanel("chat"); setActiveId(chat.id); }} className={cn("flex w-full items-center gap-3 px-3 py-3 text-left hover:bg-[#f5f6f6]", panel === "chat" && chat.id === activeId && "bg-[#f0f2f5]")}>
+                <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[#dfe5e7] text-sm font-medium text-[#54656f]">{initials(chat.fullName)}</span>
+                <span className="min-w-0 flex-1 border-b border-[#e9edef] pb-3">
+                  <span className="flex items-baseline justify-between gap-2">
+                    <span className="truncate text-[17px] text-[#111b21]">{chat.fullName}</span>
+                    <span className="shrink-0 text-xs text-[#667781]">{format(new Date(chat.createdAt), "dd/MM/yyyy")}</span>
+                  </span>
+                  <span className="mt-0.5 block truncate text-sm text-[#667781]">{chat.preview || chat.phone}</span>
+                </span>
+              </button>
             ))}
             {chats.length === 0 ? <p className="px-3 py-6 text-sm text-[#667781]">No chats on {fromLine}.</p> : null}
             {chatTotal > chats.length ? (
@@ -213,10 +217,10 @@ export function ProductionWhatsApp() {
             ) : null}
           </div>
         </aside>
-        <section className={cn("flex min-h-[70dvh] flex-col bg-[#efeae2] lg:min-h-0", !activeId && panel !== "bulk" && "max-lg:hidden")}>
+        <section className={cn("wa-wallpaper flex min-h-0 flex-col", !activeId && panel !== "bulk" && "max-lg:hidden")}>
           {write && panel === "bulk" ? (
-            <div className="flex min-h-0 flex-1 flex-col bg-[#efeae2]">
-              <header className="flex items-center gap-3 bg-[#f0f2f5] px-3 py-3">
+            <div className="flex min-h-0 flex-1 flex-col">
+              <header className="flex items-center gap-3 bg-[#f0f2f5] px-4 py-2.5">
                 <button type="button" className="rounded-md px-2 py-2 text-sm font-medium text-[#075E54] lg:hidden" onClick={() => setPanel("chat")}>Back</button>
                 <span className="min-w-0 flex-1">
                   <p className="text-sm font-semibold">Bulk message</p>
@@ -250,68 +254,73 @@ export function ProductionWhatsApp() {
                     <button key={reply.label} type="button" className="rounded-full bg-white px-3 py-1 text-xs font-medium text-[#075E54] shadow-sm" onClick={() => setBulkText(reply.text)}>{reply.label}</button>
                   ))}
                 </div>
-                <textarea value={bulkText} onChange={(event) => setBulkText(event.target.value)} rows={5} placeholder="Message from +91 95624 29928" className="w-full rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none focus:border-[#075E54]" />
+                <textarea value={bulkText} onChange={(event) => setBulkText(event.target.value)} rows={5} placeholder="Type a message" className="w-full rounded-lg bg-white px-3 py-2 text-[15px] text-[#111b21] outline-none" />
                 <select value={bulkPosterId} onChange={(event) => setBulkPosterId(event.target.value)} className="h-10 rounded-md border border-line bg-white px-2 text-sm">
                   <option value="">No poster</option>
                   {posters.map((poster) => <option key={poster.id} value={poster.id}>{poster.filename}</option>)}
                 </select>
                 {posters.find((poster) => poster.id === bulkPosterId)?.url ? <img src={posters.find((poster) => poster.id === bulkPosterId)?.url} alt="" className="max-h-48 rounded-lg border border-line object-contain" /> : null}
               </div>
-              <div className="bg-[#f0f2f5] p-3">
-                <button type="button" className="h-10 rounded-md bg-[#075E54] px-4 text-sm font-medium text-white disabled:opacity-60" disabled={bulkRunning || (!bulkText.trim() && !bulkPosterId)} onClick={sendBulk}>
-                  {bulkRunning ? "Sending…" : "Send bulk"}
+              <div className="flex items-center gap-2 bg-[#f0f2f5] px-4 py-2">
+                <button type="button" className="ml-auto flex size-11 items-center justify-center rounded-full bg-[#00a884] text-sm font-medium text-white disabled:opacity-60" disabled={bulkRunning || (!bulkText.trim() && !bulkPosterId)} onClick={sendBulk}>
+                  {bulkRunning ? "…" : "Send"}
                 </button>
               </div>
             </div>
           ) : active ? (
             <>
-              <header className="flex items-center gap-3 bg-[#f0f2f5] px-3 py-3">
-                <button type="button" className="rounded-md px-2 py-2 text-sm font-medium text-[#075E54] lg:hidden" onClick={() => setActiveId("")}>Back</button>
-                <span className="flex size-9 items-center justify-center rounded-full bg-[#dfe5e7] text-xs font-semibold">{initials(active.fullName)}</span>
+              <header className="flex items-center gap-3 bg-[#f0f2f5] px-4 py-2">
+                <button type="button" className="text-xl text-[#54656f] lg:hidden" onClick={() => setActiveId("")} aria-label="Back">‹</button>
+                <span className="flex size-10 items-center justify-center rounded-full bg-[#dfe5e7] text-sm text-[#54656f]">{initials(active.fullName)}</span>
                 <span className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold">{active.fullName}</p>
-                  <p className="text-xs text-[#667781]">{active.phone} · from {fromLine}</p>
+                  <p className="truncate text-[16px] text-[#111b21]">{active.fullName}</p>
+                  <p className="truncate text-xs text-[#667781]">{active.phone}</p>
                 </span>
               </header>
-              <div className="flex-1 space-y-2 overflow-y-auto px-4 py-4">
-                {thread.length === 0 ? <p className="text-center text-xs text-[#667781]">No WhatsApp messages in this chat yet.</p> : null}
+              <div className="flex-1 space-y-1.5 overflow-y-auto px-[6%] py-4">
+                {thread.length === 0 ? <p className="mx-auto w-fit rounded-lg bg-[#ffeecd] px-3 py-1.5 text-center text-xs text-[#54656f] shadow-sm">Messages in this chat appear here. Sending from {fromLine}.</p> : null}
                 {thread.map((entry) => (
-                  <div key={entry.id} className={cn("max-w-[75%] rounded-lg px-3 py-2 text-sm shadow-sm", outgoing(entry.direction) ? "ml-auto bg-[#d9fdd3]" : "bg-white")}>
+                  <div key={entry.id} className={cn("relative max-w-[65%] px-2 py-1.5 text-[14.2px] leading-snug text-[#111b21] shadow-sm", outgoing(entry.direction) ? "ml-auto rounded-lg rounded-tr-none bg-[#d9fdd3]" : "rounded-lg rounded-tl-none bg-white")}>
                     <MessageBody body={entry.body} />
-                    <p className="mt-1 text-right text-[11px] text-[#667781]">{format(new Date(entry.createdAt), "h:mm a")} · {entry.status}</p>
+                    <p className="mt-0.5 text-right text-[11px] text-[#667781]">{format(new Date(entry.createdAt), "h:mm a")}</p>
                   </div>
                 ))}
                 <div ref={endRef} />
               </div>
               {write ? (
                 <form
-                  className="flex flex-col gap-2 bg-[#f0f2f5] p-3"
+                  className="bg-[#f0f2f5] px-3 py-2"
                   onSubmit={(event) => {
                     event.preventDefault();
                     sendDirect();
                   }}
                 >
-                  <div className="flex gap-2 overflow-x-auto">
+                  <div className="mb-2 flex gap-2 overflow-x-auto">
                     {QUICK_REPLIES.map((reply) => (
-                      <button key={reply.label} type="button" className="shrink-0 rounded-full bg-white px-3 py-1 text-xs font-medium text-[#075E54]" onClick={() => setDraft(reply.text)}>{reply.label}</button>
+                      <button key={reply.label} type="button" className="shrink-0 rounded-full bg-white px-3 py-1 text-xs text-[#008069] shadow-sm" onClick={() => setDraft(reply.text)}>{reply.label}</button>
                     ))}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <select value={posterId} onChange={(event) => setPosterId(event.target.value)} className="h-10 rounded-md border border-line bg-white px-2 text-xs">
+                  <div className="flex items-end gap-2">
+                    <select value={posterId} onChange={(event) => setPosterId(event.target.value)} aria-label="Poster" className="h-11 rounded-full bg-white px-3 text-xs text-[#54656f] outline-none">
                       <option value="">Poster</option>
                       {posters.map((poster) => <option key={poster.id} value={poster.id}>{poster.filename}</option>)}
                     </select>
-                    <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Message" className="h-10 min-w-0 flex-1 rounded-md border border-line px-3 text-sm outline-none" />
+                    <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Type a message" className="h-11 min-w-0 flex-1 rounded-full bg-white px-4 text-[15px] text-[#111b21] outline-none" />
                     {active.phone ? (
-                      <button type="submit" className="inline-flex h-10 items-center justify-center rounded-md bg-[#075E54] px-3 text-sm font-medium text-white">
-                        {busy === "send" ? "Sending…" : "Send"}
+                      <button type="submit" aria-label="Send" className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[#00a884] text-white disabled:opacity-60">
+                        {busy === "send" ? "…" : "➤"}
                       </button>
-                    ) : <span className="text-xs text-muted">This lead has no phone number.</span>}
+                    ) : null}
                   </div>
                 </form>
               ) : null}
             </>
-          ) : <p className="m-auto px-6 text-center text-sm text-[#667781]">Select a chat{write ? " or open Bulk. Messages go out from +91 95624 29928." : "."}</p>}
+          ) : (
+            <div className="m-auto max-w-md px-8 text-center">
+              <p className="text-[32px] font-light text-[#41525d]">WhatsApp</p>
+              <p className="mt-3 text-sm text-[#667781]">Send and receive messages from {fromLine}. {chatTotal.toLocaleString("en-IN")} leads are in this list.</p>
+            </div>
+          )}
         </section>
       </div>
     </div>
