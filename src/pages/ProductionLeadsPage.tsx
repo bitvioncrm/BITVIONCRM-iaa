@@ -638,7 +638,15 @@ export function ProductionLeadsPage() {
                 </Button>
               )}
               <Button type="button" size="sm" variant="secondary" onClick={() => { setSheet({ lead, kind: "note" }); setSheetValue(""); }}>Note</Button>
-              <Button type="button" size="sm" variant="secondary" onClick={() => { setSheet({ lead, kind: "follow" }); setSheetValue(""); }}>Follow-up</Button>
+                const note = window.prompt("Note");
+                if (!note?.trim()) return;
+                void addLeadNote(lead, note).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not save the note"));
+              }}>Note</Button>
+              <Button type="button" size="sm" variant="secondary" onClick={() => {
+                const due = window.prompt("Follow-up time (YYYY-MM-DDTHH:mm)");
+                if (!due) return;
+                void addFollowUp(lead, new Date(due).toISOString(), "Follow-up").catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not save the follow-up"));
+              }}>Follow-up</Button>
             </div>
           </article>
         ))}
@@ -722,10 +730,30 @@ export function ProductionLeadsPage() {
                   )}
                 </td>
                 <td className="px-3 py-2">
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="button" size="sm" variant="secondary" onClick={() => { setSheet({ lead, kind: "note" }); setSheetValue(""); }}>Note</Button>
-                    <Button type="button" size="sm" variant="secondary" onClick={() => { setSheet({ lead, kind: "follow" }); setSheetValue(""); }}>Follow-up</Button>
-                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      const note = window.prompt("Note");
+                      if (!note?.trim()) return;
+                      void addLeadNote(lead, note).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not save the note"));
+                    }}
+                  >
+                    Note
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      const due = window.prompt("Follow-up time (YYYY-MM-DDTHH:mm)");
+                      if (!due) return;
+                      void addFollowUp(lead, new Date(due).toISOString(), "Follow-up").catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not save the follow-up"));
+                    }}
+                  >
+                    Follow-up
+                  </Button>
                 </td>
               </tr>
             ))}
