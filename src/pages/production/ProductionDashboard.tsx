@@ -7,7 +7,7 @@ import { listWorkspaces, type WorkspaceOption } from "@/services/production-lead
 import { loadDoctorPulse } from "@/services/clinic-care";
 import { formatClock } from "@/lib/call-time";
 import { rangeBounds, type RangeKey } from "@/lib/range";
-import { callDeskReport, countRows, listAppointments, listFollowUps } from "@/services/production-ops";
+import { callDeskReport, countRows, listAppointments, listFollowUps, listPatients } from "@/services/production-ops";
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -62,10 +62,12 @@ function DoctorDashboard() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [pulse, setPulse] = useState({ consulted: 0, patients: 0, pending: 0, units: 0, days: [] as Array<{ day: string; sold: number }> });
+  const [registered, setRegistered] = useState<Array<{ id: string; full_name: string; mobile: string; patient_code: string }>>([]);
   useEffect(() => {
     if (!clinic) return;
     const bounds = rangeBounds(range, customFrom, customTo);
     void loadDoctorPulse(clinic.id, bounds.fromDate, bounds.toDate, bounds.from, bounds.to).then(setPulse).catch(() => setPulse({ consulted: 0, patients: 0, pending: 0, units: 0, days: [] }));
+    void listPatients(clinic.id, "").then((rows) => setRegistered(rows as typeof registered)).catch(() => setRegistered([]));
   }, [clinic, range, customFrom, customTo]);
   return (
     <Shell title="Doctor">
@@ -88,6 +90,12 @@ function DoctorDashboard() {
         <Stat label="Products sold" value={String(pulse.units)} />
       </div>
       <div className="flex flex-wrap gap-2"><Tile to="/clinic" label="Patients and consultations" /><Tile to="/inventory" label="Stock" /></div>
+      <section className="rounded-lg border border-line bg-white p-4">
+        <h2 className="text-sm font-semibold">Patients from reception</h2>
+        {registered.length === 0 ? <p className="mt-2 text-sm text-muted">No patients registered yet.</p> : registered.map((patient) => (
+          <p key={patient.id} className="mt-2 text-sm">{patient.patient_code} · {patient.full_name} · {patient.mobile}</p>
+        ))}
+      </section>
       <section className="rounded-lg border border-line bg-white p-4">
         <h2 className="text-sm font-semibold">Products sold per day</h2>
         {pulse.days.length === 0 ? <p className="mt-2 text-sm text-muted">No products sold in this range.</p> : pulse.days.map((row) => (
