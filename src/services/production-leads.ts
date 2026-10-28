@@ -1,7 +1,7 @@
 import { stageFromText } from "@/data/catalog";
 import type { LeadOrigin } from "@/lib/lead-origin";
 import { chunk, duplicateKind, normalizeEmail, normalizePhone, phoneKey, sanitizeSearch, type DuplicateKind } from "@/lib/lead-normalize";
-import { deskCallerRoles } from "@/lib/production-access";
+import { deskAssigneeRoles } from "@/lib/production-access";
 import { supabase } from "@/lib/supabase";
 import type { LeadStatus } from "@/types";
 
@@ -122,7 +122,7 @@ export async function listAssignableMembers(workspaceId: string, workspaceType?:
     if (workspace.error) throw new Error(workspace.error.message);
     desk = (workspace.data?.workspace_type as string | undefined) ?? "";
   }
-  const allowed = new Set(deskCallerRoles(desk));
+  const allowed = new Set(deskAssigneeRoles(desk));
   const { data, error } = await client()
     .from("user_roles")
     .select("user_id, workspace_id, roles(key), profiles(full_name)")
@@ -416,7 +416,7 @@ async function assertDeskTelecaller(workspaceId: string, assignedTo: string) {
   const workspace = await client().from("workspaces").select("workspace_type").eq("id", workspaceId).maybeSingle();
   if (workspace.error) throw new Error(workspace.error.message);
   const desk = String(workspace.data?.workspace_type ?? "");
-  const allowed = deskCallerRoles(desk);
+  const allowed = deskAssigneeRoles(desk);
   if (!allowed.length) throw new Error("This lead is not on the clinic or institute desk.");
   const members = await client().from("user_roles").select("roles(key)").eq("workspace_id", workspaceId).eq("user_id", assignedTo);
   if (members.error) throw new Error(members.error.message);
@@ -426,7 +426,7 @@ async function assertDeskTelecaller(workspaceId: string, assignedTo: string) {
     return Boolean(role && allowed.includes(role));
   });
   if (!match) {
-    throw new Error(desk === "institute" ? "Assign institute leads only to an institute telecaller." : "Assign clinic leads only to a clinic telecaller.");
+    throw new Error(desk === "institute" ? "Assign institute leads only to an institute telecaller." : "Assign clinic leads to reception or a clinic telecaller.");
   }
 }
 

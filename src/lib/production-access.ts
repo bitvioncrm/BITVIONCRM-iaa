@@ -41,6 +41,11 @@ export function deskCallerRoles(workspaceType: string) {
   return [];
 }
 
+export function deskAssigneeRoles(workspaceType: string) {
+  if (workspaceType === "clinic") return ["receptionist", ...deskCallerRoles("clinic")];
+  return deskCallerRoles(workspaceType);
+}
+
 export function productionRoleLabel(roleKey: string) {
   if (roleKey === "super_admin" || roleKey === "admin") return "Admin";
   if (roleKey === "doctor") return "Doctor";

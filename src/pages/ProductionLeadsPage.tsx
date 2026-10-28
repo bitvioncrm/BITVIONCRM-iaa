@@ -363,6 +363,7 @@ export function ProductionLeadsPage() {
           ))}
         </div>
       ) : null}
+      {error ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
       {notice ? <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</p> : null}
       {sheet ? (
         <form
@@ -434,6 +435,7 @@ export function ProductionLeadsPage() {
                   <p className="text-xs font-medium uppercase tracking-wide text-muted">{deskLabel}</p>
                   <h2 className="text-sm font-semibold">{item.name}</h2>
                   <p className="mt-1 text-sm text-muted">{waiting.toLocaleString("en-IN")} waiting</p>
+                  <p className="mt-1 text-xs text-muted">{item.workspaceType === "institute" ? "New institute leads are assigned automatically to the institute telecaller." : "New clinic leads are assigned automatically: 3 of every 10 to reception, and the rest to the clinic telecaller."}</p>
                 </div>
                 {people.length === 0 ? <p className="text-sm text-muted">Add a {deskLabel.toLowerCase()} telecaller before these leads can be assigned.</p> : people.map((member) => {
                   const held = Number(totals.assigned[member.userId] ?? 0);
@@ -638,15 +640,7 @@ export function ProductionLeadsPage() {
                 </Button>
               )}
               <Button type="button" size="sm" variant="secondary" onClick={() => { setSheet({ lead, kind: "note" }); setSheetValue(""); }}>Note</Button>
-                const note = window.prompt("Note");
-                if (!note?.trim()) return;
-                void addLeadNote(lead, note).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not save the note"));
-              }}>Note</Button>
-              <Button type="button" size="sm" variant="secondary" onClick={() => {
-                const due = window.prompt("Follow-up time (YYYY-MM-DDTHH:mm)");
-                if (!due) return;
-                void addFollowUp(lead, new Date(due).toISOString(), "Follow-up").catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not save the follow-up"));
-              }}>Follow-up</Button>
+              <Button type="button" size="sm" variant="secondary" onClick={() => { setSheet({ lead, kind: "follow" }); setSheetValue(""); }}>Follow-up</Button>
             </div>
           </article>
         ))}
@@ -730,30 +724,10 @@ export function ProductionLeadsPage() {
                   )}
                 </td>
                 <td className="px-3 py-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => {
-                      const note = window.prompt("Note");
-                      if (!note?.trim()) return;
-                      void addLeadNote(lead, note).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not save the note"));
-                    }}
-                  >
-                    Note
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => {
-                      const due = window.prompt("Follow-up time (YYYY-MM-DDTHH:mm)");
-                      if (!due) return;
-                      void addFollowUp(lead, new Date(due).toISOString(), "Follow-up").catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not save the follow-up"));
-                    }}
-                  >
-                    Follow-up
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" size="sm" variant="secondary" onClick={() => { setSheet({ lead, kind: "note" }); setSheetValue(""); }}>Note</Button>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => { setSheet({ lead, kind: "follow" }); setSheetValue(""); }}>Follow-up</Button>
+                  </div>
                 </td>
               </tr>
             ))}
