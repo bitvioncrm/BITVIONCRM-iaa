@@ -381,13 +381,29 @@ export interface PatientProductLine {
   amount: number;
 }
 
+export interface PatientPrescription {
+  id: string;
+  medicine: string;
+  dosage: string;
+  frequency: string;
+  duration: string;
+  instructions: string;
+}
+
 export interface PatientTreatment {
   id: string;
+  kind: "procedure" | "consultation";
   when: string;
   doctorId: string;
   title: string;
   detail: string;
   notes: string;
+  procedure1: string;
+  procedure2: string;
+  diagnosis: string;
+  plan: string;
+  followUpOn: string;
+  prescriptions: PatientPrescription[];
   products: PatientProductLine[];
 }
 
@@ -415,7 +431,7 @@ function named(value: unknown) {
 export async function loadPatientRecord(patientId: string): Promise<PatientRecord> {
   const [procedures, consultations, invoices] = await Promise.all([
     client().from("patient_procedures").select("id, doctor_id, procedure_1, procedure_2, performed_on, notes, patient_procedure_items(id, product_id, quantity, line_total, inventory_products(name))").eq("patient_id", patientId).order("performed_on", { ascending: false }).limit(80),
-    client().from("consultations").select("id, doctor_id, diagnosis, treatment_plan, follow_up_on, created_at, prescriptions(medicine, dosage, frequency, duration, instructions)").eq("patient_id", patientId).order("created_at", { ascending: false }).limit(80),
+    client().from("consultations").select("id, doctor_id, diagnosis, treatment_plan, follow_up_on, created_at, prescriptions(id, medicine, dosage, frequency, duration, instructions)").eq("patient_id", patientId).order("created_at", { ascending: false }).limit(80),
     client().from("invoices").select("id, invoice_number, status, total, issued_on, invoice_items(description, quantity, unit_price), payments(amount)").eq("patient_id", patientId).order("issued_on", { ascending: false }).limit(40),
   ]);
   if (procedures.error) throw new Error(procedures.error.message);
@@ -433,26 +449,48 @@ export async function loadPatientRecord(patientId: string): Promise<PatientRecor
     const title = [row.procedure_1, row.procedure_2].map((part) => String(part || "").trim()).filter(Boolean).join(" · ");
     return {
       id: String(row.id),
+      kind: "procedure" as const,
       when: String(row.performed_on || ""),
       doctorId: String(row.doctor_id || ""),
       title: title || "Treatment",
       detail: "",
       notes: String(row.notes || ""),
+      procedure1: String(row.procedure_1 || ""),
+      procedure2: String(row.procedure_2 || ""),
+      diagnosis: "",
+      plan: "",
+      followUpOn: "",
+      prescriptions: [],
       products,
     };
   });
   const fromVisits: PatientTreatment[] = (consultations.data ?? []).map((row) => {
     const medicines = (row.prescriptions as Array<Record<string, unknown>> | null) ?? [];
-    const detail = medicines.map((item) => [item.medicine, item.dosage, item.frequency, item.duration].map((part) => String(part || "").trim()).filter(Boolean).join(" · ")).filter(Boolean).join("; ");
+    const prescriptions = medicines.map((item) => ({
+      id: String(item.id || ""),
+      medicine: String(item.medicine || ""),
+      dosage: String(item.dosage || ""),
+      frequency: String(item.frequency || ""),
+      duration: String(item.duration || ""),
+      instructions: String(item.instructions || ""),
+    }));
+    const detail = prescriptions.map((item) => [item.medicine, item.dosage, item.frequency, item.duration ? `for ${item.duration}` : ""].filter(Boolean).join(" · ")).filter(Boolean).join("; ");
     const plan = String(row.treatment_plan || "").trim();
     const follow = row.follow_up_on ? `Follow-up ${String(row.follow_up_on)}` : "";
     return {
       id: String(row.id),
+      kind: "consultation" as const,
       when: String(row.created_at || ""),
       doctorId: String(row.doctor_id || ""),
       title: String(row.diagnosis || "").trim() || "Consultation",
       detail: [plan, detail, follow].filter(Boolean).join("\n"),
       notes: "",
+      procedure1: "",
+      procedure2: "",
+      diagnosis: String(row.diagnosis || ""),
+      plan,
+      followUpOn: String(row.follow_up_on || ""),
+      prescriptions,
       products: [],
     };
   });
@@ -730,7 +768,7 @@ export async function createAppointment(input: { organizationId: string; workspa
   if (error) throw new Error(error.message);
 }
 
-export async function saveConsultation(input: { organizationId: string; workspaceId: string; patientId: string; diagnosis: string; plan: string; medicine: string; dosage: string; followUpOn: string | null }) {
+export async function saveConsultation(input: { organizationId: string; workspaceId: string; patientId: string; diagnosis: string; plan: string; medicine: string; dosage: string; frequency?: string; duration?: string; instructions?: string; followUpOn: string | null }) {
   const { data, error } = await client().from("consultations").insert({
     organization_id: input.organizationId,
     workspace_id: input.workspaceId,
@@ -741,16 +779,80 @@ export async function saveConsultation(input: { organizationId: string; workspac
     follow_up_on: input.followUpOn,
   }).select("id").single();
   if (error) throw new Error(error.message);
-  if (input.medicine.trim()) {
+  if (input.medicine.trim() || input.duration?.trim() || input.dosage.trim()) {
     const { error: prescriptionError } = await client().from("prescriptions").insert({
       organization_id: input.organizationId,
       workspace_id: input.workspaceId,
       consultation_id: data.id,
-      medicine: input.medicine,
+      medicine: input.medicine.trim() || "Medicine",
       dosage: input.dosage,
+      frequency: input.frequency ?? "",
+      duration: input.duration ?? "",
+      instructions: input.instructions ?? "",
     });
     if (prescriptionError) throw new Error(prescriptionError.message);
   }
+}
+
+export async function updateProcedure(id: string, input: { procedure1: string; procedure2: string; performedOn: string; notes: string; doctorId: string | null }) {
+  forgetDeskLists();
+  const { error } = await client().from("patient_procedures").update({
+    procedure_1: input.procedure1.trim(),
+    procedure_2: input.procedure2.trim(),
+    performed_on: input.performedOn || new Date().toISOString().slice(0, 10),
+    notes: input.notes.trim(),
+    doctor_id: input.doctorId,
+  }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function removeProcedure(id: string) {
+  const { data, error } = await client().from("patient_procedure_items").select("id").eq("procedure_id", id);
+  if (error) throw new Error(error.message);
+  for (const item of data ?? []) await removePatientProduct(String(item.id));
+  forgetDeskLists();
+  const removed = await client().from("patient_procedures").delete().eq("id", id);
+  if (removed.error) throw new Error(removed.error.message);
+}
+
+export async function updateConsultation(id: string, input: { organizationId: string; workspaceId: string; diagnosis: string; plan: string; followUpOn: string | null; prescriptionId: string; medicine: string; dosage: string; frequency: string; duration: string; instructions: string }) {
+  const { error } = await client().from("consultations").update({
+    diagnosis: input.diagnosis.trim(),
+    treatment_plan: input.plan.trim(),
+    follow_up_on: input.followUpOn,
+  }).eq("id", id);
+  if (error) throw new Error(error.message);
+  const row = {
+    medicine: input.medicine.trim(),
+    dosage: input.dosage.trim(),
+    frequency: input.frequency.trim(),
+    duration: input.duration.trim(),
+    instructions: input.instructions.trim(),
+  };
+  if (input.prescriptionId) {
+    const saved = await client().from("prescriptions").update(row).eq("id", input.prescriptionId);
+    if (saved.error) throw new Error(saved.error.message);
+    return;
+  }
+  if (!row.medicine && !row.duration && !row.dosage) return;
+  const created = await client().from("prescriptions").insert({
+    organization_id: input.organizationId,
+    workspace_id: input.workspaceId,
+    consultation_id: id,
+    medicine: row.medicine || "Medicine",
+    dosage: row.dosage,
+    frequency: row.frequency,
+    duration: row.duration,
+    instructions: row.instructions,
+  });
+  if (created.error) throw new Error(created.error.message);
+}
+
+export async function removeConsultation(id: string) {
+  const cleared = await client().from("prescriptions").delete().eq("consultation_id", id);
+  if (cleared.error) throw new Error(cleared.error.message);
+  const removed = await client().from("consultations").delete().eq("id", id);
+  if (removed.error) throw new Error(removed.error.message);
 }
 
 export interface InventoryProduct {

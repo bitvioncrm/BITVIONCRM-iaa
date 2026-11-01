@@ -4,7 +4,7 @@ import { blankStudent, detailsFromStudent, StudentForm } from "@/components/inst
 import { Portrait } from "@/components/shared/Portrait";
 import { FilterBar, studentMatches, type DeskFilter } from "@/pages/production/ProductionDashboard";
 import { Sheet, SheetBody, SheetContent, SheetHeader } from "@/components/ui/sheet";
-import { ClinicCare } from "@/components/clinic/ClinicCare";
+import { PatientHistory } from "@/components/clinic/PatientHistory";
 import { BusinessBoard } from "@/components/dashboard/BusinessBoard";
 import { useAuth } from "@/context/AuthContext";
 import { canOperateWhatsApp } from "@/lib/production-access";
@@ -12,7 +12,7 @@ import { listDoctors, listWorkspaces, type WorkspaceOption } from "@/services/pr
 import { phoneTel } from "@/lib/phone";
 import { inr } from "@/lib/money";
 import { addLedgerEntry, listLedger, removeLedgerEntry } from "@/services/clinic-care";
-import { changeStock, createAppointment, createExam, createInvoice, createPatient, createProduct, createStudent, issueCertificate, listAppointments, listCertificates, listDeskStudents, listDocuments, listExams, listPatients, listProducts, listStockMoves, recordMark, recordPayment, recordRefund, removeAppointment, removePatient, removeProduct, removeStudent, saveConsultation, savePersonPhoto, saveStudentDetails, seedClinicSkincareStock, setDocumentStatus, signedDocumentUrl, updateAppointmentStatus, updatePatient, updateProductPricing, uploadPrivateFile, type DeskStudent, type InventoryProduct, type StudentDetails } from "@/services/production-ops";
+import { changeStock, clearDeskCache, createAppointment, createExam, createInvoice, createPatient, createProduct, createStudent, issueCertificate, listCertificates, listDeskAppointments, listDeskPatients, listDeskStudents, listDocuments, listExams, listPatients, listProducts, listStockMoves, recordMark, recordPayment, recordRefund, removeAppointment, removeProduct, removeStudent, savePersonPhoto, saveStudentDetails, seedClinicSkincareStock, setDocumentStatus, signedDocumentUrl, updateAppointment, updateProductPricing, uploadPrivateFile, type DeskAppointmentRow, type DeskPatient, type DeskStudent, type InventoryProduct, type StudentDetails } from "@/services/production-ops";
 
 export function ProductionModule({ module }: { module: "clinic" | "institute" | "inventory" | "billing" }) {
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
@@ -54,168 +54,177 @@ export function ProductionModule({ module }: { module: "clinic" | "institute" | 
 
 function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
   const { productionUser } = useAuth();
-  const key = productionUser?.roleKey ?? "admin";
-  const clinical = key === "doctor" || key === "duty_doctor";
-  const [patients, setPatients] = useState<Array<{ id: string; patient_code: string; full_name: string; mobile: string; place: string; photo_path?: string }>>([]);
-  const [appointments, setAppointments] = useState<Array<{ id: string; starts_at: string; status: string; reason: string }>>([]);
-  const [patientId, setPatientId] = useState("");
+  const [patients, setPatients] = useState<DeskPatient[]>([]);
+  const [appointments, setAppointments] = useState<DeskAppointmentRow[]>([]);
   const [doctors, setDoctors] = useState<Array<{ userId: string; name: string }>>([]);
   const [query, setQuery] = useState("");
-  const [editing, setEditing] = useState<{ id: string; full_name: string; mobile: string; place: string } | null>(null);
-  const reloadPatients = (search = query) => void listPatients(workspace.id, search).then((rows) => setPatients(rows as typeof patients)).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load patients"));
+  const [openId, setOpenId] = useState("");
+  const [patientId, setPatientId] = useState("");
+  const [doctorId, setDoctorId] = useState("");
+  const open = patients.find((item) => item.id === openId) ?? null;
+  const visible = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    if (!term) return patients;
+    return patients.filter((item) => `${item.full_name} ${item.mobile} ${item.patient_code} ${item.place}`.toLowerCase().includes(term));
+  }, [patients, query]);
+  const reload = () => {
+    clearDeskCache();
+    void listDeskPatients(workspace.id).then(setPatients).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load patients"));
+    void listDeskAppointments(workspace.id).then(setAppointments).catch(() => setAppointments([]));
+  };
   useEffect(() => {
-    void listPatients(workspace.id, "").then((rows) => setPatients(rows as typeof patients)).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load patients"));
-    void listAppointments(workspace.id).then((rows) => setAppointments(rows as typeof appointments)).catch(() => setAppointments([]));
+    reload();
     void listDoctors(workspace.id).then(setDoctors).catch(() => setDoctors([]));
-  }, [onError, workspace.id]);
+  }, [workspace.id]);
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <div className="space-y-2 rounded-lg border border-line bg-white p-4">
-        <h2 className="font-semibold">{clinical ? "Patients" : "Register patient"}</h2>
-        <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); reloadPatients(query); }}>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search patients" className="w-full rounded-md border border-line px-2 py-2" />
-          <button className="rounded-md border border-line px-3 py-2 text-sm" type="submit">Search</button>
-        </form>
-        <form className="space-y-2" onSubmit={(event) => submit(event, async (data) => {
-            const code = await createPatient({
-              organizationId: workspace.organizationId,
-              workspaceId: workspace.id,
-              fullName: data.get("name") as string,
-              mobile: data.get("mobile") as string,
-              place: data.get("place") as string,
-              email: data.get("email") as string,
-              gender: data.get("gender") as string,
-              dateOfBirth: (data.get("dob") as string) || null,
-              address: data.get("address") as string,
-              emergencyContact: data.get("emergency") as string,
-              notes: data.get("notes") as string,
-            });
-            onNotice(`Patient ${code} saved.`);
-            reloadPatients("");
-          }, onError)}>
-            <input name="name" required placeholder="Full name" className="w-full rounded-md border border-line px-2 py-2" />
-            <input name="dob" type="date" className="w-full rounded-md border border-line px-2 py-2" />
-            <select name="gender" className="w-full rounded-md border border-line px-2 py-2"><option value="female">Female</option><option value="male">Male</option><option value="other">Other</option></select>
-            <input name="mobile" required placeholder="Mobile" className="w-full rounded-md border border-line px-2 py-2" />
-            <input name="email" type="email" placeholder="Email" className="w-full rounded-md border border-line px-2 py-2" />
-            <input name="address" placeholder="Address" className="w-full rounded-md border border-line px-2 py-2" />
-            <input name="place" placeholder="Place" className="w-full rounded-md border border-line px-2 py-2" />
-            <input name="emergency" placeholder="Emergency contact" className="w-full rounded-md border border-line px-2 py-2" />
-            <input name="notes" placeholder="Notes" className="w-full rounded-md border border-line px-2 py-2" />
-            <button className="rounded-md bg-navy px-3 py-2 text-sm text-white" type="submit">Save</button>
-          </form>
-        {patients.length === 0 ? <p className="text-sm text-muted">No patients yet.</p> : patients.map((patient) => (
-          <div key={patient.id} className="space-y-2 text-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="flex min-w-0 items-center gap-2"><Portrait name={patient.full_name} path={patient.photo_path} /><span>{patient.patient_code} · {patient.full_name} · {patient.mobile}</span></span>
-              <span className="flex gap-2">
-                <label className="cursor-pointer text-xs font-medium">
-                  Photo
-                  <input type="file" accept="image/*" className="hidden" onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    event.target.value = "";
-                    if (!file) return;
-                    void savePersonPhoto("patients", patient.id, workspace.organizationId, workspace.id, file).then((path) => { setPatients((current) => current.map((item) => item.id === patient.id ? { ...item, photo_path: path } : item)); onNotice("Photo saved."); }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not save the photo"));
-                  }} />
-                </label>
-                <button type="button" className="text-xs font-medium" onClick={() => setEditing({ id: patient.id, full_name: patient.full_name, mobile: patient.mobile, place: patient.place ?? "" })}>Edit</button>
-                <button type="button" className="text-xs font-medium text-danger" onClick={() => {
-                  if (!window.confirm(`Delete ${patient.full_name}?`)) return;
-                  void removePatient(patient.id).then(() => { onNotice(`${patient.full_name} deleted.`); reloadPatients(""); }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not delete the patient"));
-                }}>Delete</button>
-              </span>
-            </div>
-            {editing?.id === patient.id ? (
-              <form className="grid gap-2" onSubmit={(event) => { event.preventDefault(); void updatePatient(patient.id, { fullName: editing.full_name, mobile: editing.mobile, place: editing.place }).then(() => { setEditing(null); onNotice("Patient updated."); reloadPatients(""); }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not update the patient")); }}>
-                <input value={editing.full_name} onChange={(event) => setEditing({ ...editing, full_name: event.target.value })} className="rounded-md border border-line px-2 py-2" />
-                <input value={editing.mobile} onChange={(event) => setEditing({ ...editing, mobile: event.target.value })} className="rounded-md border border-line px-2 py-2" />
-                <input value={editing.place} onChange={(event) => setEditing({ ...editing, place: event.target.value })} placeholder="Place" className="rounded-md border border-line px-2 py-2" />
-                <span className="flex gap-2">
-                  <button className="rounded-md bg-navy px-3 py-2 text-sm text-white" type="submit">Save</button>
-                  <button className="rounded-md border border-line px-3 py-2 text-sm" type="button" onClick={() => setEditing(null)}>Cancel</button>
-                </span>
-              </form>
-            ) : null}
+    <div className="space-y-4">
+      <section className="space-y-3">
+        <div className="flex items-end justify-between gap-3">
+          <h2 className="font-semibold">Patients</h2>
+          <p className="text-sm text-muted">{visible.length}</p>
+        </div>
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, mobile, or code" className="h-11 w-full rounded-xl border border-line bg-white px-3" />
+        {visible.length === 0 ? <p className="rounded-2xl border border-line bg-white px-4 py-8 text-sm text-muted">No patients yet.</p> : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {visible.map((patient) => {
+              const latest = [...patient.treatments].sort((left, right) => right.performed_on.localeCompare(left.performed_on))[0];
+              return (
+                <button key={patient.id} type="button" onClick={() => setOpenId(patient.id)} className="touch-card flex gap-3 rounded-2xl border border-line bg-white p-3 text-left">
+                  <Portrait name={patient.full_name} path={patient.photo_path} />
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">{patient.full_name}</span>
+                    <span className="mt-1 block text-xs text-muted">{patient.patient_code} · {patient.mobile || "No mobile"}</span>
+                    <span className="mt-2 block text-sm">{latest ? `Last visit ${latest.performed_on} · ${latest.title}` : "No treatment recorded yet"}</span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
-        ))}
-      </div>
-      <form className="space-y-2 rounded-lg border border-line bg-white p-4" onSubmit={(event) => submit(event, async (data) => {
-        await createAppointment({
-          organizationId: workspace.organizationId,
-          workspaceId: workspace.id,
-          patientId: data.get("patient") as string,
-          doctorId: (data.get("doctor") as string) || null,
-          startsAt: new Date(data.get("when") as string).toISOString(),
-          reason: data.get("reason") as string,
-          status: data.get("walkin") === "on" ? "arrived" : "scheduled",
-        });
-        onNotice("Appointment saved.");
-        const rows = await listAppointments(workspace.id);
-        setAppointments(rows as typeof appointments);
-      }, onError)}>
-        <h2 className="font-semibold">{clinical ? "Today's queue" : "Appointments"}</h2>
-        <>
-            <select name="patient" className="w-full rounded-md border border-line px-2 py-2" value={patientId} onChange={(event) => setPatientId(event.target.value)}>
-              <option value="">Patient</option>
-              {patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.full_name}</option>)}
-            </select>
-            <select name="doctor" className="w-full rounded-md border border-line px-2 py-2">
-              <option value="">Doctor</option>
-              {doctors.map((item) => <option key={item.userId} value={item.userId}>{item.name}</option>)}
-            </select>
-            <label className="flex items-center gap-2 text-sm"><input name="walkin" type="checkbox" /> Walk-in, mark arrived</label>
-            <input name="when" type="datetime-local" required className="w-full rounded-md border border-line px-2 py-2" />
-            <input name="reason" placeholder="Reason" className="w-full rounded-md border border-line px-2 py-2" />
-            <button className="rounded-md bg-navy px-3 py-2 text-sm text-white" type="submit">Book</button>
-        </>
-        {appointments.map((item) => (
-          <div key={item.id} className="flex items-center justify-between gap-2 text-sm">
-            <span>{item.starts_at} · {item.status} · {item.reason}</span>
-            <span className="flex items-center gap-2">
-              <select value={item.status} onChange={(event) => {
-                void updateAppointmentStatus(item.id, event.target.value).then(async () => setAppointments(await listAppointments(workspace.id) as typeof appointments)).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not update the appointment"));
-              }}>
-                {["scheduled", "confirmed", "arrived", "in_consultation", "completed", "cancelled", "no_show"].map((status) => <option key={status} value={status}>{status}</option>)}
-              </select>
-              <button type="button" className="text-xs font-medium text-danger" onClick={() => {
-                if (!window.confirm("Delete this appointment?")) return;
-                void removeAppointment(item.id).then(async () => { onNotice("Appointment deleted."); setAppointments(await listAppointments(workspace.id) as typeof appointments); }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not delete the appointment"));
-              }}>Delete</button>
-            </span>
-          </div>
-        ))}
-      </form>
-      <form className="space-y-2 rounded-lg border border-line bg-white p-4 lg:col-span-2" onSubmit={(event) => submit(event, async (data) => {
-          await saveConsultation({
+        )}
+      </section>
+
+      <details className="rounded-2xl border border-line bg-white p-4">
+        <summary className="cursor-pointer text-sm font-semibold">Register a patient</summary>
+        <form className="mt-3 grid gap-3 sm:grid-cols-2" onSubmit={(event) => submit(event, async (data) => {
+          const code = await createPatient({
             organizationId: workspace.organizationId,
             workspaceId: workspace.id,
-            patientId: data.get("patient") as string,
-            diagnosis: data.get("diagnosis") as string,
-            plan: data.get("plan") as string,
-            medicine: data.get("medicine") as string,
-            dosage: data.get("dosage") as string,
-            followUpOn: (data.get("follow") as string) || null,
+            fullName: data.get("name") as string,
+            mobile: data.get("mobile") as string,
+            place: data.get("place") as string,
+            email: data.get("email") as string,
+            gender: data.get("gender") as string,
+            dateOfBirth: (data.get("dob") as string) || null,
+            address: data.get("address") as string,
+            emergencyContact: data.get("emergency") as string,
+            notes: data.get("notes") as string,
           });
-          onNotice("Consultation saved.");
+          onNotice(`Patient ${code} saved.`);
+          reload();
         }, onError)}>
-          <h2 className="font-semibold">Consultation, diagnosis, and prescription</h2>
-          <select name="patient" className="w-full rounded-md border border-line px-2 py-2">{patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.full_name}</option>)}</select>
-          <input name="diagnosis" placeholder="Diagnosis" className="w-full rounded-md border border-line px-2 py-2" />
-          <input name="plan" placeholder="Treatment plan and notes" className="w-full rounded-md border border-line px-2 py-2" />
-          <input name="medicine" placeholder="Prescription" className="w-full rounded-md border border-line px-2 py-2" />
-          <input name="dosage" placeholder="Dosage" className="w-full rounded-md border border-line px-2 py-2" />
-          <input name="follow" type="date" className="w-full rounded-md border border-line px-2 py-2" />
-          <button className="rounded-md bg-navy px-3 py-2 text-sm text-white" type="submit">Save consultation</button>
+          <label className="text-sm sm:col-span-2">Full name<input name="name" required className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
+          <label className="text-sm">Date of birth<input name="dob" type="date" className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
+          <label className="text-sm">Gender
+            <select name="gender" className="mt-1 h-11 w-full rounded-md border border-line px-3"><option value="female">Female</option><option value="male">Male</option><option value="other">Other</option></select>
+          </label>
+          <label className="text-sm">Mobile<input name="mobile" required inputMode="tel" className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
+          <label className="text-sm">Email<input name="email" type="email" className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
+          <label className="text-sm sm:col-span-2">Address<input name="address" className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
+          <label className="text-sm">Place<input name="place" className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
+          <label className="text-sm">Emergency contact<input name="emergency" className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
+          <label className="text-sm sm:col-span-2">Notes<textarea name="notes" className="mt-1 min-h-16 w-full rounded-md border border-line px-3 py-2" /></label>
+          <button className="min-h-11 rounded-md bg-navy px-3 text-sm text-white sm:col-span-2" type="submit">Save patient</button>
         </form>
-      <ClinicCare
-        workspace={workspace}
-        patients={patients}
-        doctors={doctors}
-        onSaved={onNotice}
-        onError={onError}
-      />
+      </details>
+
+      <section className="space-y-3 rounded-2xl border border-line bg-white p-4">
+        <h2 className="font-semibold">Queue</h2>
+        <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => submit(event, async (data) => {
+          await createAppointment({
+            organizationId: workspace.organizationId,
+            workspaceId: workspace.id,
+            patientId,
+            doctorId: doctorId || null,
+            startsAt: new Date(data.get("when") as string).toISOString(),
+            reason: data.get("reason") as string,
+            status: data.get("walkin") === "on" ? "arrived" : "scheduled",
+          });
+          onNotice("Appointment saved.");
+          reload();
+        }, onError)}>
+          <label className="text-sm">Patient
+            <select required value={patientId} onChange={(event) => setPatientId(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-line px-3">
+              <option value="">Choose a patient</option>
+              {patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.full_name}</option>)}
+            </select>
+          </label>
+          <label className="text-sm">Doctor
+            <select value={doctorId} onChange={(event) => setDoctorId(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-line px-3">
+              <option value="">No doctor yet</option>
+              {doctors.map((item) => <option key={item.userId} value={item.userId}>{item.name}</option>)}
+            </select>
+          </label>
+          <label className="text-sm">When<input name="when" type="datetime-local" required className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
+          <label className="text-sm">Reason<input name="reason" className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
+          <label className="flex min-h-11 items-center gap-2 text-sm sm:col-span-2"><input name="walkin" type="checkbox" /> Walk-in, mark arrived</label>
+          <button className="min-h-11 rounded-md bg-navy px-3 text-sm text-white sm:col-span-2" type="submit">Book</button>
+        </form>
+        <div className="space-y-2">
+          {appointments.map((item) => (
+            <article key={item.id} className="touch-card space-y-2 rounded-2xl border border-line p-3 text-sm">
+              <button type="button" className="text-left" onClick={() => setOpenId(item.patientId)}>
+                <p className="font-medium">{item.patientName}</p>
+                <p className="mt-1 text-muted">{whenLabel(item.startsAt)}{item.reason ? ` · ${item.reason}` : ""}</p>
+              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <select value={item.status} onChange={(event) => {
+                  void updateAppointment(item.id, { status: event.target.value }).then(reload).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not update the appointment"));
+                }} className="h-11 min-w-0 flex-1 rounded-md border border-line px-2 capitalize">
+                  {["scheduled", "confirmed", "arrived", "in_consultation", "completed", "cancelled", "no_show"].map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}
+                </select>
+                <button type="button" className="min-h-11 text-sm font-medium text-danger" onClick={() => {
+                  if (!window.confirm("Delete this appointment?")) return;
+                  void removeAppointment(item.id).then(() => { onNotice("Appointment deleted."); reload(); }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not delete the appointment"));
+                }}>Delete</button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <Sheet open={Boolean(open)} onOpenChange={(value) => { if (!value) setOpenId(""); }}>
+        {open ? (
+          <SheetContent title={open.full_name}>
+            <SheetHeader>
+              <p className="text-lg font-semibold">Patient history</p>
+              <p className="text-sm text-muted">Treatments, products used, and how long each medicine was given.</p>
+            </SheetHeader>
+            <SheetBody>
+              <PatientHistory
+                patient={open}
+                workspace={workspace}
+                doctors={doctors}
+                currentUserId={productionUser?.userId ?? ""}
+                onChanged={(next) => {
+                  setPatients((current) => current.map((item) => item.id === next.id ? next : item));
+                  reload();
+                }}
+                onDeleted={() => { setOpenId(""); onNotice("Patient deleted."); reload(); }}
+                onNotice={onNotice}
+                onError={onError}
+              />
+            </SheetBody>
+          </SheetContent>
+        ) : null}
+      </Sheet>
     </div>
   );
+}
+
+function whenLabel(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 function applyDetails(student: DeskStudent, details: StudentDetails): DeskStudent {

@@ -888,6 +888,9 @@ function PatientFile({ record, doctors, onRemoveProduct }: { record: PatientReco
                 <p className="font-medium">{visit.title}</p>
                 <p className="mt-1 text-xs text-muted">{formatWhen(visit.when)}</p>
                 {visit.detail ? <p className="mt-2 whitespace-pre-wrap">{visit.detail}</p> : null}
+                {visit.prescriptions.map((item) => (
+                  <p key={item.id || item.medicine} className="mt-2">{[item.medicine, item.dosage, item.frequency, item.duration ? `for ${item.duration}` : ""].filter(Boolean).join(" · ")}</p>
+                ))}
                 {visit.notes ? <p className="mt-2 text-muted">{visit.notes}</p> : null}
                 {visit.products.length > 0 ? (
                   <ul className="mt-2 space-y-1">
