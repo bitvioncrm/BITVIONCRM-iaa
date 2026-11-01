@@ -4,6 +4,7 @@ import { BusinessBoard } from "@/components/dashboard/BusinessBoard";
 import { StudentFile } from "@/components/institute/StudentFile";
 import { detailsFromStudent, StudentForm } from "@/components/institute/StudentForm";
 import { Portrait } from "@/components/shared/Portrait";
+import { PatientHistory } from "@/components/clinic/PatientHistory";
 import { Sheet, SheetBody, SheetContent, SheetHeader } from "@/components/ui/sheet";
 import { useAuth } from "@/context/AuthContext";
 import { useDesk } from "@/context/DeskContext";
@@ -12,8 +13,7 @@ import { loadDoctorPulse } from "@/services/clinic-care";
 import { formatClock } from "@/lib/call-time";
 import { phoneTel } from "@/lib/phone";
 import { rangeBounds, type RangeKey } from "@/lib/range";
-import { callDeskReport, countRows, listDeskMoney, listDeskPatients, listDeskStudents, listFollowUps, clearDeskCache, loadPatientRecord, removeAppointment, removePatient, removePatientProduct, removeStudent, savePersonPhoto, saveStudentDetails, updateAppointment, updatePatient, type DeskMoney, type DeskPatient, type DeskStudent, type PatientRecord, type PatientTreatment, type StudentDetails } from "@/services/production-ops";
-import { listCareProducts, recordPatientCare } from "@/services/clinic-care";
+import { callDeskReport, countRows, listDeskMoney, listDeskPatients, listDeskStudents, listFollowUps, clearDeskCache, removeAppointment, removePatient, removeStudent, savePersonPhoto, saveStudentDetails, updateAppointment, updatePatient, type DeskMoney, type DeskPatient, type DeskStudent, type StudentDetails } from "@/services/production-ops";
 import { listDoctors } from "@/services/production-leads";
 import { inr } from "@/lib/money";
 
@@ -77,44 +77,29 @@ function DoctorDashboard() {
   const [pulse, setPulse] = useState({ consulted: 0, patients: 0, pending: 0, units: 0, days: [] as Array<{ day: string; sold: number }> });
   const [cards, setCards] = useState<DeskPatient[]>([]);
   const [open, setOpen] = useState<DeskPatient | null>(null);
-  const [record, setRecord] = useState<PatientRecord | null>(null);
   const [doctors, setDoctors] = useState<Array<{ userId: string; name: string }>>([]);
-  const [careProducts, setCareProducts] = useState<Array<{ id: string; name: string; stock: number; price: number }>>([]);
-  const [issueProduct, setIssueProduct] = useState("");
-  const [issueQty, setIssueQty] = useState("1");
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState("");
   const [formError, setFormError] = useState("");
-  const [edit, setEdit] = useState({ fullName: "", mobile: "", email: "", gender: "other", dateOfBirth: "", place: "", address: "", emergency: "", notes: "" });
   const reloadPulse = () => {
     if (!clinic) return;
     const bounds = rangeBounds(range, customFrom, customTo);
     void loadDoctorPulse(clinic.id, bounds.fromDate, bounds.toDate, bounds.from, bounds.to).then(setPulse).catch(() => setPulse({ consulted: 0, patients: 0, pending: 0, units: 0, days: [] }));
+  };
+  const reloadCards = () => {
+    if (!clinic) return;
+    clearDeskCache();
+    void listDeskPatients(clinic.id).then((rows) => {
+      setCards(rows);
+      setOpen((current) => current ? rows.find((item) => item.id === current.id) ?? current : current);
+    }).catch(() => setCards([]));
   };
   useEffect(() => {
     if (!clinic) return;
     reloadPulse();
     void listDeskPatients(clinic.id).then(setCards).catch(() => setCards([]));
     void listDoctors(clinic.id).then(setDoctors).catch(() => setDoctors([]));
-    void listCareProducts(clinic.id).then(setCareProducts).catch(() => setCareProducts([]));
+    const timer = window.setInterval(reloadCards, 15000);
+    return () => window.clearInterval(timer);
   }, [clinic, range, customFrom, customTo]);
-  useEffect(() => {
-    if (!open) return;
-    setEdit({
-      fullName: open.full_name,
-      mobile: open.mobile,
-      email: open.email,
-      gender: open.gender || "other",
-      dateOfBirth: open.date_of_birth ?? "",
-      place: open.place,
-      address: open.address,
-      emergency: open.emergency_contact,
-      notes: open.notes,
-    });
-    setRecord(null);
-    setFormError("");
-    void loadPatientRecord(open.id).then(setRecord).catch((reason: unknown) => setFormError(reason instanceof Error ? reason.message : "Could not open this patient"));
-  }, [open?.id]);
   return (
     <Shell title="Doctor">
       {error ? <p className="text-sm text-danger">{error}</p> : null}
@@ -140,15 +125,19 @@ function DoctorDashboard() {
         <h2 className="text-sm font-semibold">Patients</h2>
         {cards.length === 0 ? <p className="mt-2 text-sm text-muted">No patients registered yet.</p> : (
           <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {cards.map((patient) => (
-              <button key={patient.id} type="button" onClick={() => { setNote(""); setOpen(patient); }} className="touch-card flex gap-3 rounded-2xl border border-line bg-white p-3 text-left hover:border-[#c6a15b]">
+            {cards.map((patient) => {
+              const latest = [...patient.treatments].sort((left, right) => right.performed_on.localeCompare(left.performed_on))[0];
+              return (
+              <button key={patient.id} type="button" onClick={() => setOpen(patient)} className="touch-card flex gap-3 rounded-2xl border border-line bg-white p-3 text-left hover:border-[#c6a15b]">
                 <Portrait name={patient.full_name} path={patient.photo_path} />
                 <span className="min-w-0">
                   <span className="block font-medium">{patient.full_name}</span>
                   <span className="mt-1 block text-xs text-muted">{patient.patient_code} · {patient.mobile || "No mobile"}</span>
+                  <span className="mt-2 block text-sm">{latest ? `Last visit ${latest.performed_on} · ${latest.title}` : "Registered by reception · no treatment yet"}</span>
                 </span>
               </button>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
@@ -159,102 +148,24 @@ function DoctorDashboard() {
         ))}
       </section>
       <Sheet open={Boolean(open)} onOpenChange={(next) => { if (!next) setOpen(null); }}>
-        {open ? (
+        {open && clinic ? (
           <SheetContent title={open.full_name}>
             <SheetHeader>
-              <div className="flex items-center gap-3">
-                <Portrait name={open.full_name} path={open.photo_path} />
-                <div>
-                  <p className="font-semibold">{open.full_name}</p>
-                  <p className="text-xs text-muted">{open.patient_code}</p>
-                </div>
-              </div>
+              <p className="text-lg font-semibold">Patient from reception</p>
+              <p className="text-sm text-muted">Add the treatment, procedure, products, and how long the medicine is given.</p>
             </SheetHeader>
-            <SheetBody className="space-y-4">
-              {note ? <p className="text-sm text-emerald-700">{note}</p> : null}
-              {formError ? <p className="text-sm text-danger">{formError}</p> : null}
-              <form className="grid gap-2 sm:grid-cols-2" onSubmit={(event) => {
-                event.preventDefault();
-                setBusy(true);
-                void updatePatient(open.id, {
-                  fullName: edit.fullName,
-                  mobile: edit.mobile,
-                  place: edit.place,
-                  email: edit.email,
-                  gender: edit.gender,
-                  dateOfBirth: edit.dateOfBirth || null,
-                  address: edit.address,
-                  emergencyContact: edit.emergency,
-                  notes: edit.notes,
-                }).then(() => {
-                  const next = { ...open, full_name: edit.fullName.trim(), mobile: edit.mobile.trim(), email: edit.email.trim(), gender: edit.gender, date_of_birth: edit.dateOfBirth || null, place: edit.place.trim(), address: edit.address.trim(), emergency_contact: edit.emergency.trim(), notes: edit.notes.trim() };
-                  setCards((current) => current.map((item) => item.id === open.id ? next : item));
-                  setOpen(next);
-                  setNote("Patient saved.");
-                }).catch((reason: unknown) => setFormError(reason instanceof Error ? reason.message : "Could not save the patient")).finally(() => setBusy(false));
-              }}>
-                <label className="text-sm sm:col-span-2">Name<input required value={edit.fullName} onChange={(event) => setEdit({ ...edit, fullName: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
-                <label className="text-sm">Mobile<input value={edit.mobile} inputMode="tel" onChange={(event) => setEdit({ ...edit, mobile: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
-                <label className="text-sm">Email<input type="email" value={edit.email} onChange={(event) => setEdit({ ...edit, email: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
-                <label className="text-sm">Gender
-                  <select value={edit.gender} onChange={(event) => setEdit({ ...edit, gender: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line px-3">
-                    <option value="female">Female</option>
-                    <option value="male">Male</option>
-                    <option value="other">Other</option>
-                  </select>
-                </label>
-                <label className="text-sm">Date of birth<input type="date" value={edit.dateOfBirth} onChange={(event) => setEdit({ ...edit, dateOfBirth: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
-                <label className="text-sm">Place<input value={edit.place} onChange={(event) => setEdit({ ...edit, place: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
-                <label className="text-sm">Emergency contact<input value={edit.emergency} onChange={(event) => setEdit({ ...edit, emergency: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
-                <label className="text-sm sm:col-span-2">Address<textarea value={edit.address} onChange={(event) => setEdit({ ...edit, address: event.target.value })} className="mt-1 min-h-16 w-full rounded-md border border-line px-3 py-2" /></label>
-                <label className="text-sm sm:col-span-2">Notes<textarea value={edit.notes} onChange={(event) => setEdit({ ...edit, notes: event.target.value })} className="mt-1 min-h-16 w-full rounded-md border border-line px-3 py-2" /></label>
-                <button type="submit" disabled={busy} className="min-h-11 rounded-md bg-navy px-3 text-sm text-white sm:col-span-2">{busy ? "Saving" : "Save patient"}</button>
-              </form>
-              <form className="grid gap-2 rounded-xl border border-line p-3 sm:grid-cols-2" onSubmit={(event) => {
-                event.preventDefault();
-                const count = Number(issueQty);
-                if (!issueProduct || count <= 0) return;
-                setBusy(true);
-                void recordPatientCare({
-                  patientId: open.id,
-                  doctorId: productionUser?.userId || null,
-                  procedure1: "Products",
-                  procedure2: "",
-                  performedOn: new Date().toISOString().slice(0, 10),
-                  notes: "",
-                  items: [{ productId: issueProduct, quantity: count }],
-                }).then(async () => {
-                  clearDeskCache();
-                  const [nextRecord, nextCards] = await Promise.all([loadPatientRecord(open.id), clinic ? listDeskPatients(clinic.id) : Promise.resolve(null)]);
-                  setRecord(nextRecord);
-                  if (nextCards) setCards(nextCards);
-                  setCareProducts((current) => current.map((item) => item.id === issueProduct ? { ...item, stock: Math.max(0, item.stock - count) } : item));
-                  setIssueQty("1");
-                  setNote("Product added. Stock is reduced.");
-                  reloadPulse();
-                  window.dispatchEvent(new CustomEvent("bitvion-stock"));
-                }).catch((reason: unknown) => setFormError(reason instanceof Error ? reason.message : "Could not add the product")).finally(() => setBusy(false));
-              }}>
-                <h3 className="text-sm font-semibold sm:col-span-2">Add a product</h3>
-                <label className="text-sm sm:col-span-2">Product
-                  <select required value={issueProduct} onChange={(event) => setIssueProduct(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-line px-3">
-                    <option value="">Choose a product</option>
-                    {careProducts.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.stock} in stock · {inr(item.price)}</option>)}
-                  </select>
-                </label>
-                <label className="text-sm">Quantity<input inputMode="numeric" value={issueQty} onChange={(event) => setIssueQty(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
-                <button type="submit" disabled={busy} className="min-h-11 rounded-md bg-navy px-3 text-sm text-white sm:self-end">{busy ? "Saving" : "Add product and reduce stock"}</button>
-              </form>
-              {record ? <PatientFile record={record} doctors={doctors} onRemoveProduct={(itemId) => {
-                void removePatientProduct(itemId).then(async () => {
-                  clearDeskCache();
-                  setRecord(await loadPatientRecord(open.id));
-                  if (clinic) setCareProducts(await listCareProducts(clinic.id));
-                  setNote("Product removed. Stock is restored.");
-                  reloadPulse();
-                  window.dispatchEvent(new CustomEvent("bitvion-stock"));
-                }).catch((reason: unknown) => setFormError(reason instanceof Error ? reason.message : "Could not remove the product"));
-              }} /> : <p className="text-sm text-muted">Loading treatments and products…</p>}
+            <SheetBody>
+              <PatientHistory
+                patient={open}
+                workspace={clinic}
+                doctors={doctors}
+                currentUserId={productionUser?.userId ?? ""}
+                onChanged={() => { reloadCards(); reloadPulse(); }}
+                onDeleted={() => { setOpen(null); reloadCards(); reloadPulse(); }}
+                onNotice={() => undefined}
+                onError={setFormError}
+              />
+              {formError ? <p className="mt-3 text-sm text-danger">{formError}</p> : null}
             </SheetBody>
           </SheetContent>
         ) : null}
@@ -273,24 +184,17 @@ function ReceptionDashboard() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [open, setOpen] = useState<DeskPatient | null>(null);
-  const [record, setRecord] = useState<PatientRecord | null>(null);
   const [recordError, setRecordError] = useState("");
   const [doctors, setDoctors] = useState<Array<{ userId: string; name: string }>>([]);
-  const [careProducts, setCareProducts] = useState<Array<{ id: string; name: string; stock: number; price: number }>>([]);
-  const [issueProduct, setIssueProduct] = useState("");
-  const [issueQty, setIssueQty] = useState("1");
-  const [issueDoctor, setIssueDoctor] = useState("");
   const [cardBusy, setCardBusy] = useState(false);
   const [cardNote, setCardNote] = useState("");
   const [patientEdit, setPatientEdit] = useState({ fullName: "", mobile: "", email: "", gender: "other", dateOfBirth: "", place: "", address: "", emergency: "", notes: "" });
   useEffect(() => {
     if (!clinic) return;
     void listDoctors(clinic.id).then(setDoctors).catch(() => setDoctors([]));
-    void listCareProducts(clinic.id).then(setCareProducts).catch(() => setCareProducts([]));
   }, [clinic]);
   useEffect(() => {
     if (!open) return;
-    const patientId = open.id;
     setPatientEdit({
       fullName: open.full_name,
       mobile: open.mobile,
@@ -302,18 +206,19 @@ function ReceptionDashboard() {
       emergency: open.emergency_contact,
       notes: open.notes,
     });
-    let active = true;
-    setRecord(null);
     setRecordError("");
-    void loadPatientRecord(patientId)
-      .then((row) => { if (active) setRecord(row); })
-      .catch((reason: unknown) => { if (active) setRecordError(reason instanceof Error ? reason.message : "Could not load this patient"); });
-    return () => { active = false; };
   }, [open]);
   useEffect(() => {
     if (!clinic) return;
     void listDeskPatients(clinic.id).then(setCards).catch(() => setCards([]));
     void listDeskMoney(clinic.id).then(setMoney).catch(() => setMoney([]));
+    const refresh = () => {
+      clearDeskCache();
+      void listDeskPatients(clinic.id).then(setCards).catch(() => undefined);
+      void listDeskMoney(clinic.id).then(setMoney).catch(() => undefined);
+    };
+    const timer = window.setInterval(refresh, 15000);
+    return () => window.clearInterval(timer);
   }, [clinic]);
   const span = useMemo(() => boundsFor(filter, customFrom, customTo), [filter, customFrom, customTo]);
   const moneyInRange = useMemo(() => money.filter((row) => filter === "all" || inside(moneyStamp(row.at), span.from, span.to)), [filter, money, span.from, span.to]);
@@ -379,8 +284,10 @@ function ReceptionDashboard() {
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {shown.map((patient) => {
             const visits = [...patient.appointments].sort((left, right) => left.starts_at.localeCompare(right.starts_at));
-            const first = patient.treatments[0];
+            const completed = [...patient.treatments].sort((left, right) => right.performed_on.localeCompare(left.performed_on));
+            const first = [...patient.treatments].sort((left, right) => left.performed_on.localeCompare(right.performed_on))[0];
             const latest = visits[visits.length - 1];
+            const latestCare = completed[0];
             return (
               <div key={patient.id} className="touch-card rounded-2xl border border-line bg-white p-4 text-left shadow-sm sm:transition sm:hover:-translate-y-0.5 sm:hover:border-[#c6a15b] sm:hover:shadow-md">
               <button type="button" onClick={() => setOpen(patient)} className="w-full text-left">
@@ -395,6 +302,13 @@ function ReceptionDashboard() {
                 <p className="mt-3 text-sm text-ink">{patient.mobile || "No mobile"}{patient.place ? ` · ${patient.place}` : ""}</p>
                 <p className="mt-1 text-xs text-muted">{[patient.gender, patient.age == null ? "" : `Age ${patient.age}`, patient.address].filter(Boolean).join(" · ")}</p>
                 <p className="mt-3 text-sm"><span className="font-medium">First treatment </span>{first ? `${formatWhen(first.performed_on)} · ${first.title}` : "Not recorded yet"}</p>
+                <p className="mt-1 text-sm"><span className="font-medium">Doctor completed </span>{latestCare ? `${formatWhen(latestCare.performed_on)} · ${latestCare.title}` : "Not completed yet"}</p>
+                {completed.length > 0 ? (
+                  <div className="mt-2 space-y-1">
+                    <p className="text-xs font-medium tracking-wide text-muted uppercase">Treatments and procedures</p>
+                    {completed.map((item) => <p key={item.id} className="text-sm">{formatWhen(item.performed_on)} · {item.title}</p>)}
+                  </div>
+                ) : null}
                 <div className="mt-2 space-y-1">
                   <p className="text-xs font-medium tracking-wide text-muted uppercase">Every visit</p>
                   {visits.length === 0 ? <p className="text-sm text-muted">No visits yet.</p> : visits.map((item) => (
@@ -501,46 +415,27 @@ function ReceptionDashboard() {
                   }}>Delete</button>
                 </div>
               </form>
-              <form className="grid gap-2 rounded-xl border border-line p-3 sm:grid-cols-2" onSubmit={(event) => {
-                event.preventDefault();
-                const count = Number(issueQty);
-                if (!issueProduct || count <= 0) return;
-                setCardBusy(true);
-                void recordPatientCare({
-                  patientId: open.id,
-                  doctorId: issueDoctor || null,
-                  procedure1: "Products",
-                  procedure2: "",
-                  performedOn: new Date().toISOString().slice(0, 10),
-                  notes: "",
-                  items: [{ productId: issueProduct, quantity: count }],
-                }).then(async () => {
-                  clearDeskCache();
-                  const [nextRecord, nextCards] = await Promise.all([loadPatientRecord(open.id), clinic ? listDeskPatients(clinic.id) : Promise.resolve(null)]);
-                  setRecord(nextRecord);
-                  if (nextCards) setCards(nextCards);
-                  setCareProducts((current) => current.map((item) => item.id === issueProduct ? { ...item, stock: Math.max(0, item.stock - count) } : item));
-                  setIssueQty("1");
-                  setCardNote("Product added. Stock is reduced.");
-                  window.dispatchEvent(new CustomEvent("bitvion-stock"));
-                }).catch((reason: unknown) => setRecordError(reason instanceof Error ? reason.message : "Could not add the product")).finally(() => setCardBusy(false));
-              }}>
-                <h3 className="text-sm font-semibold sm:col-span-2">Add a product</h3>
-                <label className="text-sm sm:col-span-2">Product
-                  <select required value={issueProduct} onChange={(event) => setIssueProduct(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-line px-3">
-                    <option value="">Choose a product</option>
-                    {careProducts.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.stock} in stock · {inr(item.price)}</option>)}
-                  </select>
-                </label>
-                <label className="text-sm">Quantity<input inputMode="numeric" value={issueQty} onChange={(event) => setIssueQty(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
-                <label className="text-sm">Doctor
-                  <select value={issueDoctor} onChange={(event) => setIssueDoctor(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-line px-3">
-                    <option value="">No doctor yet</option>
-                    {doctors.map((item) => <option key={item.userId} value={item.userId}>{item.name}</option>)}
-                  </select>
-                </label>
-                <button type="submit" disabled={cardBusy} className="min-h-11 rounded-md bg-navy px-3 text-sm text-white sm:col-span-2">{cardBusy ? "Saving" : "Add product and reduce stock"}</button>
-              </form>
+              {clinic ? (
+                <PatientHistory
+                  patient={open}
+                  workspace={clinic}
+                  doctors={doctors}
+                  currentUserId=""
+                  showDetails={false}
+                  showAppointments={false}
+                  onChanged={() => {
+                    clearDeskCache();
+                    void listDeskPatients(clinic.id).then((rows) => {
+                      setCards(rows);
+                      const next = rows.find((item) => item.id === open.id);
+                      if (next) setOpen(next);
+                    }).catch(() => undefined);
+                  }}
+                  onDeleted={() => setOpen(null)}
+                  onNotice={setCardNote}
+                  onError={setRecordError}
+                />
+              ) : null}
               <div>
                 <h3 className="text-sm font-semibold">Bookings</h3>
                 {open.appointments.length === 0 ? <p className="mt-2 text-sm text-muted">No appointments yet.</p> : open.appointments.map((item) => (
@@ -573,15 +468,6 @@ function ReceptionDashboard() {
                 ))}
               </div>
               {recordError ? <p className="text-sm text-danger">{recordError}</p> : null}
-              {!record && !recordError ? <p className="text-sm text-muted">Loading treatments and products…</p> : null}
-              {record ? <PatientFile record={record} doctors={doctors} onRemoveProduct={(itemId) => {
-                void removePatientProduct(itemId).then(async () => {
-                  setRecord(await loadPatientRecord(open.id));
-                  if (clinic) setCareProducts(await listCareProducts(clinic.id));
-                  setCardNote("Product removed. Stock is restored.");
-                  window.dispatchEvent(new CustomEvent("bitvion-stock"));
-                }).catch((reason: unknown) => setRecordError(reason instanceof Error ? reason.message : "Could not remove the product"));
-              }} /> : null}
             </SheetBody>
           </SheetContent>
         ) : null}
@@ -867,72 +753,5 @@ function doctorName(doctorId: string, doctors: Array<{ userId: string; name: str
   if (!row) return "Doctor";
   const [person, role] = row.name.split(" · ");
   return person && person !== "Doctor" ? person : role || "Doctor";
-}
-
-function PatientFile({ record, doctors, onRemoveProduct }: { record: PatientRecord; doctors: Array<{ userId: string; name: string }>; onRemoveProduct?: (itemId: string) => void }) {
-  const groups = new Map<string, PatientTreatment[]>();
-  for (const treatment of record.treatments) {
-    const name = treatment.doctorId ? doctorName(treatment.doctorId, doctors) : "Doctor not recorded";
-    groups.set(name, [...(groups.get(name) ?? []), treatment]);
-  }
-  const products = record.treatments.flatMap((treatment) => treatment.products.map((item) => ({ ...item, when: treatment.when, doctor: treatment.doctorId ? doctorName(treatment.doctorId, doctors) : "Doctor not recorded" })));
-  return (
-    <div className="space-y-5">
-      <section>
-        <h3 className="text-sm font-semibold">Treatments by doctor</h3>
-        {record.treatments.length === 0 ? <p className="mt-2 text-sm text-muted">No treatments recorded yet.</p> : [...groups].map(([name, visits]) => (
-          <div key={name} className="mt-3">
-            <p className="text-sm font-medium text-[#8a6a2f]">{name}</p>
-            {visits.map((visit) => (
-              <article key={visit.id} className="mt-2 rounded-xl border border-line px-3 py-3 text-sm">
-                <p className="font-medium">{visit.title}</p>
-                <p className="mt-1 text-xs text-muted">{formatWhen(visit.when)}</p>
-                {visit.detail ? <p className="mt-2 whitespace-pre-wrap">{visit.detail}</p> : null}
-                {visit.prescriptions.map((item) => (
-                  <p key={item.id || item.medicine} className="mt-2">{[item.medicine, item.dosage, item.frequency, item.duration ? `for ${item.duration}` : ""].filter(Boolean).join(" · ")}</p>
-                ))}
-                {visit.notes ? <p className="mt-2 text-muted">{visit.notes}</p> : null}
-                {visit.products.length > 0 ? (
-                  <ul className="mt-2 space-y-1">
-                    {visit.products.map((item, index) => (
-                      <li key={`${visit.id}-${index}`}>{item.name} × {item.quantity} · {inr(item.amount)}</li>
-                    ))}
-                  </ul>
-                ) : null}
-              </article>
-            ))}
-          </div>
-        ))}
-      </section>
-      <section>
-        <h3 className="text-sm font-semibold">Products bought</h3>
-        {products.length === 0 ? <p className="mt-2 text-sm text-muted">No products bought yet.</p> : products.map((item, index) => (
-          <div key={`${item.id || item.name}-${index}`} className="mt-2 flex items-start justify-between gap-3 rounded-xl border border-line px-3 py-2 text-sm">
-            <div>
-              <p className="font-medium">{item.name} × {item.quantity}</p>
-              <p className="mt-1 text-xs text-muted">{formatWhen(item.when)} · {item.doctor} · {inr(item.amount)}</p>
-            </div>
-            {onRemoveProduct && item.id ? <button type="button" className="min-h-11 shrink-0 text-sm font-medium text-danger" onClick={() => onRemoveProduct(item.id)}>Remove</button> : null}
-          </div>
-        ))}
-      </section>
-      <section>
-        <h3 className="text-sm font-semibold">Bills and balance</h3>
-        {record.bills.length === 0 ? <p className="mt-2 text-sm text-muted">No bills yet.</p> : record.bills.map((bill) => (
-          <article key={bill.id} className="mt-2 rounded-xl border border-line px-3 py-3 text-sm">
-            <div className="flex items-center justify-between gap-3">
-              <p className="font-medium">{bill.number || "Invoice"}</p>
-              <StatusChip status={bill.status} />
-            </div>
-            <p className="mt-1 text-xs text-muted">{bill.issuedOn}</p>
-            {bill.items.map((item, index) => (
-              <p key={`${bill.id}-${index}`} className="mt-2">{item.description} × {item.quantity} · {inr(item.amount)}</p>
-            ))}
-            <p className="mt-2">Total {inr(bill.total)} · Paid {inr(bill.paid)} · Balance {inr(bill.balance)}</p>
-          </article>
-        ))}
-      </section>
-    </div>
-  );
 }
 

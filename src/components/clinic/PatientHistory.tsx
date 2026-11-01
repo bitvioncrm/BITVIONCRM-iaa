@@ -85,6 +85,8 @@ export function PatientHistory({
   onDeleted,
   onNotice,
   onError,
+  showDetails = true,
+  showAppointments = true,
 }: {
   patient: DeskPatient;
   workspace: WorkspaceOption;
@@ -94,6 +96,8 @@ export function PatientHistory({
   onDeleted: () => void;
   onNotice: (message: string) => void;
   onError: (message: string) => void;
+  showDetails?: boolean;
+  showAppointments?: boolean;
 }) {
   const [record, setRecord] = useState<PatientRecord | null>(null);
   const [edits, setEdits] = useState<Record<string, VisitEdit>>({});
@@ -123,6 +127,8 @@ export function PatientHistory({
 
   return (
     <div className="space-y-4">
+      {showDetails ? (
+      <>
       <div className="flex items-center gap-3">
         <Portrait name={patient.full_name} path={patient.photo_path} className="size-16 text-xl" />
         <div className="min-w-0">
@@ -184,6 +190,8 @@ export function PatientHistory({
           }}>Delete</button>
         </div>
       </form>
+      </>
+      ) : null}
 
       <section className="space-y-3">
         <h3 className="text-sm font-semibold">Previous treatments</h3>
@@ -216,7 +224,7 @@ export function PatientHistory({
                         <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-line px-3 py-2 text-sm">
                           <span>{item.name} × {item.quantity} · {inr(item.amount)}</span>
                           {item.id ? <button type="button" className="min-h-11 text-sm font-medium text-danger" onClick={() => {
-                            void removePatientProduct(item.id).then(reload).then(() => onNotice("Product removed. Stock is restored.")).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not remove the product"));
+                            void removePatientProduct(item.id).then(reload).then(() => { onNotice("Product removed. Stock is restored."); onChanged(patient); }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not remove the product"));
                           }}>Remove</button> : null}
                         </div>
                       ))}
@@ -240,12 +248,12 @@ export function PatientHistory({
                   const run = visit.kind === "procedure"
                     ? updateProcedure(visit.id, { procedure1: edit.procedure1, procedure2: edit.procedure2, performedOn: edit.performedOn, notes: edit.notes, doctorId: edit.doctorId || null })
                     : updateConsultation(visit.id, { organizationId: workspace.organizationId, workspaceId: workspace.id, diagnosis: edit.diagnosis, plan: edit.plan, followUpOn: edit.followUpOn || null, prescriptionId: edit.prescriptionId, medicine: edit.medicine, dosage: edit.dosage, frequency: edit.frequency, duration: edit.duration, instructions: edit.instructions });
-                  void run.then(reload).then(() => onNotice("Visit saved.")).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not save this visit"));
+                  void run.then(reload).then(() => { onNotice("Visit saved."); onChanged(patient); }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not save this visit"));
                 }}>Save visit</button>
                 <button type="button" className="min-h-11 text-sm font-medium text-danger" onClick={() => {
                   if (!window.confirm("Delete this visit?")) return;
                   const run = visit.kind === "procedure" ? removeProcedure(visit.id) : removeConsultation(visit.id);
-                  void run.then(reload).then(() => onNotice("Visit deleted.")).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not delete this visit"));
+                  void run.then(reload).then(() => { onNotice("Visit deleted."); onChanged(patient); }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not delete this visit"));
                 }}>Delete visit</button>
               </div>
             </article>
@@ -271,6 +279,7 @@ export function PatientHistory({
           setProcedure2("");
           setIssueQty("1");
           onNotice("Treatment saved. Stock is reduced for any product used.");
+          onChanged(patient);
           window.dispatchEvent(new CustomEvent("bitvion-stock"));
         }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not save the treatment")).finally(() => setBusy(false));
       }}>
@@ -304,6 +313,7 @@ export function PatientHistory({
         }).then(reload).then(() => {
           setConsult({ diagnosis: "", plan: "", medicine: "", dosage: "", frequency: "", duration: "", followUpOn: "" });
           onNotice("Consultation saved.");
+          onChanged(patient);
         }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not save the consultation")).finally(() => setBusy(false));
       }}>
         <h3 className="text-sm font-semibold sm:col-span-2">Add a consultation</h3>
@@ -317,12 +327,14 @@ export function PatientHistory({
         <button type="submit" disabled={busy} className="min-h-11 rounded-md bg-navy px-3 text-sm text-white sm:self-end">{busy ? "Saving" : "Save consultation"}</button>
       </form>
 
+      {showAppointments ? (
       <section className="space-y-2">
         <h3 className="text-sm font-semibold">Appointments</h3>
         {patient.appointments.length === 0 ? <p className="text-sm text-muted">No appointments yet.</p> : patient.appointments.map((item) => (
           <AppointmentRow key={item.id} item={item} onSaved={async (message) => { onNotice(message); onChanged(patient); }} onError={onError} />
         ))}
       </section>
+      ) : null}
 
       {record && record.bills.length > 0 ? (
         <section className="space-y-2">
