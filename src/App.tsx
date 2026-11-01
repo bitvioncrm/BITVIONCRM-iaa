@@ -22,6 +22,7 @@ import { WhatsAppPage } from "@/pages/WhatsAppPage";
 import { ClinicInventoryPage } from "@/pages/production/ClinicInventoryPage";
 import { MetaLeadCentre } from "@/pages/production/MetaLeadCentre";
 import { ProductionModule } from "@/pages/production/ProductionModule";
+import { AppointmentsPage, BookingsPage } from "@/pages/production/SchedulePages";
 
 function RequireAuth() {
   const { ready, session } = useAuth();
@@ -56,6 +57,8 @@ export default function App() {
           <Route path="/team" element={<TeamPage />} />
           <Route path="/activity" element={<ActivityPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/appointments" element={<AppointmentsPage />} />
+          <Route path="/bookings" element={<BookingsPage />} />
           <Route path="/clinic" element={<ProductionModule module="clinic" />} />
           <Route path="/institute" element={<ProductionModule module="institute" />} />
           <Route path="/inventory" element={<ClinicInventoryPage />} />

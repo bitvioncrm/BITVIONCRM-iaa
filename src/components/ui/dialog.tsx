@@ -13,13 +13,13 @@ export function DialogContent({ className, children, ...props }: ComponentProps<
       <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-[#0e1420]/40" />
       <DialogPrimitive.Content
         className={cn(
-          "dialog-panel fixed top-1/2 left-1/2 z-50 max-h-[min(92dvh,860px)] w-[calc(100%-1.5rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border border-line bg-white p-5 shadow-pop",
+          "dialog-panel fixed inset-x-0 bottom-0 z-50 max-h-[92dvh] w-full overflow-y-auto rounded-t-2xl border border-line bg-white p-4 pt-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-pop sm:inset-auto sm:top-1/2 sm:left-1/2 sm:max-h-[min(92dvh,860px)] sm:w-[calc(100%-1.5rem)] sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:p-5",
           className,
         )}
         {...props}
       >
         {children}
-        <DialogPrimitive.Close className="absolute top-4 right-4 rounded-md p-1 text-muted hover:bg-slate-100 hover:text-ink">
+        <DialogPrimitive.Close className="absolute top-3 right-3 flex size-11 items-center justify-center rounded-full text-muted hover:bg-slate-100 hover:text-ink sm:size-8">
           <X className="size-4" />
           <span className="sr-only">Close</span>
         </DialogPrimitive.Close>

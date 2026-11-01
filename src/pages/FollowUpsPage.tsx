@@ -24,13 +24,19 @@ export function FollowUpsPage() {
   return <DemoFollowUps />;
 }
 
+function formatFollowUp(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
 function ProductionFollowUps() {
-  const [rows, setRows] = useState<{ id: string; due_at: string; status: string; notes: string }[]>([]);
+  const [rows, setRows] = useState<Array<{ id: string; lead_id: string; due_at: string; status: string; notes: string; lead_name: string }>>([]);
   const [error, setError] = useState("");
   useEffect(() => {
     void listWorkspaces()
-      .then((workspaces) => listFollowUps(workspaces[0]?.id ?? ""))
-      .then((items) => setRows(items as typeof rows))
+      .then((workspaces) => Promise.all(workspaces.map((item) => listFollowUps(item.id))))
+      .then((lists) => setRows(lists.flat().sort((left, right) => left.due_at.localeCompare(right.due_at))))
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load follow-ups"));
   }, []);
   return (
@@ -38,12 +44,16 @@ function ProductionFollowUps() {
       <h1 className="text-2xl font-semibold">Follow-ups</h1>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {rows.length === 0 ? <p className="text-sm text-muted">No follow-ups.</p> : rows.map((row) => (
-        <div key={row.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
-          <span>{row.due_at} · {row.status} · {row.notes}</span>
-          <span className="flex gap-2">
-            {row.status !== "completed" ? <button type="button" className="text-xs font-medium" onClick={() => { void completeFollowUp(row.id).then(() => setRows((current) => current.map((item) => item.id === row.id ? { ...item, status: "completed" } : item))).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not update the follow-up")); }}>Complete</button> : null}
-            <button type="button" className="text-xs font-medium text-danger" onClick={() => { if (!window.confirm("Delete this follow-up?")) return; void removeFollowUp(row.id).then(() => setRows((current) => current.filter((item) => item.id !== row.id))).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not delete the follow-up")); }}>Delete</button>
-          </span>
+        <div key={row.id} className="touch-card rounded-2xl border border-line bg-white p-4 text-sm">
+          <Link to={`/leads/${row.lead_id}`} className="block rounded-xl hover:bg-slate-50">
+            <p className="text-base font-semibold break-words">{row.lead_name}</p>
+            <p className="mt-1">{formatFollowUp(row.due_at)}</p>
+            <p className="mt-1 text-xs capitalize text-muted">{row.status}{row.notes ? ` · ${row.notes}` : ""} · Open lead</p>
+          </Link>
+          <div className="mt-2 flex gap-2">
+            {row.status !== "completed" ? <button type="button" className="inline-flex min-h-11 items-center rounded-full border border-line px-3 font-medium" onClick={() => { void completeFollowUp(row.id).then(() => setRows((current) => current.map((item) => item.id === row.id ? { ...item, status: "completed" } : item))).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not update the follow-up")); }}>Complete</button> : null}
+            <button type="button" className="inline-flex min-h-11 items-center rounded-full px-3 font-medium text-danger" onClick={() => { if (!window.confirm("Delete this follow-up?")) return; void removeFollowUp(row.id).then(() => setRows((current) => current.filter((item) => item.id !== row.id))).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not delete the follow-up")); }}>Delete</button>
+          </div>
         </div>
       ))}
     </div>

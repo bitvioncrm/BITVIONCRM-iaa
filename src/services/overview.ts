@@ -423,8 +423,26 @@ export async function loadLiveAlerts(workspaces: WorkspaceOption[]) {
   if (!all.length || !supabase) return alerts;
   const unassigned = await countRows("leads", all, (query) => query.is("deleted_at", null).is("assigned_to", null).eq("status", "new")).catch(() => null);
   if (unassigned) alerts.push({ title: "Unassigned leads", body: `${unassigned} new leads have no counsellor`, href: "/leads?status=new&assigned=unassigned" });
-  const overdue = await countRows("followups", all, (query) => query.eq("status", "pending").lt("due_at", new Date().toISOString())).catch(() => null);
-  if (overdue) alerts.push({ title: "Overdue follow-ups", body: `${overdue} follow-ups are past due`, href: "/follow-ups" });
+  const horizon = new Date();
+  horizon.setDate(horizon.getDate() + 7);
+  horizon.setHours(23, 59, 59, 999);
+  const endOfToday = new Date();
+  endOfToday.setHours(23, 59, 59, 999);
+  const dueFollowUps = await db().from("followups").select("id, due_at, lead_id, leads(full_name)").in("workspace_id", all).eq("status", "pending").lte("due_at", horizon.toISOString()).order("due_at").limit(12);
+  const followAlerts: Array<{ title: string; body: string; href: string }> = [];
+  for (const row of dueFollowUps.data ?? []) {
+    const lead = row.leads as { full_name?: string } | { full_name?: string }[] | null;
+    const named = Array.isArray(lead) ? lead[0] : lead;
+    const due = new Date(String(row.due_at));
+    const when = Number.isNaN(due.getTime()) ? String(row.due_at) : due.toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "numeric", minute: "2-digit" });
+    const label = due.getTime() < Date.now() ? "Overdue" : due.getTime() <= endOfToday.getTime() ? "Due today" : "Upcoming";
+    followAlerts.push({
+      title: named?.full_name || "Follow-up",
+      body: `${label} · ${when}`,
+      href: `/leads/${row.lead_id}`,
+    });
+  }
+  alerts.unshift(...followAlerts);
   if (clinicIds.length) {
     const products = await db().from("inventory_products").select("id, name, current_stock, minimum_stock, expires_on").in("workspace_id", clinicIds).is("deleted_at", null).limit(100);
     const low = (products.data ?? []).filter((row) => Number(row.current_stock) <= Number(row.minimum_stock));
@@ -443,5 +461,5 @@ export async function loadLiveAlerts(workspaces: WorkspaceOption[]) {
     const connected = ((whatsapp.data ?? []) as Array<{ connected?: boolean }>).some((row) => row.connected);
     if (!connected) alerts.push({ title: "WhatsApp lead number", body: "Connect the Phone number ID so click leads arrive live.", href: "/settings" });
   }
-  return alerts.slice(0, 8);
+  return alerts.slice(0, 12);
 }

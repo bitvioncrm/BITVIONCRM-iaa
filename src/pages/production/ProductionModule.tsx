@@ -1,12 +1,18 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { StudentFile } from "@/components/institute/StudentFile";
+import { blankStudent, detailsFromStudent, StudentForm } from "@/components/institute/StudentForm";
+import { Portrait } from "@/components/shared/Portrait";
+import { FilterBar, studentMatches, type DeskFilter } from "@/pages/production/ProductionDashboard";
+import { Sheet, SheetBody, SheetContent, SheetHeader } from "@/components/ui/sheet";
 import { ClinicCare } from "@/components/clinic/ClinicCare";
 import { BusinessBoard } from "@/components/dashboard/BusinessBoard";
 import { useAuth } from "@/context/AuthContext";
 import { canOperateWhatsApp } from "@/lib/production-access";
 import { listDoctors, listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
+import { phoneTel } from "@/lib/phone";
 import { inr } from "@/lib/money";
 import { addLedgerEntry, listLedger, removeLedgerEntry } from "@/services/clinic-care";
-import { changeStock, createAppointment, createCourse, createExam, createInvoice, createPatient, createProduct, createStudent, issueCertificate, listAppointments, listCertificates, listDocuments, listExams, listPatients, listProducts, listStockMoves, listStudents, recordMark, recordPayment, recordRefund, removeAppointment, removePatient, removeProduct, removeStudent, saveConsultation, seedClinicSkincareStock, setDocumentStatus, signedDocumentUrl, updateAppointmentStatus, updatePatient, updateProductPricing, updateStudent, uploadPrivateFile, type InventoryProduct } from "@/services/production-ops";
+import { changeStock, createAppointment, createExam, createInvoice, createPatient, createProduct, createStudent, issueCertificate, listAppointments, listCertificates, listDeskStudents, listDocuments, listExams, listPatients, listProducts, listStockMoves, recordMark, recordPayment, recordRefund, removeAppointment, removePatient, removeProduct, removeStudent, saveConsultation, savePersonPhoto, saveStudentDetails, seedClinicSkincareStock, setDocumentStatus, signedDocumentUrl, updateAppointmentStatus, updatePatient, updateProductPricing, uploadPrivateFile, type DeskStudent, type InventoryProduct, type StudentDetails } from "@/services/production-ops";
 
 export function ProductionModule({ module }: { module: "clinic" | "institute" | "inventory" | "billing" }) {
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
@@ -50,7 +56,7 @@ function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
   const { productionUser } = useAuth();
   const key = productionUser?.roleKey ?? "admin";
   const clinical = key === "doctor" || key === "duty_doctor";
-  const [patients, setPatients] = useState<Array<{ id: string; patient_code: string; full_name: string; mobile: string; place: string }>>([]);
+  const [patients, setPatients] = useState<Array<{ id: string; patient_code: string; full_name: string; mobile: string; place: string; photo_path?: string }>>([]);
   const [appointments, setAppointments] = useState<Array<{ id: string; starts_at: string; status: string; reason: string }>>([]);
   const [patientId, setPatientId] = useState("");
   const [doctors, setDoctors] = useState<Array<{ userId: string; name: string }>>([]);
@@ -101,8 +107,17 @@ function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
         {patients.length === 0 ? <p className="text-sm text-muted">No patients yet.</p> : patients.map((patient) => (
           <div key={patient.id} className="space-y-2 text-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span>{patient.patient_code} · {patient.full_name} · {patient.mobile}</span>
+              <span className="flex min-w-0 items-center gap-2"><Portrait name={patient.full_name} path={patient.photo_path} /><span>{patient.patient_code} · {patient.full_name} · {patient.mobile}</span></span>
               <span className="flex gap-2">
+                <label className="cursor-pointer text-xs font-medium">
+                  Photo
+                  <input type="file" accept="image/*" className="hidden" onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (!file) return;
+                    void savePersonPhoto("patients", patient.id, workspace.organizationId, workspace.id, file).then((path) => { setPatients((current) => current.map((item) => item.id === patient.id ? { ...item, photo_path: path } : item)); onNotice("Photo saved."); }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not save the photo"));
+                  }} />
+                </label>
                 <button type="button" className="text-xs font-medium" onClick={() => setEditing({ id: patient.id, full_name: patient.full_name, mobile: patient.mobile, place: patient.place ?? "" })}>Edit</button>
                 <button type="button" className="text-xs font-medium text-danger" onClick={() => {
                   if (!window.confirm(`Delete ${patient.full_name}?`)) return;
@@ -203,52 +218,159 @@ function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
   );
 }
 
+function applyDetails(student: DeskStudent, details: StudentDetails): DeskStudent {
+  return {
+    ...student,
+    full_name: details.fullName.trim(),
+    mobile: details.mobile.trim(),
+    email: details.email.trim(),
+    gender: details.gender,
+    date_of_birth: details.dateOfBirth,
+    address: details.address.trim(),
+    course: details.course.trim(),
+    batch: details.batch.trim(),
+    admission_date: details.admissionDate,
+    status: details.status,
+  };
+}
+
 function InstitutePanel({ workspace, onError, onNotice }: PanelProps) {
-  const [students, setStudents] = useState<Array<{ id: string; student_code: string; full_name: string; status: string }>>([]);
-  const load = () => void listStudents(workspace.id).then((rows) => setStudents(rows as typeof students)).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load students"));
+  const [students, setStudents] = useState<DeskStudent[]>([]);
+  const [open, setOpen] = useState<DeskStudent | null>(null);
+  const [edit, setEdit] = useState<StudentDetails>(blankStudent);
+  const [draft, setDraft] = useState<StudentDetails>(blankStudent);
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [filter, setFilter] = useState<DeskFilter>("all");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const visible = useMemo(() => students.filter((student) => studentMatches(student, filter, customFrom, customTo)), [students, filter, customFrom, customTo]);
+  const load = () => void listDeskStudents(workspace.id).then(setStudents).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load students"));
   useEffect(() => {
-    void listStudents(workspace.id).then((rows) => setStudents(rows as typeof students)).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load students"));
+    void listDeskStudents(workspace.id).then(setStudents).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load students"));
   }, [onError, workspace.id]);
+  const show = (student: DeskStudent) => {
+    setOpen(student);
+    setEdit(detailsFromStudent(student));
+  };
+  const changePhoto = (student: DeskStudent, file: File) => {
+    void savePersonPhoto("students", student.id, workspace.organizationId, workspace.id, file)
+      .then((path) => {
+        setStudents((current) => current.map((item) => item.id === student.id ? { ...item, photo_path: path } : item));
+        setOpen((current) => current && current.id === student.id ? { ...current, photo_path: path } : current);
+        onNotice("Photo saved.");
+      })
+      .catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not save the photo"));
+  };
+  const remove = (student: DeskStudent) => {
+    if (!window.confirm(`Delete ${student.full_name}?`)) return;
+    void removeStudent(student.id).then(() => {
+      setStudents((current) => current.filter((item) => item.id !== student.id));
+      setOpen((current) => current?.id === student.id ? null : current);
+      onNotice("Student deleted.");
+    }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not delete the student"));
+  };
+  const saveOpen = () => {
+    if (!open) return;
+    setSaving(true);
+    void saveStudentDetails(open.id, workspace.organizationId, workspace.id, edit)
+      .then(() => {
+        const next = applyDetails(open, edit);
+        setStudents((current) => current.map((item) => item.id === open.id ? next : item));
+        setOpen(next);
+        onNotice("Student saved.");
+      })
+      .catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not save the student"))
+      .finally(() => setSaving(false));
+  };
   return (
     <div className="space-y-4">
-    <form className="space-y-2 rounded-lg border border-line bg-white p-4" onSubmit={(event) => submit(event, async (data) => {
-      const courseId = await createCourse({ organizationId: workspace.organizationId, workspaceId: workspace.id, name: data.get("course") as string });
-      const code = await createStudent({
-        organizationId: workspace.organizationId,
-        workspaceId: workspace.id,
-        fullName: data.get("name") as string,
-        mobile: data.get("mobile") as string,
-        courseId,
-        batchName: data.get("batch") as string,
-        admissionDate: (data.get("admitted") as string) || null,
-        status: data.get("status") as string,
-      });
-      onNotice(`Student ${code} admitted.`);
-      load();
-    }, onError)}>
+    <form className="space-y-3 rounded-lg border border-line bg-white p-4" onSubmit={(event) => {
+      event.preventDefault();
+      setSaving(true);
+      void (async () => {
+        const code = await createStudent({
+          organizationId: workspace.organizationId,
+          workspaceId: workspace.id,
+          fullName: draft.fullName,
+          mobile: draft.mobile,
+          email: draft.email,
+          gender: draft.gender,
+          dateOfBirth: draft.dateOfBirth,
+          address: draft.address,
+          courseId: null,
+          courseName: draft.course,
+          batchName: draft.batch,
+          admissionDate: draft.admissionDate,
+          status: draft.status,
+          appointmentAt: draft.appointmentAt,
+          fee: draft.fee,
+          paid: draft.paid,
+          method: draft.method,
+          photo,
+        });
+        onNotice(`Student ${code} admitted.`);
+        setDraft(blankStudent());
+        setPhoto(null);
+        load();
+      })().catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not admit the student")).finally(() => setSaving(false));
+    }}>
       <h2 className="font-semibold">Admit student</h2>
-      <input name="name" required placeholder="Student name" className="w-full rounded-md border border-line px-2 py-2" />
-      <input name="mobile" placeholder="Mobile" className="w-full rounded-md border border-line px-2 py-2" />
-      <input name="course" required placeholder="Course" className="w-full rounded-md border border-line px-2 py-2" />
-      <input name="batch" placeholder="Batch" className="w-full rounded-md border border-line px-2 py-2" />
-      <input name="admitted" type="date" className="w-full rounded-md border border-line px-2 py-2" />
-      <select name="status" className="w-full rounded-md border border-line px-2 py-2"><option value="enquiry">Enquiry</option><option value="admitted">Admitted</option><option value="active">Active</option><option value="completed">Completed</option></select>
-      <button className="rounded-md bg-navy px-3 py-2 text-sm text-white" type="submit">Admit</button>
-      {students.length === 0 ? <p className="text-sm text-muted">No students yet.</p> : students.map((student) => (
-        <div key={student.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
-          <span>{student.student_code} · {student.full_name}</span>
-          <span className="flex items-center gap-2">
-            <select value={student.status} onChange={(event) => { void updateStudent(student.id, event.target.value).then(() => { onNotice("Student updated."); load(); }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not update the student")); }}>
-              {["enquiry", "admitted", "active", "completed"].map((status) => <option key={status} value={status}>{status}</option>)}
-            </select>
-            <button type="button" className="text-xs font-medium text-danger" onClick={() => {
-              if (!window.confirm(`Delete ${student.full_name}?`)) return;
-              void removeStudent(student.id).then(() => { onNotice("Student deleted."); load(); }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not delete the student"));
-            }}>Delete</button>
-          </span>
-        </div>
-      ))}
+      <StudentForm value={draft} onChange={setDraft} photo={photo} onPhoto={setPhoto} />
+      <button className="min-h-11 rounded-md bg-navy px-3 text-sm text-white" type="submit" disabled={saving}>{saving ? "Saving" : "Admit"}</button>
     </form>
+    <FilterBar filter={filter} customFrom={customFrom} customTo={customTo} onFilter={setFilter} onFrom={setCustomFrom} onTo={setCustomTo} count={visible.length} noun="students" labels={{ appointment_today: "Admitted today", upcoming: "Upcoming admissions" }} />
+    {visible.length === 0 ? <p className="rounded-2xl border border-dashed border-line bg-white px-4 py-10 text-center text-sm text-muted">No students in this range.</p> : (
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {visible.map((student) => (
+          <div key={student.id} className="touch-card rounded-2xl border border-line bg-white p-4 text-left shadow-sm sm:transition sm:hover:-translate-y-0.5 sm:hover:border-[#c6a15b] sm:hover:shadow-md">
+          <button type="button" onClick={() => show(student)} className="w-full text-left">
+            <span className="flex items-start gap-3">
+              <Portrait name={student.full_name} path={student.photo_path} />
+              <span className="min-w-0 flex-1">
+                <span className="block text-lg font-semibold break-words">{student.full_name}</span>
+                <span className="mt-0.5 block text-xs text-muted">{student.student_code}</span>
+                <span className="mt-2 block text-sm">{student.mobile || "No mobile"}</span>
+                <span className="mt-1 block text-xs text-muted">{student.course || "No course"}{student.batch ? ` · ${student.batch}` : ""}</span>
+              </span>
+            </span>
+          </button>
+          <span className="mt-2 flex flex-wrap gap-2">
+            <button type="button" className="inline-flex min-h-11 items-center rounded-full border border-line px-3 text-sm" onClick={() => show(student)}>Edit</button>
+            <button type="button" className="inline-flex min-h-11 items-center rounded-full px-3 text-sm font-medium text-danger" onClick={() => remove(student)}>Delete</button>
+            {phoneTel(student.mobile) ? <a href={phoneTel(student.mobile)} className="inline-flex min-h-11 items-center text-sm font-medium text-navy">Call</a> : null}
+          </span>
+          </div>
+        ))}
+      </div>
+    )}
+    <Sheet open={Boolean(open)} onOpenChange={(value) => { if (!value) setOpen(null); }}>
+      {open ? (
+        <SheetContent title={open.full_name}>
+          <SheetHeader>
+            <div className="flex items-center gap-3">
+              <Portrait name={open.full_name} path={open.photo_path} className="size-16 text-xl" />
+              <div>
+                <p className="text-xs font-medium tracking-wide text-[#a6843d] uppercase">{open.student_code}</p>
+                <h2 className="text-xl font-semibold break-words">{open.full_name}</h2>
+              </div>
+            </div>
+          </SheetHeader>
+          <SheetBody className="space-y-4">
+            <label className="inline-flex min-h-11 cursor-pointer items-center rounded-full border border-line px-3 text-sm">
+              Change photo
+              <input type="file" accept="image/*" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) changePhoto(open, file); }} />
+            </label>
+            <StudentForm value={edit} onChange={setEdit} />
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="min-h-11 rounded-md bg-navy px-4 text-sm text-white" disabled={saving} onClick={saveOpen}>{saving ? "Saving" : "Save student"}</button>
+              <button type="button" className="min-h-11 rounded-md px-3 text-sm font-medium text-danger" onClick={() => remove(open)}>Delete</button>
+            </div>
+            <StudentFile organizationId={workspace.organizationId} workspaceId={workspace.id} studentId={open.id} onError={onError} onNotice={onNotice} />
+          </SheetBody>
+        </SheetContent>
+      ) : null}
+    </Sheet>
     <AcademicPanel workspace={workspace} students={students} onError={onError} onNotice={onNotice} />
     </div>
   );

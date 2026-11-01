@@ -1,6 +1,7 @@
 import {
   BarChart3,
   Building2,
+  Calendar,
   CalendarClock,
   CheckSquare,
   ContactRound,
@@ -62,6 +63,8 @@ export const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
       { to: "/pipeline", label: "Pipeline", icon: Kanban, end: false },
       { to: "/follow-ups", label: "Follow-ups", icon: CalendarClock, end: false },
       { to: "/calls", label: "Calls", icon: Phone, end: false },
+      { to: "/appointments", label: "Appointments", icon: Calendar, end: false },
+      { to: "/bookings", label: "Bookings", icon: Calendar, end: false },
     ],
   },
   {

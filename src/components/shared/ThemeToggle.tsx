@@ -12,7 +12,7 @@ export function ThemeToggle() {
   return (
     <button
       type="button"
-      className="rounded-md p-2 text-muted hover:bg-slate-100"
+      className="inline-flex size-11 items-center justify-center rounded-md text-muted hover:bg-slate-100"
       aria-label={dark ? "Use light theme" : "Use dark theme"}
       onClick={() => setDark((value) => !value)}
     >

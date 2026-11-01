@@ -364,9 +364,28 @@ function InventoryShell() {
                 return (
                   <article
                     key={product.id}
-                    className="group flex gap-3 rounded-xl border border-line/90 bg-white p-3 shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition hover:border-slate-300 hover:shadow-[0_8px_24px_rgba(16,24,40,0.06)]"
+                    className="touch-card group flex gap-3 rounded-2xl border border-line/90 bg-white p-3 shadow-[0_1px_2px_rgba(16,24,40,0.04)] sm:transition sm:hover:border-slate-300 sm:hover:shadow-[0_8px_24px_rgba(16,24,40,0.06)]"
                   >
-                    <ProductImage path={product.imagePath} name={product.name} />
+                    <div className="shrink-0">
+                      <ProductImage path={product.imagePath} name={product.name} />
+                      {manager && workspace ? (
+                        <label className="mt-1 flex min-h-8 cursor-pointer items-center justify-center text-[11px] font-medium text-navy">
+                          Photo
+                          <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            event.target.value = "";
+                            if (!file) return;
+                            void uploadProductImage({ organizationId: workspace.organizationId, workspaceId: workspace.id, productId: product.id, file })
+                              .then((path) => {
+                                setProducts((current) => current.map((item) => item.id === product.id ? { ...item, imagePath: path } : item));
+                                setNotice("Product image updated.");
+                                setError("");
+                              })
+                              .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not update the product image"));
+                          }} />
+                        </label>
+                      ) : null}
+                    </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
                         <p className="truncate text-[10px] font-semibold tracking-[0.08em] text-muted uppercase">{product.category}</p>

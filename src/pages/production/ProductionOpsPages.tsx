@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { MetaLeadCentre } from "@/pages/production/MetaLeadCentre";
 import { listLeads, listWorkspaces, updateLeadStatus, type ProductionLead, type WorkspaceOption } from "@/services/production-leads";
-import { createTask, listAudit, listTasks, removeTask, revenueSummary, updateTask } from "@/services/production-ops";
+import { bookFromLead, createTask, listAudit, listTasks, removeTask, revenueSummary, updateTask } from "@/services/production-ops";
 import { useAuth } from "@/context/AuthContext";
 import { STATUS_LABEL, STATUS_ORDER } from "@/data/catalog";
 import type { LeadStatus } from "@/types";
@@ -20,6 +20,9 @@ export function ProductionPipeline() {
   const [rows, setRows] = useState<ProductionLead[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [booking, setBooking] = useState<ProductionLead | null>(null);
+  const [draft, setDraft] = useState({ fullName: "", phone: "", email: "", place: "", interest: "", gender: "other", dateOfBirth: "", address: "", bookedOn: "", appointmentAt: "", fee: "", paid: "", method: "cash" as "cash" | "upi" | "card" });
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     void listWorkspaces().then((items) => {
       setWorkspaces(items);
@@ -70,16 +73,71 @@ export function ProductionPipeline() {
       {loading ? <p className="text-sm text-muted">Loading leads.</p> : null}
       {!loading && rows.length === 0 ? <p className="text-sm text-muted">No leads on this page.</p> : null}
       {rows.map((lead) => (
-        <div key={lead.id} className="flex flex-col gap-2 rounded-lg border border-line bg-white px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+        <div key={lead.id} className="space-y-3 rounded-lg border border-line bg-white px-3 py-3 text-sm">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <span className="min-w-0 break-words">{lead.fullName}</span>
-          <select className="h-11 w-full rounded-md border border-line px-2 text-base sm:h-9 sm:w-48 sm:text-sm" value={lead.status} onChange={(event) => {
+          <select className="h-11 w-full rounded-md border border-line px-2 text-base sm:h-9 sm:w-48 sm:text-sm" value={booking?.id === lead.id ? "selected" : lead.status} onChange={(event) => {
             const status = event.target.value as LeadStatus;
+            if (status === "selected") {
+              setBooking(lead);
+              setDraft({ fullName: lead.fullName, phone: lead.phone, email: lead.email, place: lead.location, interest: lead.position, gender: "other", dateOfBirth: "", address: "", bookedOn: new Date().toISOString().slice(0, 10), appointmentAt: "", fee: "", paid: "", method: "cash" });
+              return;
+            }
             void updateLeadStatus(lead, status)
               .then(() => setRows((current) => current.map((item) => item.id === lead.id ? { ...item, status } : item)))
               .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Stage update failed"));
           }}>
             {STATUS_ORDER.map((status) => <option key={status} value={status}>{STATUS_LABEL[status]}</option>)}
           </select>
+          </div>
+          {booking?.id === lead.id ? (
+            <form className="grid gap-2 sm:grid-cols-2" onSubmit={(event) => {
+              event.preventDefault();
+              const institute = workspaces.find((item) => item.id === lead.workspaceId)?.workspaceType === "institute";
+              setBusy(true);
+              void bookFromLead({
+                leadId: lead.id,
+                organizationId: lead.organizationId,
+                workspaceId: lead.workspaceId,
+                fromStatus: lead.status,
+                institute,
+                fullName: draft.fullName,
+                phone: draft.phone,
+                email: draft.email,
+                place: draft.place,
+                interest: draft.interest,
+                gender: draft.gender,
+                dateOfBirth: draft.dateOfBirth || null,
+                address: draft.address,
+                bookedOn: draft.bookedOn,
+                appointmentAt: draft.appointmentAt,
+                fee: Number(draft.fee || 0),
+                paid: Number(draft.paid || 0),
+                method: draft.method,
+              }).then(() => {
+                setRows((current) => current.map((item) => item.id === lead.id ? { ...item, status: "selected", fullName: draft.fullName.trim() } : item));
+                setBooking(null);
+              }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not book")).finally(() => setBusy(false));
+            }}>
+              <label className="text-sm sm:col-span-2">Name<input required value={draft.fullName} onChange={(event) => setDraft({ ...draft, fullName: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
+              <label className="text-sm">Phone<input value={draft.phone} inputMode="tel" onChange={(event) => setDraft({ ...draft, phone: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
+              <label className="text-sm">Email<input type="email" value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
+              <label className="text-sm">Place<input value={draft.place} onChange={(event) => setDraft({ ...draft, place: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
+              <label className="text-sm">{workspaces.find((item) => item.id === lead.workspaceId)?.workspaceType === "institute" ? "Course" : "Treatment"}<input value={draft.interest} onChange={(event) => setDraft({ ...draft, interest: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
+              <label className="text-sm">Gender<select value={draft.gender} onChange={(event) => setDraft({ ...draft, gender: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line px-3"><option value="female">Female</option><option value="male">Male</option><option value="other">Other</option></select></label>
+              <label className="text-sm">Date of birth<input type="date" value={draft.dateOfBirth} onChange={(event) => setDraft({ ...draft, dateOfBirth: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
+              <label className="text-sm sm:col-span-2">Address<textarea value={draft.address} onChange={(event) => setDraft({ ...draft, address: event.target.value })} className="mt-1 min-h-16 w-full rounded-md border border-line px-3 py-2" /></label>
+              <label className="text-sm">Booked date<input required type="date" value={draft.bookedOn} onChange={(event) => setDraft({ ...draft, bookedOn: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
+              <label className="text-sm">Appointment date<input required type="datetime-local" value={draft.appointmentAt} onChange={(event) => setDraft({ ...draft, appointmentAt: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
+              <label className="text-sm">Fee<input inputMode="decimal" value={draft.fee} onChange={(event) => setDraft({ ...draft, fee: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
+              <label className="text-sm">Paid now<input inputMode="decimal" value={draft.paid} onChange={(event) => setDraft({ ...draft, paid: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
+              <p className="text-sm font-semibold sm:col-span-2">Balance ₹{Math.max(0, Number(draft.fee || 0) - Number(draft.paid || 0)).toLocaleString("en-IN")}</p>
+              <div className="flex gap-2 sm:col-span-2">
+                <button type="submit" disabled={busy} className="min-h-11 rounded-md bg-navy px-3 text-sm text-white">{busy ? "Saving" : "Save booking"}</button>
+                <button type="button" className="min-h-11 rounded-md border border-line px-3 text-sm" onClick={() => setBooking(null)}>Cancel</button>
+              </div>
+            </form>
+          ) : null}
         </div>
       ))}
     </div>

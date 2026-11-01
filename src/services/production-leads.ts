@@ -517,6 +517,7 @@ export async function addFollowUp(lead: ProductionLead, dueAt: string, notes: st
   if (error) throw new Error(error.message);
   const { error: leadError } = await client().from("leads").update({ next_follow_up_at: dueAt, updated_by: userId }).eq("id", lead.id);
   if (leadError) throw new Error(leadError.message);
+  window.dispatchEvent(new CustomEvent("bitvion-followup", { detail: { id: lead.id, fullName: lead.fullName, dueAt } }));
 }
 
 export async function listNotes(leadId: string) {

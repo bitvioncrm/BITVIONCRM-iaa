@@ -24,12 +24,22 @@ const SHORT_LABEL: Record<string, string> = {
   "/activity": "Activity",
   "/settings": "Settings",
   "/clinic": "Clinic",
+  "/appointments": "Appointments",
+  "/bookings": "Bookings",
   "/institute": "Institute",
   "/inventory": "Stock",
   "/billing": "Finance",
 };
 
 const BOTTOM_FIRST = ["/", "/leads", "/whatsapp", "/calls"];
+
+function bottomFirst(roleKey: string) {
+  if (roleKey === "institute_telecaller" || roleKey === "institute_bde" || roleKey === "institute_user") return ["/", "/bookings", "/leads", "/whatsapp"];
+  if (roleKey === "receptionist") return ["/", "/appointments", "/leads", "/calls"];
+  if (roleKey === "doctor" || roleKey === "duty_doctor") return ["/", "/clinic", "/inventory"];
+  if (roleKey === "clinic_telecaller" || roleKey === "clinic_bde") return ["/", "/appointments", "/leads", "/whatsapp"];
+  return BOTTOM_FIRST;
+}
 
 function shortLabel(item: NavItem) {
   return SHORT_LABEL[item.to] ?? item.label;
@@ -42,7 +52,7 @@ export function MobileNav() {
   const me = state.users.find((user) => user.id === session?.userId);
   const admin = productionUser ? false : isAdmin(me);
   const links = productionUser ? productionNav(productionUser.roleKey) : admin ? [...NAV_ITEMS] : [...STAFF_NAV];
-  const preferred = BOTTOM_FIRST.map((path) => links.find((item) => item.to === path)).filter((item): item is NavItem => Boolean(item));
+  const preferred = bottomFirst(productionUser?.roleKey ?? "").map((path) => links.find((item) => item.to === path)).filter((item): item is NavItem => Boolean(item));
   const bottom = (preferred.length ? preferred : links).slice(0, 4);
   const bottomPaths = new Set(bottom.map((item) => item.to));
   const more = links.filter((item) => !bottomPaths.has(item.to));
@@ -50,7 +60,7 @@ export function MobileNav() {
   return (
     <>
       <nav
-        className="fixed inset-x-0 bottom-0 z-40 grid border-t border-line bg-white pb-[env(safe-area-inset-bottom)] lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-40 grid border-t border-[#eadfca] bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm lg:hidden"
         style={{ gridTemplateColumns: `repeat(${bottom.length + (showMore ? 1 : 0)}, minmax(0, 1fr))` }}
       >
         {bottom.map((item) => (
@@ -58,7 +68,7 @@ export function MobileNav() {
             key={item.to}
             to={item.to}
             end={item.end}
-            className={({ isActive }) => cn("flex min-h-14 flex-col items-center justify-center gap-1 px-1 text-[11px]", isActive ? "text-navy" : "text-muted")}
+            className={({ isActive }) => cn("flex min-h-14 flex-col items-center justify-center gap-1 px-1 text-[11px]", isActive ? "font-semibold text-navy" : "text-muted")}
           >
             <item.icon className="size-5" />
             <span className="max-w-full truncate">{shortLabel(item)}</span>

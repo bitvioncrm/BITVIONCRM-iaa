@@ -1,5 +1,5 @@
 import { Upload } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useDesk } from "@/context/DeskContext";
 import { ProductionImportDialog } from "@/components/leads/ProductionImportDialog";
@@ -50,7 +50,7 @@ import { formatClock, outcomeFromPhoneReturn, type CallOutcome, type CallTotals 
 import { formatLeadArrived } from "@/lib/dates";
 import { phoneTel } from "@/lib/phone";
 import { canOperateWhatsApp, canWriteWhatsApp, productionRoleLabel, whatsAppDesk } from "@/lib/production-access";
-import { activeCall, endCall, leadCallStats, startCall, type LiveCall } from "@/services/production-ops";
+import { activeCall, bookFromLead, endCall, leadCallStats, startCall, type LiveCall } from "@/services/production-ops";
 import type { LeadStatus } from "@/types";
 
 export function ProductionLeadsPage() {
@@ -85,6 +85,9 @@ export function ProductionLeadsPage() {
   const [totals, setTotals] = useState<AssignmentTotals>({ unassigned: 0, desks: {}, assigned: {} });
   const [notice, setNotice] = useState("");
   const [sheet, setSheet] = useState<{ lead: ProductionLead; kind: "note" | "follow" | "edit" } | null>(null);
+  const [booking, setBooking] = useState<ProductionLead | null>(null);
+  const [bookingDraft, setBookingDraft] = useState({ fullName: "", phone: "", email: "", place: "", interest: "", gender: "other", dateOfBirth: "", address: "", bookedOn: "", appointmentAt: "", fee: "", paid: "", method: "cash" as "cash" | "upi" | "card" });
+  const [bookingBusy, setBookingBusy] = useState(false);
   const [editDraft, setEditDraft] = useState({ fullName: "", phone: "", email: "", location: "", position: "" });
   const [sheetValue, setSheetValue] = useState("");
   const [callStats, setCallStats] = useState<Record<string, CallTotals>>({});
@@ -322,6 +325,160 @@ export function ProductionLeadsPage() {
     finishCall(outcomeFromPhoneReturn(seconds), returnedAt);
   }, [live, returnedAt]);
 
+  const changeStage = (lead: ProductionLead, next: LeadStatus) => {
+    if (next === "selected") {
+      const today = new Date().toISOString().slice(0, 10);
+      setBooking(lead);
+      setBookingDraft({
+        fullName: lead.fullName,
+        phone: lead.phone,
+        email: lead.email,
+        place: lead.location,
+        interest: lead.position,
+        gender: "other",
+        dateOfBirth: "",
+        address: "",
+        bookedOn: today,
+        appointmentAt: "",
+        fee: "",
+        paid: "",
+        method: "cash",
+      });
+      return;
+    }
+    void updateLeadStatus(lead, next)
+      .then(() => setLeads((current) => current.map((item) => (item.id === lead.id ? { ...item, status: next } : item))))
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not update the stage"));
+  };
+
+  const saveBooking = () => {
+    if (!booking) return;
+    const institute = workspaces.find((item) => item.id === booking.workspaceId)?.workspaceType === "institute";
+    const fee = Number(bookingDraft.fee || 0);
+    const paid = Number(bookingDraft.paid || 0);
+    setBookingBusy(true);
+    void bookFromLead({
+      leadId: booking.id,
+      organizationId: booking.organizationId,
+      workspaceId: booking.workspaceId,
+      fromStatus: booking.status,
+      institute,
+      fullName: bookingDraft.fullName,
+      phone: bookingDraft.phone,
+      email: bookingDraft.email,
+      place: bookingDraft.place,
+      interest: bookingDraft.interest,
+      gender: bookingDraft.gender,
+      dateOfBirth: bookingDraft.dateOfBirth || null,
+      address: bookingDraft.address,
+      bookedOn: bookingDraft.bookedOn,
+      appointmentAt: bookingDraft.appointmentAt,
+      fee,
+      paid,
+      method: bookingDraft.method,
+    }).then((result) => {
+      setLeads((current) => current.map((item) => item.id === booking.id ? { ...item, status: "selected", fullName: bookingDraft.fullName.trim(), phone: bookingDraft.phone.trim(), email: bookingDraft.email.trim(), location: bookingDraft.place.trim(), position: bookingDraft.interest.trim() } : item));
+      setNotice(`${bookingDraft.fullName.trim()} is booked. Balance ₹${result.balance.toLocaleString("en-IN")}.`);
+      setBooking(null);
+    }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not book")).finally(() => setBookingBusy(false));
+  };
+
+  const bookingForm = (leadId: string) => booking?.id === leadId ? (
+    <form className="mt-2 space-y-3 rounded-lg border border-[#c6a15b] bg-[#faf6ee] p-3" onSubmit={(event) => { event.preventDefault(); saveBooking(); }}>
+      <p className="text-sm font-semibold">Book {booking.fullName}</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className="text-sm">Name<input required value={bookingDraft.fullName} onChange={(event) => setBookingDraft({ ...bookingDraft, fullName: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line bg-white px-3" /></label>
+        <label className="text-sm">Phone<input value={bookingDraft.phone} inputMode="tel" onChange={(event) => setBookingDraft({ ...bookingDraft, phone: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line bg-white px-3" /></label>
+        <label className="text-sm">Email<input type="email" value={bookingDraft.email} onChange={(event) => setBookingDraft({ ...bookingDraft, email: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line bg-white px-3" /></label>
+        <label className="text-sm">Place<input value={bookingDraft.place} onChange={(event) => setBookingDraft({ ...bookingDraft, place: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line bg-white px-3" /></label>
+        <label className="text-sm sm:col-span-2">{workspaces.find((item) => item.id === booking.workspaceId)?.workspaceType === "institute" ? "Course" : "Treatment"}<input value={bookingDraft.interest} onChange={(event) => setBookingDraft({ ...bookingDraft, interest: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line bg-white px-3" /></label>
+        <label className="text-sm">Gender
+          <select value={bookingDraft.gender} onChange={(event) => setBookingDraft({ ...bookingDraft, gender: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line bg-white px-3">
+            <option value="female">Female</option>
+            <option value="male">Male</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <label className="text-sm">Date of birth<input type="date" value={bookingDraft.dateOfBirth} onChange={(event) => setBookingDraft({ ...bookingDraft, dateOfBirth: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line bg-white px-3" /></label>
+        <label className="text-sm sm:col-span-2">Address<textarea value={bookingDraft.address} onChange={(event) => setBookingDraft({ ...bookingDraft, address: event.target.value })} className="mt-1 min-h-16 w-full rounded-md border border-line bg-white px-3 py-2" /></label>
+        <label className="text-sm">Booked date<input required type="date" value={bookingDraft.bookedOn} onChange={(event) => setBookingDraft({ ...bookingDraft, bookedOn: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line bg-white px-3" /></label>
+        <label className="text-sm">Appointment date<input required type="datetime-local" value={bookingDraft.appointmentAt} onChange={(event) => setBookingDraft({ ...bookingDraft, appointmentAt: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line bg-white px-3" /></label>
+        <label className="text-sm">Fee<input inputMode="decimal" value={bookingDraft.fee} onChange={(event) => setBookingDraft({ ...bookingDraft, fee: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line bg-white px-3" /></label>
+        <label className="text-sm">Paid now
+          <input inputMode="decimal" value={bookingDraft.paid} onChange={(event) => setBookingDraft({ ...bookingDraft, paid: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line bg-white px-3" />
+        </label>
+        <label className="text-sm">Payment
+          <select value={bookingDraft.method} onChange={(event) => setBookingDraft({ ...bookingDraft, method: event.target.value as "cash" | "upi" | "card" })} className="mt-1 h-11 w-full rounded-md border border-line bg-white px-3">
+            <option value="cash">Cash</option>
+            <option value="upi">UPI</option>
+            <option value="card">Card</option>
+          </select>
+        </label>
+        <p className="flex items-end text-sm font-semibold">Balance ₹{Math.max(0, Number(bookingDraft.fee || 0) - Number(bookingDraft.paid || 0)).toLocaleString("en-IN")}</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" disabled={bookingBusy}>{bookingBusy ? "Saving" : "Save booking"}</Button>
+        <Button type="button" variant="secondary" onClick={() => setBooking(null)}>Cancel</Button>
+      </div>
+    </form>
+  ) : null;
+
+  const leadComposer = (leadId: string) => sheet?.lead.id === leadId ? (
+    <form
+      className="mt-2 space-y-2 rounded-lg border border-line bg-canvas p-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const value = sheetValue.trim();
+        if (sheet.kind === "edit") {
+          void updateLead(sheet.lead, editDraft)
+            .then(() => {
+              setLeads((current) => current.map((item) => item.id === sheet.lead.id ? { ...item, ...editDraft } : item));
+              setNotice(`Updated ${editDraft.fullName}.`);
+              setSheet(null);
+            })
+            .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not update the lead"));
+          return;
+        }
+        if (!value) return;
+        if (sheet.kind === "follow" && Number.isNaN(new Date(value).getTime())) {
+          setError("Choose a follow-up date.");
+          return;
+        }
+        const action = sheet.kind === "note"
+          ? addLeadNote(sheet.lead, value)
+          : addFollowUp(sheet.lead, new Date(value).toISOString(), "Follow-up");
+        void action
+          .then(() => {
+            setNotice(sheet.kind === "note" ? `Note saved for ${sheet.lead.fullName}.` : `Follow-up saved for ${sheet.lead.fullName}.`);
+            setSheet(null);
+            setSheetValue("");
+          })
+          .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not save"));
+      }}
+    >
+      <label className="block text-sm font-medium">
+        {sheet.kind === "edit" ? `Edit ${sheet.lead.fullName}` : sheet.kind === "note" ? `Note for ${sheet.lead.fullName}` : `Follow-up date for ${sheet.lead.fullName}`}
+        {sheet.kind === "edit" ? (
+          <span className="mt-1 grid gap-2">
+            <Input value={editDraft.fullName} onChange={(event) => setEditDraft({ ...editDraft, fullName: event.target.value })} placeholder="Name" />
+            <Input value={editDraft.phone} onChange={(event) => setEditDraft({ ...editDraft, phone: event.target.value })} placeholder="Phone" />
+            <Input value={editDraft.email} onChange={(event) => setEditDraft({ ...editDraft, email: event.target.value })} placeholder="Email" />
+            <Input value={editDraft.location} onChange={(event) => setEditDraft({ ...editDraft, location: event.target.value })} placeholder="Place" />
+            <Input value={editDraft.position} onChange={(event) => setEditDraft({ ...editDraft, position: event.target.value })} placeholder="Interest" />
+          </span>
+        ) : sheet.kind === "note" ? (
+          <textarea value={sheetValue} onChange={(event) => setSheetValue(event.target.value)} rows={3} className="mt-1 w-full rounded-md border border-line bg-white px-3 py-2 text-base outline-none" placeholder="Write the note" />
+        ) : (
+          <Input className="mt-1" type="datetime-local" value={sheetValue} onChange={(event) => setSheetValue(event.target.value)} />
+        )}
+      </label>
+      <div className="flex gap-2">
+        <Button type="submit">Save</Button>
+        <Button type="button" variant="secondary" onClick={() => setSheet(null)}>Cancel</Button>
+      </div>
+    </form>
+  ) : null;
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -368,59 +525,6 @@ export function ProductionLeadsPage() {
       ) : null}
       {error ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
       {notice ? <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</p> : null}
-      {sheet ? (
-        <form
-          className="flex flex-wrap items-end gap-2 rounded-lg border border-line bg-white p-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const value = sheetValue.trim();
-            if (sheet.kind === "edit") {
-              void updateLead(sheet.lead, editDraft)
-                .then(() => {
-                  setLeads((current) => current.map((item) => item.id === sheet.lead.id ? { ...item, ...editDraft } : item));
-                  setNotice(`Updated ${editDraft.fullName}.`);
-                  setSheet(null);
-                })
-                .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not update the lead"));
-              return;
-            }
-            if (!value) return;
-            if (sheet.kind === "follow" && Number.isNaN(new Date(value).getTime())) {
-              setError("Choose a follow-up time.");
-              return;
-            }
-            const action = sheet.kind === "note"
-              ? addLeadNote(sheet.lead, value)
-              : addFollowUp(sheet.lead, new Date(value).toISOString(), "Follow-up");
-            void action
-              .then(() => {
-                setNotice(sheet.kind === "note" ? `Note saved for ${sheet.lead.fullName}.` : `Follow-up saved for ${sheet.lead.fullName}.`);
-                setSheet(null);
-                setSheetValue("");
-              })
-              .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not save"));
-          }}
-        >
-          <label className="min-w-64 flex-1 text-sm">
-            {sheet.kind === "edit" ? `Edit ${sheet.lead.fullName}` : sheet.kind === "note" ? `Note for ${sheet.lead.fullName}` : `Follow-up for ${sheet.lead.fullName}`}
-            {sheet.kind === "edit" ? (
-              <span className="mt-1 grid gap-2 sm:grid-cols-2">
-                <Input value={editDraft.fullName} onChange={(event) => setEditDraft({ ...editDraft, fullName: event.target.value })} placeholder="Name" />
-                <Input value={editDraft.phone} onChange={(event) => setEditDraft({ ...editDraft, phone: event.target.value })} placeholder="Phone" />
-                <Input value={editDraft.email} onChange={(event) => setEditDraft({ ...editDraft, email: event.target.value })} placeholder="Email" />
-                <Input value={editDraft.location} onChange={(event) => setEditDraft({ ...editDraft, location: event.target.value })} placeholder="Place" />
-                <Input value={editDraft.position} onChange={(event) => setEditDraft({ ...editDraft, position: event.target.value })} placeholder="Interest" />
-              </span>
-            ) : sheet.kind === "note" ? (
-              <textarea value={sheetValue} onChange={(event) => setSheetValue(event.target.value)} rows={2} className="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm outline-none" placeholder="Write the note" />
-            ) : (
-              <Input className="mt-1" type="datetime-local" value={sheetValue} onChange={(event) => setSheetValue(event.target.value)} />
-            )}
-          </label>
-          <Button type="submit">Save</Button>
-          <Button type="button" variant="secondary" onClick={() => setSheet(null)}>Cancel</Button>
-        </form>
-      ) : null}
       <div className="grid gap-2 rounded-lg border border-line bg-white p-3 md:grid-cols-3 xl:grid-cols-6">
         <Select value={workspaceId} onChange={(event) => { setWorkspaceId(event.target.value); setPage(1); }} aria-label="Desk">
           {canAssign && desk === "all" ? <option value="">All authorized desks</option> : null}
@@ -609,13 +713,8 @@ export function ProductionLeadsPage() {
             </div>
             <Select
               aria-label={`Stage for ${lead.fullName}`}
-              value={lead.status}
-              onChange={(event) => {
-                const next = event.target.value as LeadStatus;
-                void updateLeadStatus(lead, next)
-                  .then(() => setLeads((current) => current.map((item) => (item.id === lead.id ? { ...item, status: next } : item))))
-                  .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not update the stage"));
-              }}
+              value={booking?.id === lead.id ? "selected" : lead.status}
+              onChange={(event) => changeStage(lead, event.target.value as LeadStatus)}
             >
               {STATUS_ORDER.map((item) => <option key={item} value={item}>{STATUS_LABEL[item]}</option>)}
             </Select>
@@ -670,6 +769,8 @@ export function ProductionLeadsPage() {
                   .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not delete the lead"));
               }}>Delete</Button>
             </div>
+            {bookingForm(lead.id)}
+            {leadComposer(lead.id)}
           </article>
         ))}
         {leads.length === 0 && !loading ? <p className="rounded-lg border border-line bg-white px-4 py-8 text-center text-sm text-muted">No leads on this page.</p> : null}
@@ -681,7 +782,8 @@ export function ProductionLeadsPage() {
           </thead>
           <tbody>
             {leads.map((lead) => (
-              <tr key={lead.id} className="border-b border-line last:border-0">
+              <Fragment key={lead.id}>
+              <tr className="border-b border-line last:border-0">
                 <td className="px-3 py-2 font-medium">
                   <Link to={`/leads/${lead.id}`}>{lead.fullName}</Link>
                   <p className="text-xs text-muted">{leadOriginLabel(lead.status, lead.source, lead.sourcePlatform)}</p>
@@ -695,13 +797,8 @@ export function ProductionLeadsPage() {
                 </td>
                 <td className="px-3 py-2">
                   <Select
-                    value={lead.status}
-                    onChange={(event) => {
-                      const next = event.target.value as LeadStatus;
-                      void updateLeadStatus(lead, next)
-                        .then(() => setLeads((current) => current.map((item) => (item.id === lead.id ? { ...item, status: next } : item))))
-                        .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not update the stage"));
-                    }}
+                    value={booking?.id === lead.id ? "selected" : lead.status}
+                    onChange={(event) => changeStage(lead, event.target.value as LeadStatus)}
                   >
                     {STATUS_ORDER.map((item) => <option key={item} value={item}>{STATUS_LABEL[item]}</option>)}
                   </Select>
@@ -765,6 +862,8 @@ export function ProductionLeadsPage() {
                   </div>
                 </td>
               </tr>
+              {booking?.id === lead.id || sheet?.lead.id === lead.id ? <tr className="border-b border-line bg-canvas"><td colSpan={7} className="px-3 py-2">{bookingForm(lead.id)}{leadComposer(lead.id)}</td></tr> : null}
+              </Fragment>
             ))}
           </tbody>
         </table>

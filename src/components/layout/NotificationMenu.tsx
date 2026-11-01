@@ -38,8 +38,17 @@ function LiveAlerts() {
       }
       refresh();
     };
+    const onFollowUp = (event: Event) => {
+      const detail = (event as CustomEvent<{ fullName?: string; id?: string; dueAt?: string }>).detail;
+      if (detail?.id && detail.fullName) {
+        const when = detail.dueAt ? new Date(detail.dueAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "numeric", minute: "2-digit" }) : "scheduled";
+        setItems((current) => [{ title: detail.fullName!, body: `Follow-up · ${when}`, href: `/leads/${detail.id}` }, ...current].slice(0, 20));
+      }
+      refresh();
+    };
     window.addEventListener("bitvion-lead", onLead);
     window.addEventListener("bitvion-lead-update", onLead);
+    window.addEventListener("bitvion-followup", onFollowUp);
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") refresh();
     }, 10000);
@@ -47,6 +56,7 @@ function LiveAlerts() {
       active = false;
       window.removeEventListener("bitvion-lead", onLead);
       window.removeEventListener("bitvion-lead-update", onLead);
+      window.removeEventListener("bitvion-followup", onFollowUp);
       window.clearInterval(timer);
     };
   }, []);

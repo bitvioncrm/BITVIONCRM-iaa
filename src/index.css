@@ -143,6 +143,18 @@
   background-color: #151c27;
 }
 
+@media (max-width: 1023px) {
+  .dark label:has(> input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"])) > input,
+  .dark label:has(> select) > select,
+  .dark label:has(> textarea) > textarea,
+  .dark .sheet-panel form,
+  .dark .sheet-panel > .overflow-y-auto {
+    background: #151c27;
+    border-color: #2a3444;
+    color: #eef2f6;
+  }
+}
+
 .dark .bg-amber-50 {
   background-color: #3a2e16;
 }
@@ -160,6 +172,121 @@
   background-color: #efeae2;
   background-image: radial-gradient(rgba(17, 27, 33, 0.05) 0.7px, transparent 0.7px);
   background-size: 14px 14px;
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(16px);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@media (max-width: 1023px) {
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  button,
+  a,
+  label,
+  select,
+  summary {
+    touch-action: manipulation;
+  }
+
+  .page-enter {
+    animation: none;
+  }
+
+  .sheet-panel[data-state="open"] {
+    animation: sheet-up 160ms ease;
+  }
+
+  .touch-card {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 168px;
+    border-color: #eadfca;
+    box-shadow: 0 8px 22px rgba(18, 38, 63, 0.05);
+  }
+
+  label:has(> input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"])),
+  label:has(> select),
+  label:has(> textarea) {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.35rem;
+    min-width: 0;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #667085;
+  }
+
+  label:has(> input) > span,
+  label:has(> select) > span,
+  label:has(> textarea) > span {
+    letter-spacing: 0;
+    text-transform: none;
+    font-weight: 500;
+  }
+
+  label:has(> input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"])) > input,
+  label:has(> select) > select,
+  label:has(> textarea) > textarea {
+    width: 100%;
+    max-width: 100%;
+    min-height: 2.85rem;
+    margin-top: 0;
+    border-radius: 0.85rem;
+    border: 1px solid #e4e7ec;
+    background: #fff;
+    padding: 0.7rem 0.85rem;
+    font-size: 16px;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    color: #141a24;
+  }
+
+  label:has(> textarea) > textarea {
+    min-height: 5.75rem;
+    line-height: 1.45;
+  }
+
+  label > input:focus,
+  label > select:focus,
+  label > textarea:focus {
+    outline: none;
+    border-color: #c6a15b;
+    box-shadow: 0 0 0 3px rgba(198, 161, 91, 0.28);
+  }
+
+  .sheet-panel form {
+    border: 1px solid #eadfca;
+    border-radius: 1rem;
+    background: #fff;
+    padding: 0.9rem;
+  }
+
+  .sheet-panel button[type="submit"] {
+    min-height: 3rem;
+    border-radius: 0.9rem;
+    font-weight: 600;
+  }
+
+  .dialog-panel {
+    overscroll-behavior: contain;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

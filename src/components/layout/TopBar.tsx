@@ -26,7 +26,7 @@ export function TopBar({ collapsed, onToggle }: { collapsed: boolean; onToggle: 
   const items = productionUser ? productionNav(productionUser.roleKey) : admin ? NAV_ITEMS : STAFF_NAV;
 
   return (
-    <header className="flex flex-wrap items-center gap-2 border-b border-line bg-white px-3 py-2 sm:px-4">
+    <header className="flex flex-wrap items-center gap-1.5 border-b border-line bg-white px-2 py-1.5 sm:gap-2 sm:px-4 sm:py-2">
       <button type="button" aria-pressed={collapsed} className="hidden rounded-md p-2 text-muted hover:bg-slate-100 lg:inline-flex" onClick={onToggle} aria-label="Collapse sidebar">
         <PanelLeft className="size-4" />
       </button>
@@ -67,9 +67,9 @@ export function TopBar({ collapsed, onToggle }: { collapsed: boolean; onToggle: 
       ) : null}
       <NotificationMenu />
       <DropdownMenu>
-        <DropdownMenuTrigger className="rounded-md px-2 py-1 text-left text-xs hover:bg-slate-100" aria-label="Account menu">
-          <span className="block max-w-32 truncate font-medium">{session?.name ?? "Account"}</span>
-          <span className="block text-[10px] text-muted">{productionUser ? "Signed in" : "Account"}</span>
+        <DropdownMenuTrigger className="min-h-11 rounded-md px-2 py-1 text-left text-xs hover:bg-slate-100" aria-label="Account menu">
+          <span className="block max-w-24 truncate font-medium sm:max-w-32">{session?.name ?? "Account"}</span>
+          <span className="hidden text-[10px] text-muted sm:block">{productionUser ? "Signed in" : "Account"}</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent>
           <DropdownMenuLabel>{session?.email ?? "Account"}</DropdownMenuLabel>
