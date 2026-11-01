@@ -27,8 +27,9 @@ const SHORT_LABEL: Record<string, string> = {
   "/appointments": "Appointments",
   "/bookings": "Bookings",
   "/institute": "Institute",
+  "/institute-billing": "Fees",
   "/inventory": "Stock",
-  "/billing": "Finance",
+  "/billing": "Billing",
 };
 
 const BOTTOM_FIRST = ["/", "/leads", "/whatsapp", "/calls"];

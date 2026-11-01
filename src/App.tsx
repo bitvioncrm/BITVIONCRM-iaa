@@ -61,6 +61,7 @@ export default function App() {
           <Route path="/bookings" element={<BookingsPage />} />
           <Route path="/clinic" element={<ProductionModule module="clinic" />} />
           <Route path="/institute" element={<ProductionModule module="institute" />} />
+          <Route path="/institute-billing" element={<ProductionModule module="institute-billing" />} />
           <Route path="/inventory" element={<ClinicInventoryPage />} />
           <Route path="/billing" element={<ProductionModule module="billing" />} />
           <Route path="/meta" element={<MetaLeadCentre />} />

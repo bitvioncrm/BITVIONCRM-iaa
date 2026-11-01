@@ -1,4 +1,4 @@
-const ADMIN = ["/", "/desk", "/leads", "/pipeline", "/follow-ups", "/calls", "/whatsapp", "/tasks", "/reports", "/team", "/activity", "/settings", "/clinic", "/institute", "/inventory", "/billing", "/meta"];
+const ADMIN = ["/", "/desk", "/leads", "/pipeline", "/follow-ups", "/calls", "/whatsapp", "/tasks", "/reports", "/team", "/activity", "/settings", "/clinic", "/institute", "/institute-billing", "/inventory", "/billing", "/meta"];
 
 export function canOperateWhatsApp(roleKey: string) {
   return roleKey === "super_admin" || roleKey === "admin";
@@ -27,7 +27,7 @@ export function pathsForRole(roleKey: string) {
   if (roleKey === "doctor" || roleKey === "duty_doctor") return ["/", "/clinic", "/inventory"];
   if (roleKey === "receptionist") return ["/", "/leads", "/pipeline", "/follow-ups", "/calls", "/clinic", "/appointments", "/inventory", "/billing"];
   if (roleKey === "clinic_telecaller" || roleKey === "clinic_bde") return ["/", "/leads", "/pipeline", "/follow-ups", "/calls", "/whatsapp", "/appointments"];
-  if (roleKey === "institute_telecaller" || roleKey === "institute_bde" || roleKey === "institute_user") return ["/", "/leads", "/pipeline", "/follow-ups", "/calls", "/whatsapp", "/institute", "/bookings"];
+  if (roleKey === "institute_telecaller" || roleKey === "institute_bde" || roleKey === "institute_user") return ["/", "/leads", "/pipeline", "/follow-ups", "/calls", "/whatsapp", "/institute", "/institute-billing", "/bookings"];
   return ["/"];
 }
 

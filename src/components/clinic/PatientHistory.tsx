@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Portrait } from "@/components/shared/Portrait";
+import { BillReceipt } from "@/components/clinic/BillingDesk";
 import { inr } from "@/lib/money";
 import { listCareProducts, recordPatientCare } from "@/services/clinic-care";
 import {
@@ -336,17 +337,14 @@ export function PatientHistory({
       </section>
       ) : null}
 
-      {record && record.bills.length > 0 ? (
-        <section className="space-y-2">
-          <h3 className="text-sm font-semibold">Bills</h3>
-          {record.bills.map((bill) => (
-            <article key={bill.id} className="rounded-2xl border border-line bg-white px-3 py-3 text-sm">
-              <p className="font-medium">{bill.number || "Invoice"} · {bill.issuedOn}</p>
-              <p className="mt-1">Total {inr(bill.total)} · Paid {inr(bill.paid)} · Balance {inr(bill.balance)}</p>
-            </article>
-          ))}
-        </section>
-      ) : null}
+      <section className="space-y-2">
+        <h3 className="text-sm font-semibold">Bill</h3>
+        {!record ? <p className="text-sm text-muted">Loading the bill…</p> : record.bills.length === 0 ? <p className="text-sm text-muted">No bill saved yet.</p> : record.bills.map((bill) => (
+          <article key={bill.id} className="rounded-2xl border border-[#eadfca] bg-[#faf6ee] px-3 py-3 text-sm">
+            <BillReceipt bill={bill} />
+          </article>
+        ))}
+      </section>
     </div>
   );
 }

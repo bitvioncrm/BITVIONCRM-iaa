@@ -420,6 +420,7 @@ export interface PatientBill {
   number: string;
   issuedOn: string;
   status: string;
+  discount: number;
   total: number;
   paid: number;
   balance: number;
@@ -440,7 +441,7 @@ export async function loadPatientRecord(patientId: string): Promise<PatientRecor
   const [procedures, consultations, invoices] = await Promise.all([
     client().from("patient_procedures").select("id, doctor_id, procedure_1, procedure_2, performed_on, notes, patient_procedure_items(id, product_id, quantity, line_total, inventory_products(name))").eq("patient_id", patientId).order("performed_on", { ascending: false }).limit(80),
     client().from("consultations").select("id, doctor_id, diagnosis, treatment_plan, follow_up_on, created_at, prescriptions(id, medicine, dosage, frequency, duration, instructions)").eq("patient_id", patientId).order("created_at", { ascending: false }).limit(80),
-    client().from("invoices").select("id, invoice_number, status, total, issued_on, invoice_items(description, quantity, unit_price), payments(amount)").eq("patient_id", patientId).order("issued_on", { ascending: false }).limit(40),
+    client().from("invoices").select("id, invoice_number, status, discount, total, issued_on, invoice_items(description, quantity, unit_price), payments(amount)").eq("patient_id", patientId).order("issued_on", { ascending: false }).limit(40),
   ]);
   if (procedures.error) throw new Error(procedures.error.message);
   if (consultations.error) throw new Error(consultations.error.message);
@@ -515,6 +516,7 @@ export async function loadPatientRecord(patientId: string): Promise<PatientRecor
       number: String(row.invoice_number || ""),
       issuedOn: String(row.issued_on || ""),
       status: String(row.status || ""),
+      discount: Number(row.discount ?? 0),
       total,
       paid,
       balance: Math.max(0, total - paid),
@@ -949,6 +951,235 @@ export async function seedClinicSkincareStock() {
   const { data, error } = await client().rpc("seed_clinic_skincare_stock");
   if (error) throw new Error(error.message);
   return Number(data ?? 0);
+}
+
+export interface ClinicBillLine {
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  amount: number;
+}
+
+export interface ClinicBill {
+  id: string;
+  patientId: string;
+  studentId: string;
+  personName: string;
+  number: string;
+  issuedOn: string;
+  status: string;
+  discount: number;
+  total: number;
+  paid: number;
+  balance: number;
+  items: ClinicBillLine[];
+}
+
+export async function listClinicBills(workspaceId: string) {
+  const { data, error } = await client()
+    .from("invoices")
+    .select("id, invoice_number, patient_id, student_id, status, discount, total, issued_on, invoice_items(description, quantity, unit_price), payments(amount), patients(full_name), students(full_name)")
+    .eq("workspace_id", workspaceId)
+    .order("issued_on", { ascending: false })
+    .limit(200);
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((row) => {
+    const items = ((row.invoice_items as Array<Record<string, unknown>> | null) ?? []).map((item) => {
+      const quantity = Number(item.quantity ?? 1);
+      const unitPrice = Number(item.unit_price ?? 0);
+      return { description: String(item.description || "Item"), quantity, unitPrice, amount: quantity * unitPrice };
+    });
+    const paid = ((row.payments as Array<{ amount?: number }> | null) ?? []).reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
+    const total = Number(row.total ?? 0);
+    const patient = row.patients as { full_name?: string } | { full_name?: string }[] | null;
+    const student = row.students as { full_name?: string } | { full_name?: string }[] | null;
+    const patientName = (Array.isArray(patient) ? patient[0]?.full_name : patient?.full_name) || "";
+    const studentName = (Array.isArray(student) ? student[0]?.full_name : student?.full_name) || "";
+    return {
+      id: String(row.id),
+      patientId: String(row.patient_id || ""),
+      studentId: String(row.student_id || ""),
+      personName: patientName || studentName || "No person",
+      number: String(row.invoice_number || ""),
+      issuedOn: String(row.issued_on || ""),
+      status: String(row.status || "pending"),
+      discount: Number(row.discount ?? 0),
+      total,
+      paid,
+      balance: balance(total, paid, 0),
+      items,
+    } satisfies ClinicBill;
+  });
+}
+
+export async function createPatientBill(input: {
+  organizationId: string;
+  workspaceId: string;
+  patientId: string;
+  discount: number;
+  paid: number;
+  method: "cash" | "upi" | "card" | "bank_transfer" | "online_payment";
+  lines: Array<{ kind: "Treatment" | "Booking" | "Product"; description: string; quantity: number; unitPrice: number }>;
+}) {
+  forgetDeskLists();
+  const lines = input.lines
+    .map((line) => ({ ...line, description: line.description.trim(), quantity: Number(line.quantity), unitPrice: Number(line.unitPrice) }))
+    .filter((line) => line.description && line.quantity > 0 && line.unitPrice >= 0);
+  if (!lines.length) throw new Error("Add a treatment, booking, or product charge.");
+  if (input.discount < 0 || input.paid < 0) throw new Error("Amounts cannot be negative.");
+  const total = invoiceTotal(lines.map((line) => ({ quantity: line.quantity, unitPrice: line.unitPrice })), input.discount);
+  if (input.paid > total) throw new Error("The amount received is higher than the bill.");
+  const number = `INV-${Date.now().toString(36).toUpperCase()}`;
+  const { data, error } = await client().from("invoices").insert({
+    organization_id: input.organizationId,
+    workspace_id: input.workspaceId,
+    invoice_number: number,
+    patient_id: input.patientId,
+    discount: input.discount,
+    total,
+    issued_on: new Date().toISOString().slice(0, 10),
+    created_by: await userId(),
+  }).select("id").single();
+  if (error) throw new Error(error.message);
+  const { error: itemError } = await client().from("invoice_items").insert(lines.map((line) => ({
+    invoice_id: data.id,
+    description: `${line.kind} · ${line.description}`,
+    quantity: line.quantity,
+    unit_price: line.unitPrice,
+  })));
+  if (itemError) throw new Error(itemError.message);
+  if (input.paid > 0) {
+    await recordPayment({ organizationId: input.organizationId, workspaceId: input.workspaceId, invoiceId: data.id as string, amount: input.paid, method: input.method });
+  }
+  return { id: data.id as string, number, total };
+}
+
+export async function addToPatientBill(input: {
+  organizationId: string;
+  workspaceId: string;
+  patientId: string;
+  discount: number;
+  paid: number;
+  method: "cash" | "upi" | "card" | "bank_transfer" | "online_payment";
+  lines: Array<{ kind: "Treatment" | "Booking" | "Product"; description: string; quantity: number; unitPrice: number }>;
+}) {
+  const lines = input.lines
+    .map((line) => ({ ...line, description: line.description.trim(), quantity: Number(line.quantity), unitPrice: Number(line.unitPrice) }))
+    .filter((line) => line.description && line.quantity > 0 && line.unitPrice >= 0);
+  if (!lines.length) throw new Error("Add a treatment, booking, or product charge.");
+  const open = await client()
+    .from("invoices")
+    .select("id, invoice_number, discount, invoice_items(quantity, unit_price), payments(amount)")
+    .eq("workspace_id", input.workspaceId)
+    .eq("patient_id", input.patientId)
+    .not("status", "in", "(cancelled,refunded)")
+    .order("issued_on", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (open.error) throw new Error(open.error.message);
+  const current = open.data;
+  if (!current) return createPatientBill(input);
+  forgetDeskLists();
+  const currentItems = ((current.invoice_items as Array<{ quantity?: number; unit_price?: number }> | null) ?? []).map((item) => ({
+    quantity: Number(item.quantity ?? 1),
+    unitPrice: Number(item.unit_price ?? 0),
+  }));
+  const alreadyPaid = ((current.payments as Array<{ amount?: number }> | null) ?? []).reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
+  const discount = Number(current.discount ?? 0) + Math.max(0, input.discount);
+  const total = invoiceTotal([...currentItems, ...lines.map((line) => ({ quantity: line.quantity, unitPrice: line.unitPrice }))], discount);
+  if (input.paid < 0 || alreadyPaid + input.paid > total) throw new Error("The amount received is higher than the balance.");
+  const added = await client().from("invoice_items").insert(lines.map((line) => ({
+    invoice_id: current.id,
+    description: `${line.kind} · ${line.description}`,
+    quantity: line.quantity,
+    unit_price: line.unitPrice,
+  })));
+  if (added.error) throw new Error(added.error.message);
+  const paid = alreadyPaid + Math.max(0, input.paid);
+  const due = balance(total, paid, 0);
+  const status = due === 0 ? "paid" : paid > 0 ? "partial" : "pending";
+  const saved = await client().from("invoices").update({ discount, total, status }).eq("id", current.id);
+  if (saved.error) throw new Error(saved.error.message);
+  if (input.paid > 0) {
+    await recordPayment({ organizationId: input.organizationId, workspaceId: input.workspaceId, invoiceId: current.id as string, amount: input.paid, method: input.method });
+  }
+  return { id: current.id as string, number: String(current.invoice_number || ""), total };
+}
+
+export async function addToStudentBill(input: {
+  organizationId: string;
+  workspaceId: string;
+  studentId: string;
+  discount: number;
+  paid: number;
+  method: "cash" | "upi" | "card" | "bank_transfer" | "online_payment";
+  lines: Array<{ kind: "Course fee" | "Registration" | "Material" | "Exam" | "Certificate"; description: string; quantity: number; unitPrice: number }>;
+}) {
+  const lines = input.lines
+    .map((line) => ({ ...line, description: line.description.trim(), quantity: Number(line.quantity), unitPrice: Number(line.unitPrice) }))
+    .filter((line) => line.description && line.quantity > 0 && line.unitPrice >= 0);
+  if (!lines.length) throw new Error("Add a course fee, registration, material, exam, or certificate charge.");
+  const open = await client()
+    .from("invoices")
+    .select("id, invoice_number, discount, invoice_items(quantity, unit_price), payments(amount)")
+    .eq("workspace_id", input.workspaceId)
+    .eq("student_id", input.studentId)
+    .not("status", "in", "(cancelled,refunded)")
+    .order("issued_on", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (open.error) throw new Error(open.error.message);
+  const current = open.data;
+  if (input.discount < 0 || input.paid < 0) throw new Error("Amounts cannot be negative.");
+  if (!current) {
+    forgetDeskLists();
+    const total = invoiceTotal(lines.map((line) => ({ quantity: line.quantity, unitPrice: line.unitPrice })), input.discount);
+    if (input.paid > total) throw new Error("The amount received is higher than the bill.");
+    const number = `INV-${Date.now().toString(36).toUpperCase()}`;
+    const created = await client().from("invoices").insert({
+      organization_id: input.organizationId,
+      workspace_id: input.workspaceId,
+      invoice_number: number,
+      student_id: input.studentId,
+      discount: input.discount,
+      total,
+      issued_on: new Date().toISOString().slice(0, 10),
+      created_by: await userId(),
+    }).select("id").single();
+    if (created.error) throw new Error(created.error.message);
+    const items = await client().from("invoice_items").insert(lines.map((line) => ({
+      invoice_id: created.data.id,
+      description: `${line.kind} · ${line.description}`,
+      quantity: line.quantity,
+      unit_price: line.unitPrice,
+    })));
+    if (items.error) throw new Error(items.error.message);
+    if (input.paid > 0) await recordPayment({ organizationId: input.organizationId, workspaceId: input.workspaceId, invoiceId: created.data.id as string, amount: input.paid, method: input.method });
+    return { id: created.data.id as string, number, total };
+  }
+  forgetDeskLists();
+  const currentItems = ((current.invoice_items as Array<{ quantity?: number; unit_price?: number }> | null) ?? []).map((item) => ({
+    quantity: Number(item.quantity ?? 1),
+    unitPrice: Number(item.unit_price ?? 0),
+  }));
+  const alreadyPaid = ((current.payments as Array<{ amount?: number }> | null) ?? []).reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
+  const discount = Number(current.discount ?? 0) + Math.max(0, input.discount);
+  const total = invoiceTotal([...currentItems, ...lines.map((line) => ({ quantity: line.quantity, unitPrice: line.unitPrice }))], discount);
+  if (alreadyPaid + input.paid > total) throw new Error("The amount received is higher than the balance.");
+  const added = await client().from("invoice_items").insert(lines.map((line) => ({
+    invoice_id: current.id,
+    description: `${line.kind} · ${line.description}`,
+    quantity: line.quantity,
+    unit_price: line.unitPrice,
+  })));
+  if (added.error) throw new Error(added.error.message);
+  const paid = alreadyPaid + Math.max(0, input.paid);
+  const due = balance(total, paid, 0);
+  const status = due === 0 ? "paid" : paid > 0 ? "partial" : "pending";
+  const saved = await client().from("invoices").update({ discount, total, status }).eq("id", current.id);
+  if (saved.error) throw new Error(saved.error.message);
+  if (input.paid > 0) await recordPayment({ organizationId: input.organizationId, workspaceId: input.workspaceId, invoiceId: current.id as string, amount: input.paid, method: input.method });
+  return { id: current.id as string, number: String(current.invoice_number || ""), total };
 }
 
 export async function createInvoice(input: { organizationId: string; workspaceId: string; patientId: string | null; studentId?: string | null; description: string; quantity: number; unitPrice: number; discount: number; issuedOn?: string | null }) {

@@ -62,6 +62,12 @@ export interface Overview {
   funnel: Array<{ name: string; value: number }>;
   sources: Array<{ name: string; value: number }>;
   collectionsByDesk: Array<{ name: string; amount: number }>;
+  clinicIncome: number | null;
+  clinicExpense: number | null;
+  instituteIncome: number | null;
+  instituteExpense: number | null;
+  clinicMoney: Array<{ kind: "income" | "expense"; note: string; amount: number }>;
+  instituteMoney: Array<{ kind: "income" | "expense"; note: string; amount: number }>;
   activity: Array<{ label: string; appointments: number; admissions: number }>;
   courses: Array<{ name: string; leads: number; converted: number }>;
   campaigns: CampaignPulseRow[];
@@ -191,6 +197,12 @@ export async function loadOverview(workspaces: WorkspaceOption[], desk: DeskKey,
   ]);
 
   let collections: number | null = 0;
+  let clinicIncome: number | null = 0;
+  let clinicExpense: number | null = 0;
+  let instituteIncome: number | null = 0;
+  let instituteExpense: number | null = 0;
+  let clinicMoney: Overview["clinicMoney"] = [];
+  let instituteMoney: Overview["instituteMoney"] = [];
   const collectionsByDesk = [
     { name: "Clinic", amount: 0 },
     { name: "Institute", amount: 0 },
@@ -205,6 +217,55 @@ export async function loadOverview(workspaces: WorkspaceOption[], desk: DeskKey,
   } catch (reason) {
     collections = null;
     errors.push(reason instanceof Error ? `Collections: ${reason.message}` : "Collections could not be loaded");
+  }
+
+  const cashFor = async (workspaceIds: string[]) => {
+    const empty = { income: 0, expense: 0, lines: [] as Overview["clinicMoney"] };
+    if (!workspaceIds.length) return empty;
+    const [ledger, payments, refunds] = await Promise.all([
+      db().from("clinic_ledger").select("kind, amount, note, created_at").in("workspace_id", workspaceIds).gte("created_at", bounds.from).lt("created_at", bounds.to).order("created_at", { ascending: false }).limit(200),
+      db().from("payments").select("amount, method, paid_on").in("workspace_id", workspaceIds).gte("paid_on", bounds.fromDate).lte("paid_on", bounds.toDate).order("paid_on", { ascending: false }).limit(200),
+      db().from("refunds").select("amount, created_at").in("workspace_id", workspaceIds).gte("created_at", bounds.from).lt("created_at", bounds.to).order("created_at", { ascending: false }).limit(200),
+    ]);
+    if (ledger.error) throw new Error(ledger.error.message);
+    if (payments.error) throw new Error(payments.error.message);
+    if (refunds.error) throw new Error(refunds.error.message);
+    const lines: Overview["clinicMoney"] = [];
+    let income = 0;
+    let expense = 0;
+    for (const row of ledger.data ?? []) {
+      const amount = Number(row.amount ?? 0);
+      const kind = row.kind === "expense" ? "expense" : "income";
+      if (kind === "expense") expense += amount;
+      else income += amount;
+      lines.push({ kind, note: String(row.note || kind), amount });
+    }
+    for (const row of payments.data ?? []) {
+      const amount = Number(row.amount ?? 0);
+      income += amount;
+      lines.push({ kind: "income", note: `Bill payment · ${String(row.method || "cash")}`, amount });
+    }
+    for (const row of refunds.data ?? []) {
+      const amount = Number(row.amount ?? 0);
+      expense += amount;
+      lines.push({ kind: "expense", note: "Refund", amount });
+    }
+    return { income, expense, lines: lines.slice(0, 8) };
+  };
+  try {
+    const [clinicCash, instituteCash] = await Promise.all([cashFor(clinicIds), cashFor(instituteIds)]);
+    clinicIncome = clinicCash.income;
+    clinicExpense = clinicCash.expense;
+    instituteIncome = instituteCash.income;
+    instituteExpense = instituteCash.expense;
+    clinicMoney = clinicCash.lines;
+    instituteMoney = instituteCash.lines;
+  } catch (reason) {
+    clinicIncome = null;
+    clinicExpense = null;
+    instituteIncome = null;
+    instituteExpense = null;
+    errors.push(reason instanceof Error ? `Income and expenses: ${reason.message}` : "Income and expenses could not be loaded");
   }
 
   const inventoryTotals = async () => {
@@ -407,6 +468,12 @@ export async function loadOverview(workspaces: WorkspaceOption[], desk: DeskKey,
     funnel,
     sources,
     collectionsByDesk: collections === null ? [] : collectionsByDesk.filter((row) => desk === "all" || row.name.toLowerCase() === desk),
+    clinicIncome,
+    clinicExpense,
+    instituteIncome,
+    instituteExpense,
+    clinicMoney,
+    instituteMoney,
     activity,
     courses,
     campaigns,

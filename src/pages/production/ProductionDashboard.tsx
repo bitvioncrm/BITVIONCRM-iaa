@@ -4,6 +4,7 @@ import { BusinessBoard } from "@/components/dashboard/BusinessBoard";
 import { StudentFile } from "@/components/institute/StudentFile";
 import { detailsFromStudent, StudentForm } from "@/components/institute/StudentForm";
 import { Portrait } from "@/components/shared/Portrait";
+import { VisitAccount } from "@/components/clinic/BillingDesk";
 import { PatientHistory } from "@/components/clinic/PatientHistory";
 import { Sheet, SheetBody, SheetContent, SheetHeader } from "@/components/ui/sheet";
 import { useAuth } from "@/context/AuthContext";
@@ -13,7 +14,7 @@ import { loadDoctorPulse } from "@/services/clinic-care";
 import { formatClock } from "@/lib/call-time";
 import { phoneTel } from "@/lib/phone";
 import { rangeBounds, type RangeKey } from "@/lib/range";
-import { callDeskReport, countRows, listDeskMoney, listDeskPatients, listDeskStudents, listFollowUps, clearDeskCache, removeAppointment, removePatient, removeStudent, savePersonPhoto, saveStudentDetails, updateAppointment, updatePatient, type DeskMoney, type DeskPatient, type DeskStudent, type StudentDetails } from "@/services/production-ops";
+import { callDeskReport, countRows, listClinicBills, listDeskMoney, listDeskPatients, listDeskStudents, listFollowUps, clearDeskCache, removeAppointment, removePatient, removeStudent, savePersonPhoto, saveStudentDetails, updateAppointment, updatePatient, type ClinicBill, type DeskMoney, type DeskPatient, type DeskStudent, type StudentDetails } from "@/services/production-ops";
 import { listDoctors } from "@/services/production-leads";
 import { inr } from "@/lib/money";
 
@@ -178,6 +179,7 @@ function ReceptionDashboard() {
   const { workspaces, error } = useWorkspaces();
   const clinic = workspaces.find((item) => item.workspaceType === "clinic") ?? workspaces[0];
   const [cards, setCards] = useState<DeskPatient[]>([]);
+  const [bills, setBills] = useState<ClinicBill[]>([]);
   const [money, setMoney] = useState<DeskMoney[]>([]);
   const [filter, setFilter] = useState<DeskFilter>("all");
   const [focus, setFocus] = useState<"patients" | "appointments" | "arrived">("patients");
@@ -211,29 +213,19 @@ function ReceptionDashboard() {
   useEffect(() => {
     if (!clinic) return;
     void listDeskPatients(clinic.id).then(setCards).catch(() => setCards([]));
+    void listClinicBills(clinic.id).then(setBills).catch(() => setBills([]));
     void listDeskMoney(clinic.id).then(setMoney).catch(() => setMoney([]));
     const refresh = () => {
       clearDeskCache();
       void listDeskPatients(clinic.id).then(setCards).catch(() => undefined);
+      void listClinicBills(clinic.id).then(setBills).catch(() => undefined);
       void listDeskMoney(clinic.id).then(setMoney).catch(() => undefined);
     };
     const timer = window.setInterval(refresh, 15000);
     return () => window.clearInterval(timer);
   }, [clinic]);
-  const span = useMemo(() => boundsFor(filter, customFrom, customTo), [filter, customFrom, customTo]);
-  const moneyInRange = useMemo(() => money.filter((row) => filter === "all" || inside(moneyStamp(row.at), span.from, span.to)), [filter, money, span.from, span.to]);
-  const income = moneyInRange.filter((row) => row.kind === "income").reduce((sum, row) => sum + row.amount, 0);
-  const expense = moneyInRange.filter((row) => row.kind === "expense").reduce((sum, row) => sum + row.amount, 0);
-  const moneyDays = useMemo(() => {
-    const grouped = new Map<string, { income: number; expense: number }>();
-    for (const row of moneyInRange) {
-      const key = dayKey(row.at);
-      const current = grouped.get(key) ?? { income: 0, expense: 0 };
-      current[row.kind] += row.amount;
-      grouped.set(key, current);
-    }
-    return [...grouped.entries()].sort(([left], [right]) => right.localeCompare(left));
-  }, [moneyInRange]);
+  const incomeRows = useMemo(() => money.filter((row) => row.kind === "income").sort((left, right) => right.at.localeCompare(left.at)), [money]);
+  const incomeTotal = incomeRows.reduce((sum, row) => sum + row.amount, 0);
   const patientTotal = useMemo(() => {
     const totals = new Map<string, number>();
     for (const row of money) {
@@ -260,65 +252,48 @@ function ReceptionDashboard() {
         <Stat label="Patients" value={String(visible.length)} hint="Open the cards" active={focus === "patients"} onClick={() => choose("patients")} />
         <Stat label="Appointments" value={String(appointmentCount)} hint={`${withAppointments.length} patients`} active={focus === "appointments"} onClick={() => choose("appointments")} />
         <Stat label="Arrived" value={String(arrivedCount)} hint={`${arrivedPatients.length} patients`} active={focus === "arrived"} onClick={() => choose("arrived")} />
-        <Stat label="Income" value={inr(income)} />
-        <Stat label="Expense" value={inr(expense)} />
-        <Stat label="Total" value={inr(income - expense)} />
+        <Stat label="Income" value={inr(incomeTotal)} hint="Collected for the clinic" />
       </div>
-      <div className="flex flex-wrap gap-2"><Tile to="/appointments" label="Appointments" /><Tile to="/clinic" label="Register and appointments" /><Tile to="/billing" label="Income and expenses" /><Tile to="/inventory" label="Stock" /></div>
-      <FilterBar filter={filter} customFrom={customFrom} customTo={customTo} onFilter={setFilter} onFrom={setCustomFrom} onTo={setCustomTo} count={shown.length} noun={shownLabel} />
       <section className="rounded-2xl border border-line bg-white p-3 sm:p-4">
-        <h2 className="text-sm font-semibold">Income and expenses</h2>
-        {moneyDays.length === 0 ? <p className="mt-2 text-sm text-muted">No income or expenses in this range.</p> : (
+        <h2 className="text-sm font-semibold">Income</h2>
+        {incomeRows.length === 0 ? <p className="mt-2 text-sm text-muted">No income yet.</p> : (
           <div className="mt-3 space-y-2">
-            {moneyDays.map(([day, row]) => (
-              <div key={day} className="flex flex-col gap-1 rounded-xl border border-line px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
-                <span className="font-medium">{formatWhen(day)}</span>
-                <span className="text-muted">Income {inr(row.income)} · Expense {inr(row.expense)} · Total {inr(row.income - row.expense)}</span>
-              </div>
-            ))}
+            {incomeRows.slice(0, 12).map((row) => {
+              const person = cards.find((item) => item.id === row.patientId);
+              return (
+                <div key={row.id} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="min-w-0 truncate">{person?.full_name || "Clinic"} · {row.note || "Payment"}</span>
+                  <span className="shrink-0 font-medium">{inr(row.amount)}</span>
+                </div>
+              );
+            })}
           </div>
         )}
       </section>
+      <div className="flex flex-wrap gap-2"><Tile to="/appointments" label="Appointments" /><Tile to="/clinic" label="Register and appointments" /><Tile to="/billing" label="Billing" /><Tile to="/inventory" label="Stock" /></div>
+      <FilterBar filter={filter} customFrom={customFrom} customTo={customTo} onFilter={setFilter} onFrom={setCustomFrom} onTo={setCustomTo} count={shown.length} noun={shownLabel} />
       <div id="reception-cards">
       {shown.length === 0 ? <p className="rounded-2xl border border-dashed border-line bg-white px-4 py-10 text-center text-sm text-muted">No patients in this range.</p> : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {shown.map((patient) => {
-            const visits = [...patient.appointments].sort((left, right) => left.starts_at.localeCompare(right.starts_at));
-            const completed = [...patient.treatments].sort((left, right) => right.performed_on.localeCompare(left.performed_on));
-            const first = [...patient.treatments].sort((left, right) => left.performed_on.localeCompare(right.performed_on))[0];
-            const latest = visits[visits.length - 1];
-            const latestCare = completed[0];
+            const latest = [...patient.appointments].sort((left, right) => left.starts_at.localeCompare(right.starts_at)).at(-1);
             return (
-              <div key={patient.id} className="touch-card rounded-2xl border border-line bg-white p-4 text-left shadow-sm sm:transition sm:hover:-translate-y-0.5 sm:hover:border-[#c6a15b] sm:hover:shadow-md">
-              <button type="button" onClick={() => setOpen(patient)} className="w-full text-left">
-                <div className="flex items-start gap-3">
-                  <Portrait name={patient.full_name} path={patient.photo_path} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block break-words text-lg font-semibold text-ink">{patient.full_name}</span>
-                    <span className="mt-0.5 block text-xs text-muted">{patient.patient_code}</span>
-                  </span>
-                  {latest ? <StatusChip status={latest.status} /> : null}
-                </div>
-                <p className="mt-3 text-sm text-ink">{patient.mobile || "No mobile"}{patient.place ? ` · ${patient.place}` : ""}</p>
-                <p className="mt-1 text-xs text-muted">{[patient.gender, patient.age == null ? "" : `Age ${patient.age}`, patient.address].filter(Boolean).join(" · ")}</p>
-                <p className="mt-3 text-sm"><span className="font-medium">First treatment </span>{first ? `${formatWhen(first.performed_on)} · ${first.title}` : "Not recorded yet"}</p>
-                <p className="mt-1 text-sm"><span className="font-medium">Doctor completed </span>{latestCare ? `${formatWhen(latestCare.performed_on)} · ${latestCare.title}` : "Not completed yet"}</p>
-                {completed.length > 0 ? (
-                  <div className="mt-2 space-y-1">
-                    <p className="text-xs font-medium tracking-wide text-muted uppercase">Treatments and procedures</p>
-                    {completed.map((item) => <p key={item.id} className="text-sm">{formatWhen(item.performed_on)} · {item.title}</p>)}
+              <article key={patient.id} className="touch-card rounded-2xl border border-line bg-white p-4 shadow-sm sm:transition sm:hover:-translate-y-0.5 sm:hover:border-[#c6a15b] sm:hover:shadow-md">
+                <button type="button" onClick={() => setOpen(patient)} className="w-full text-left">
+                  <div className="flex items-center gap-3">
+                    <Portrait name={patient.full_name} path={patient.photo_path} />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-start justify-between gap-2">
+                        <span className="block truncate text-base font-semibold text-ink">{patient.full_name}</span>
+                        {latest ? <StatusChip status={latest.status} /> : null}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-muted">{patient.patient_code}</span>
+                      <span className="mt-2 block truncate text-sm text-ink">{patient.mobile || "No mobile"}{patient.place ? ` · ${patient.place}` : ""}</span>
+                    </span>
                   </div>
-                ) : null}
-                <div className="mt-2 space-y-1">
-                  <p className="text-xs font-medium tracking-wide text-muted uppercase">Every visit</p>
-                  {visits.length === 0 ? <p className="text-sm text-muted">No visits yet.</p> : visits.map((item) => (
-                    <p key={item.id} className="text-sm">{formatWhen(item.starts_at)}{item.reason ? ` · ${item.reason}` : ""} · {item.status.replaceAll("_", " ")}</p>
-                  ))}
-                </div>
-                <p className="mt-3 text-sm font-semibold">Total {inr(patientTotal.get(patient.id) ?? 0)}</p>
-              </button>
-              {phoneTel(patient.mobile) ? <a href={phoneTel(patient.mobile)} className="mt-1 inline-flex min-h-11 items-center text-sm font-medium text-navy">Call</a> : null}
-              </div>
+                </button>
+                {phoneTel(patient.mobile) ? <a href={phoneTel(patient.mobile)} className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-navy">Call</a> : null}
+              </article>
             );
           })}
         </div>
@@ -330,33 +305,40 @@ function ReceptionDashboard() {
             <SheetHeader>
               <div className="flex items-center gap-3">
                 <Portrait name={open.full_name} path={open.photo_path} className="size-16 text-xl" />
-                <div>
+                <div className="min-w-0">
                   <p className="text-xs font-medium tracking-wide text-[#a6843d] uppercase">{open.patient_code}</p>
-                  <h2 className="mt-1 text-xl font-semibold">{open.full_name}</h2>
+                  <h2 className="mt-1 truncate text-xl font-semibold">{open.full_name}</h2>
+                  <p className="mt-1 text-sm text-muted">{open.mobile || "No mobile"}{open.place ? ` · ${open.place}` : ""}</p>
                 </div>
               </div>
-              <p className="mt-1 text-sm text-muted">{open.mobile || "No mobile"}{open.place ? ` · ${open.place}` : ""}</p>
             </SheetHeader>
             <SheetBody className="space-y-4">
-              {clinic ? (
-                <label className="inline-flex cursor-pointer rounded-full border border-line px-3 py-1.5 text-sm">
-                  Change photo
-                  <input type="file" accept="image/*" className="hidden" onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    event.target.value = "";
-                    if (!file) return;
-                    void savePersonPhoto("patients", open.id, clinic.organizationId, clinic.id, file)
-                      .then((path) => {
-                        setCards((current) => current.map((item) => item.id === open.id ? { ...item, photo_path: path } : item));
-                        setOpen({ ...open, photo_path: path });
-                      })
-                      .catch(() => undefined);
-                  }} />
-                </label>
-              ) : null}
-              <p className="text-sm text-muted">Registered {formatWhen(open.created_at)} · Total {inr(patientTotal.get(open.id) ?? 0)}{open.treatments[0] ? ` · First treatment ${formatWhen(open.treatments[0].performed_on)}` : ""}</p>
+              <PatientFileSummary patient={open} bills={bills.filter((bill) => bill.patientId === open.id)} recorded={patientTotal.get(open.id) ?? 0} />
+              <VisitAccount bills={bills.filter((bill) => bill.patientId === open.id)} treatments={open.treatments} collected={money.filter((row) => row.kind === "income" && row.patientId === open.id).map((row) => ({ note: row.note, amount: row.amount }))} />
+              <div className="flex flex-wrap gap-2">
+                {phoneTel(open.mobile) ? <a href={phoneTel(open.mobile)} className="inline-flex min-h-11 items-center rounded-full border border-line bg-white px-4 text-sm font-medium text-navy">Call</a> : null}
+                <Link to={`/billing?patient=${open.id}`} className="inline-flex min-h-11 items-center rounded-full bg-navy px-4 text-sm font-medium text-white">Open billing</Link>
+                {clinic ? (
+                  <label className="inline-flex min-h-11 cursor-pointer items-center rounded-full border border-line bg-white px-4 text-sm">
+                    Change photo
+                    <input type="file" accept="image/*" className="hidden" onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      event.target.value = "";
+                      if (!file) return;
+                      void savePersonPhoto("patients", open.id, clinic.organizationId, clinic.id, file)
+                        .then((path) => {
+                          setCards((current) => current.map((item) => item.id === open.id ? { ...item, photo_path: path } : item));
+                          setOpen({ ...open, photo_path: path });
+                        })
+                        .catch(() => undefined);
+                    }} />
+                  </label>
+                ) : null}
+              </div>
               {cardNote ? <p className="text-sm text-emerald-700">{cardNote}</p> : null}
-              <form className="grid gap-2 sm:grid-cols-2" onSubmit={(event) => {
+              <section className="rounded-2xl border border-line bg-white p-3 sm:p-4">
+              <h3 className="text-sm font-semibold">Patient details</h3>
+              <form className="mt-3 grid gap-2 sm:grid-cols-2" onSubmit={(event) => {
                 event.preventDefault();
                 if (!clinic) return;
                 setCardBusy(true);
@@ -415,6 +397,7 @@ function ReceptionDashboard() {
                   }}>Delete</button>
                 </div>
               </form>
+              </section>
               {clinic ? (
                 <PatientHistory
                   patient={open}
@@ -436,7 +419,7 @@ function ReceptionDashboard() {
                   onError={setRecordError}
                 />
               ) : null}
-              <div>
+              <section className="rounded-2xl border border-line bg-white p-3 sm:p-4">
                 <h3 className="text-sm font-semibold">Bookings</h3>
                 {open.appointments.length === 0 ? <p className="mt-2 text-sm text-muted">No appointments yet.</p> : open.appointments.map((item) => (
                   <div key={item.id} className="mt-2 space-y-2 rounded-xl border border-line px-3 py-2 text-sm">
@@ -466,7 +449,7 @@ function ReceptionDashboard() {
                     </div>
                   </div>
                 ))}
-              </div>
+              </section>
               {recordError ? <p className="text-sm text-danger">{recordError}</p> : null}
             </SheetBody>
           </SheetContent>
@@ -695,18 +678,6 @@ function inside(iso: string | null, from: Date, to: Date) {
   return time >= from.getTime() && time < to.getTime();
 }
 
-function moneyStamp(value: string) {
-  return value.length === 10 ? `${value}T12:00:00` : value;
-}
-
-function dayKey(value: string) {
-  const date = new Date(moneyStamp(value));
-  if (Number.isNaN(date.getTime())) return value.slice(0, 10);
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${date.getFullYear()}-${month}-${day}`;
-}
-
 function rangedAppointments(patient: DeskPatient, filter: DeskFilter, customFrom: string, customTo: string) {
   if (filter === "all") return patient.appointments;
   const span = boundsFor(filter, customFrom, customTo);
@@ -746,6 +717,33 @@ function StatusChip({ status }: { status: string }) {
       ? "bg-red-50 text-red-700"
       : "bg-[#faf6ee] text-[#8a6a2f]";
   return <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-medium capitalize ${tone}`}>{status.replaceAll("_", " ")}</span>;
+}
+
+function PatientFileSummary({ patient, bills, recorded }: { patient: DeskPatient; bills: ClinicBill[]; recorded: number }) {
+  const visits = [...patient.appointments].sort((left, right) => left.starts_at.localeCompare(right.starts_at));
+  const nextVisit = visits.find((item) => !["completed", "cancelled", "no_show"].includes(item.status)) ?? visits.at(-1);
+  const latestCare = [...patient.treatments].sort((left, right) => right.performed_on.localeCompare(left.performed_on))[0];
+  const due = bills.reduce((sum, bill) => sum + bill.balance, 0);
+  const billed = bills.reduce((sum, bill) => sum + bill.total, 0);
+  return (
+    <div className="grid gap-2 sm:grid-cols-3">
+      <article className="rounded-2xl border border-[#eadfca] bg-white px-3 py-3">
+        <p className="text-[11px] font-medium tracking-wide text-[#8a6a2f] uppercase">Last visit</p>
+        <p className="mt-1 text-sm font-medium">{latestCare ? latestCare.title : "Not recorded yet"}</p>
+        <p className="mt-1 text-xs text-muted">{latestCare ? formatWhen(latestCare.performed_on) : "Waiting for the doctor"}</p>
+      </article>
+      <article className="rounded-2xl border border-[#eadfca] bg-white px-3 py-3">
+        <p className="text-[11px] font-medium tracking-wide text-[#8a6a2f] uppercase">Appointment</p>
+        <p className="mt-1 text-sm font-medium">{nextVisit ? formatWhen(nextVisit.starts_at) : "None booked"}</p>
+        <p className="mt-1 text-xs text-muted">{nextVisit ? `${nextVisit.reason || "Visit"} · ${nextVisit.status.replaceAll("_", " ")}` : "No booking yet"}</p>
+      </article>
+      <article className="rounded-2xl border border-[#eadfca] bg-white px-3 py-3">
+        <p className="text-[11px] font-medium tracking-wide text-[#8a6a2f] uppercase">Bill</p>
+        <p className="mt-1 text-sm font-medium">{bills.length ? `${inr(billed)} billed` : recorded > 0 ? inr(recorded) : "No bill yet"}</p>
+        <p className="mt-1 text-xs text-muted">{bills.length ? `Balance ${inr(due)}` : recorded > 0 ? "Recorded income" : "Open billing to add one"}</p>
+      </article>
+    </div>
+  );
 }
 
 function doctorName(doctorId: string, doctors: Array<{ userId: string; name: string }>) {

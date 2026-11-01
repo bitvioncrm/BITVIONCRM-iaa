@@ -11,10 +11,10 @@ import { canOperateWhatsApp } from "@/lib/production-access";
 import { listDoctors, listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
 import { phoneTel } from "@/lib/phone";
 import { inr } from "@/lib/money";
-import { addLedgerEntry, listLedger, removeLedgerEntry } from "@/services/clinic-care";
-import { changeStock, clearDeskCache, createAppointment, createExam, createInvoice, createPatient, createProduct, createStudent, issueCertificate, listCertificates, listDeskAppointments, listDeskPatients, listDeskStudents, listDocuments, listExams, listPatients, listProducts, listStockMoves, recordMark, recordPayment, recordRefund, removeAppointment, removeProduct, removeStudent, savePersonPhoto, saveStudentDetails, seedClinicSkincareStock, setDocumentStatus, signedDocumentUrl, updateAppointment, updateProductPricing, uploadPrivateFile, type DeskAppointmentRow, type DeskPatient, type DeskStudent, type InventoryProduct, type StudentDetails } from "@/services/production-ops";
+import { BillingDesk } from "@/components/clinic/BillingDesk";
+import { changeStock, clearDeskCache, createAppointment, createExam, createPatient, createProduct, createStudent, issueCertificate, listCertificates, listDeskAppointments, listDeskPatients, listDeskStudents, listDocuments, listExams, listProducts, listStockMoves, recordMark, removeAppointment, removeProduct, removeStudent, savePersonPhoto, saveStudentDetails, seedClinicSkincareStock, setDocumentStatus, signedDocumentUrl, updateAppointment, updateProductPricing, uploadPrivateFile, type DeskAppointmentRow, type DeskPatient, type DeskStudent, type InventoryProduct, type StudentDetails } from "@/services/production-ops";
 
-export function ProductionModule({ module }: { module: "clinic" | "institute" | "inventory" | "billing" }) {
+export function ProductionModule({ module }: { module: "clinic" | "institute" | "inventory" | "billing" | "institute-billing" }) {
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
   const [workspaceId, setWorkspaceId] = useState("");
   const [error, setError] = useState("");
@@ -25,9 +25,11 @@ export function ProductionModule({ module }: { module: "clinic" | "institute" | 
     void listWorkspaces().then((rows) => {
       const visible = module === "clinic" || module === "institute"
         ? rows.filter((item) => item.workspaceType === module)
-        : module === "inventory"
+        : module === "inventory" || module === "billing"
           ? rows.filter((item) => item.workspaceType === "clinic")
-          : rows;
+          : module === "institute-billing"
+            ? rows.filter((item) => item.workspaceType === "institute")
+            : rows;
       setWorkspaces(visible);
       setWorkspaceId((current) => visible.some((item) => item.id === current) ? current : visible[0]?.id || "");
     }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Configuration Required"));
@@ -37,17 +39,20 @@ export function ProductionModule({ module }: { module: "clinic" | "institute" | 
   const showBoard = admin && (module === "clinic" || module === "institute");
   return (
     <div className="space-y-4">
-      {showBoard ? <BusinessBoard desk={module} variant="operations" /> : <h1 className="text-2xl font-semibold capitalize">{module}</h1>}
+      {showBoard && (module === "clinic" || module === "institute") ? <BusinessBoard desk={module} variant="operations" /> : <h1 className="text-2xl font-semibold">{module === "billing" || module === "institute-billing" ? "Billing" : module === "institute" ? "Institute" : module === "clinic" ? "Clinic" : "Inventory"}</h1>}
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {notice ? <p className="text-sm">{notice}</p> : null}
-      <select className="rounded-md border border-line px-2 py-2" value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}>
-        {workspaces.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-      </select>
+      {workspaces.length > 1 ? (
+        <select className="rounded-md border border-line px-2 py-2" value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}>
+          {workspaces.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </select>
+      ) : null}
       {!workspace ? <p className="text-sm text-muted">This desk is not available.</p> : null}
       {workspace && module === "clinic" ? <ClinicPanel workspace={workspace} onError={setError} onNotice={setNotice} /> : null}
       {workspace && module === "institute" ? <InstitutePanel workspace={workspace} onError={setError} onNotice={setNotice} /> : null}
       {workspace && module === "inventory" ? <InventoryPanel workspace={workspace} onError={setError} onNotice={setNotice} /> : null}
-      {workspace && module === "billing" ? <BillingPanel workspace={workspace} onError={setError} onNotice={setNotice} /> : null}
+      {workspace && module === "billing" ? <BillingDesk workspace={workspace} onError={setError} onNotice={setNotice} /> : null}
+      {workspace && module === "institute-billing" ? <BillingDesk mode="institute" workspace={workspace} onError={setError} onNotice={setNotice} /> : null}
     </div>
   );
 }
@@ -710,90 +715,6 @@ function InventoryPanel({ workspace, onError, onNotice }: PanelProps) {
           </p>
         ))}
       </section>
-    </div>
-  );
-}
-
-function BillingPanel({ workspace, onError, onNotice }: PanelProps) {
-  const [patients, setPatients] = useState<Array<{ id: string; full_name: string }>>([]);
-  const [invoiceId, setInvoiceId] = useState("");
-  const [rows, setRows] = useState<Array<{ id: string; kind: "income" | "expense"; amount: number; note: string; patientName: string; createdAt: string }>>([]);
-  const loadLedger = () => void listLedger(workspace.id).then(setRows).catch(() => setRows([]));
-  useEffect(() => {
-    void listPatients(workspace.id, "").then((loaded) => setPatients(loaded as typeof patients)).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load patients"));
-    loadLedger();
-    const onCare = () => loadLedger();
-    window.addEventListener("bitvion-care", onCare);
-    return () => window.removeEventListener("bitvion-care", onCare);
-  }, [onError, workspace.id]);
-  const income = rows.filter((row) => row.kind === "income").reduce((sum, row) => sum + row.amount, 0);
-  const expense = rows.filter((row) => row.kind === "expense").reduce((sum, row) => sum + row.amount, 0);
-  return (
-    <div className="space-y-4">
-    <form className="space-y-2 rounded-lg border border-line bg-white p-4" onSubmit={(event) => submit(event, async (data) => {
-      const invoice = await createInvoice({
-        organizationId: workspace.organizationId,
-        workspaceId: workspace.id,
-        patientId: (data.get("patient") as string) || null,
-        description: data.get("item") as string,
-        quantity: Number(data.get("qty")),
-        unitPrice: Number(data.get("price")),
-        discount: Number(data.get("discount") || 0),
-      });
-      const paid = Number(data.get("paid") || 0);
-      if (paid > 0) await recordPayment({ organizationId: workspace.organizationId, workspaceId: workspace.id, invoiceId: invoice.id, amount: paid, method: "cash" });
-      setInvoiceId(invoice.id);
-      onNotice(`${invoice.number} total ₹${invoice.total}. Payment recorded.`);
-    }, onError)}>
-      <h2 className="font-semibold">Invoice</h2>
-      <select name="patient" className="w-full rounded-md border border-line px-2 py-2"><option value="">No patient</option>{patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.full_name}</option>)}</select>
-      <input name="item" required placeholder="Item" className="w-full rounded-md border border-line px-2 py-2" />
-      <input name="qty" type="number" defaultValue={1} className="w-full rounded-md border border-line px-2 py-2" />
-      <input name="price" type="number" required placeholder="Price" className="w-full rounded-md border border-line px-2 py-2" />
-      <input name="discount" type="number" defaultValue={0} className="w-full rounded-md border border-line px-2 py-2" />
-      <input name="paid" type="number" defaultValue={0} placeholder="Amount collected now" className="w-full rounded-md border border-line px-2 py-2" />
-      <button className="rounded-md bg-navy px-3 py-2 text-sm text-white" type="submit">Save invoice</button>
-    </form>
-    <form className="space-y-2 rounded-lg border border-line bg-white p-4" onSubmit={(event) => submit(event, async (data) => {
-      await recordRefund({ organizationId: workspace.organizationId, workspaceId: workspace.id, invoiceId: data.get("invoice") as string, amount: Number(data.get("amount")) });
-      onNotice("Refund stored. Revenue uses this amount, not lead counts.");
-    }, onError)}>
-      <h2 className="font-semibold">Refund</h2>
-      <input name="invoice" required defaultValue={invoiceId} placeholder="Invoice id" className="w-full rounded-md border border-line px-2 py-2" />
-      <input name="amount" type="number" required placeholder="Amount" className="w-full rounded-md border border-line px-2 py-2" />
-      <button className="rounded-md bg-navy px-3 py-2 text-sm text-white" type="submit">Record refund</button>
-    </form>
-    <section className="space-y-3 rounded-lg border border-line bg-white p-4">
-      <h2 className="font-semibold">Income and expenses</h2>
-      <p className="text-sm text-muted">Income ₹{income.toLocaleString("en-IN")} · Expenses ₹{expense.toLocaleString("en-IN")} · Balance ₹{(income - expense).toLocaleString("en-IN")}</p>
-      <form className="grid gap-2 md:grid-cols-2" onSubmit={(event) => submit(event, async (data) => {
-        await addLedgerEntry({
-          organizationId: workspace.organizationId,
-          workspaceId: workspace.id,
-          patientId: (data.get("patient") as string) || null,
-          kind: data.get("kind") === "expense" ? "expense" : "income",
-          amount: Number(data.get("amount")),
-          note: data.get("note") as string,
-        });
-        onNotice("Entry saved.");
-        loadLedger();
-      }, onError)}>
-        <select name="kind" className="rounded-md border border-line px-2 py-2"><option value="income">Income</option><option value="expense">Expense</option></select>
-        <select name="patient" className="rounded-md border border-line px-2 py-2"><option value="">No patient</option>{patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.full_name}</option>)}</select>
-        <input name="amount" type="number" min="0" required placeholder="Amount" className="rounded-md border border-line px-2 py-2" />
-        <input name="note" required placeholder="What this payment is for" className="rounded-md border border-line px-2 py-2" />
-        <button className="rounded-md bg-navy px-3 py-2 text-sm text-white" type="submit">Save entry</button>
-      </form>
-      {rows.length === 0 ? <p className="text-sm text-muted">No income or expense entries yet.</p> : rows.map((row) => (
-        <div key={row.id} className="flex items-center justify-between gap-2 text-sm">
-          <span>{row.kind === "income" ? "Income" : "Expense"} · ₹{row.amount.toLocaleString("en-IN")} · {row.patientName || "No patient"} · {row.note}</span>
-          <button type="button" className="text-xs font-medium text-danger" onClick={() => {
-            if (!window.confirm("Delete this entry?")) return;
-            void removeLedgerEntry(row.id).then(() => { onNotice("Entry deleted."); loadLedger(); }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not delete the entry"));
-          }}>Delete</button>
-        </div>
-      ))}
-    </section>
     </div>
   );
 }

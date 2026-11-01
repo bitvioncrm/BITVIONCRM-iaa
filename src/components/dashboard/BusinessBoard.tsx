@@ -121,9 +121,11 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <Kpi label="Clinic leads" value={text(data.clinicLeads)} detail="Created in this range" to={leadTo("clinic")} />
                 <Kpi label="Today's appointments" value={text(data.todayAppointments)} detail={`${text(data.pendingAppointments)} pending · ${text(data.completedAppointments)} completed in range`} to="/clinic" />
-                <Kpi label="Clinic collections" value={money(data.collectionsByDesk.find((row) => row.name === "Clinic")?.amount ?? (desk === "clinic" ? data.collections : null))} detail="Clinic payments only" to="/billing" />
+                <Kpi label="Clinic income" value={money(data.clinicIncome)} detail="Bills and other income" to="/billing" />
+                <Kpi label="Clinic expenses" value={money(data.clinicExpense)} detail="Additional expenses and refunds" to="/billing" />
                 <Kpi label="Low stock / expiry" value={text(data.inventoryAlerts)} detail={`${text(data.lowStock)} low · ${text(data.expiring)} expiring`} to="/inventory" />
               </div>
+              <MoneyLines rows={data.clinicMoney} empty="No clinic income or expenses in this range." />
               <div className="flex flex-wrap gap-2">
                 <Action to={leadTo("clinic")}>View clinic leads</Action>
                 <Action to="/clinic">Add patient</Action>
@@ -131,7 +133,7 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
                 <Action to="/clinic">View appointments</Action>
                 <Action to="/clinic">Open patient records</Action>
                 <Action to="/inventory">Manage inventory</Action>
-                <Action to="/billing">View clinic collections</Action>
+                <Action to="/billing">View clinic billing</Action>
                 <Action to="/reports">Open clinic reports</Action>
               </div>
             </section>
@@ -144,8 +146,10 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
                 <Kpi label="Institute leads" value={text(data.instituteLeads)} detail="Created in this range. Not counted as patients." to={leadTo("institute")} />
                 <Kpi label="Interested enquiries" value={text(data.interested)} detail="Lead status, not enrolments" to={leadTo("institute", { status: "interested" })} />
                 <Kpi label="Active students" value={text(data.activeStudents)} detail={`${text(data.enrolments)} with a course · ${text(data.admissions)} admissions in range`} to="/institute" />
-                <Kpi label="Institute collections" value={money(data.collectionsByDesk.find((row) => row.name === "Institute")?.amount ?? (desk === "institute" ? data.collections : null))} detail="Institute payments only" to="/billing" />
+                <Kpi label="Institute income" value={money(data.instituteIncome)} detail="Fees and other income" to="/institute-billing" />
+                <Kpi label="Institute expenses" value={money(data.instituteExpense)} detail="Additional expenses and refunds" to="/institute-billing" />
               </div>
+              <MoneyLines rows={data.instituteMoney} empty="No institute income or expenses in this range." />
               <div className="flex flex-wrap gap-2">
                 <Action to={leadTo("institute")}>View institute leads</Action>
                 <Action to={leadTo("institute")}>Add lead</Action>
@@ -154,7 +158,7 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
                 <Action to="/institute">Manage admissions</Action>
                 <Action to="/institute">View student documents</Action>
                 <Action to="/institute">View certificates</Action>
-                <Action to="/billing">View institute collections</Action>
+                <Action to="/institute-billing">View institute billing</Action>
                 <Action to="/reports">Open institute reports</Action>
               </div>
             </section>
@@ -320,6 +324,20 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
         </>
       )}
       {clinic || institute ? null : !loading && !error ? <p className="text-sm text-muted">No clinic or institute workspace is available for this account.</p> : null}
+    </div>
+  );
+}
+
+function MoneyLines({ rows, empty }: { rows: Array<{ kind: "income" | "expense"; note: string; amount: number }>; empty: string }) {
+  if (!rows.length) return <p className="text-sm text-muted">{empty}</p>;
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      {rows.map((row, index) => (
+        <p key={`${row.kind}-${row.note}-${index}`} className="rounded-lg border border-line bg-white px-3 py-2 text-sm">
+          <span className="text-xs font-medium tracking-wide text-muted uppercase">{row.kind}</span>
+          <span className="mt-1 block">{row.note} · {inr(row.amount)}</span>
+        </p>
+      ))}
     </div>
   );
 }

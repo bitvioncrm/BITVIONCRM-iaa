@@ -52,7 +52,9 @@ export const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
     items: [
       { to: "/", label: "Business Overview", icon: LayoutDashboard, end: true },
       { to: "/clinic", label: "Clinic", icon: Building2, end: false },
+      { to: "/billing", label: "Billing", icon: Receipt, end: false },
       { to: "/institute", label: "Institute", icon: GraduationCap, end: false },
+      { to: "/institute-billing", label: "Institute billing", icon: Receipt, end: false },
     ],
   },
   {
@@ -71,7 +73,6 @@ export const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
     label: "Operations",
     items: [
       { to: "/inventory", label: "Inventory", icon: Package, end: false },
-      { to: "/billing", label: "Finance", icon: Receipt, end: false },
       { to: "/whatsapp", label: "WhatsApp", icon: MessageCircle, end: false },
       { to: "/tasks", label: "Tasks", icon: CheckSquare, end: false },
     ],
@@ -91,7 +92,7 @@ export const STAFF_NAV = NAV_ITEMS.filter((item) => ["/", "/leads", "/calls", "/
 
 export const MOBILE_NAV = [NAV_ITEMS[0], NAV_ITEMS[2], NAV_ITEMS[5], NAV_ITEMS[6]] as const;
 
-export const ADMIN_ONLY_PREFIXES = ["/desk", "/pipeline", "/follow-ups", "/campaigns", "/templates", "/tasks", "/reports", "/team", "/activity", "/settings", "/meta", "/inventory", "/billing", "/institute"];
+export const ADMIN_ONLY_PREFIXES = ["/desk", "/pipeline", "/follow-ups", "/campaigns", "/templates", "/tasks", "/reports", "/team", "/activity", "/settings", "/meta", "/inventory", "/billing", "/institute", "/institute-billing"];
 
 export function productionGroups(roleKey: string) {
   const allowed = new Set(pathsForRole(roleKey));
