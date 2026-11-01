@@ -45,12 +45,12 @@ import {
 } from "@/services/production-leads";
 import { CallResultButtons } from "@/components/calls/CallResultButtons";
 import { useAuth } from "@/context/AuthContext";
-import { useDialEndedAt } from "@/components/calls/useDialEndedAt";
-import { formatClock, outcomeFromPhoneReturn, type CallOutcome, type CallTotals } from "@/lib/call-time";
+import { useCallSession } from "@/context/CallSessionContext";
+import { formatClock, type CallOutcome, type CallTotals } from "@/lib/call-time";
 import { formatLeadArrived } from "@/lib/dates";
 import { phoneTel } from "@/lib/phone";
 import { canOperateWhatsApp, canWriteWhatsApp, productionRoleLabel, whatsAppDesk } from "@/lib/production-access";
-import { activeCall, bookFromLead, endCall, leadCallStats, startCall, type LiveCall } from "@/services/production-ops";
+import { bookFromLead, leadCallStats } from "@/services/production-ops";
 import type { LeadStatus } from "@/types";
 
 export function ProductionLeadsPage() {
@@ -91,9 +91,7 @@ export function ProductionLeadsPage() {
   const [editDraft, setEditDraft] = useState({ fullName: "", phone: "", email: "", location: "", position: "" });
   const [sheetValue, setSheetValue] = useState("");
   const [callStats, setCallStats] = useState<Record<string, CallTotals>>({});
-  const [live, setLive] = useState<LiveCall | null>(null);
-  const [now, setNow] = useState(0);
-  const [callBusy, setCallBusy] = useState(false);
+  const { live, busy: callBusy, elapsed, start: startDial, finish: finishDial } = useCallSession();
   const quietRefresh = useRef(false);
   const viewRef = useRef({ workspaceId: "", desk, status: "", source: "", origin, unassigned: false, search: "", workspaces: [] as WorkspaceOption[] });
   viewRef.current = { workspaceId, desk, status, source, origin, unassigned, search: searchQuery, workspaces };
@@ -254,16 +252,6 @@ export function ProductionLeadsPage() {
     };
   }, []);
 
-  useEffect(() => {
-    void activeCall().then(setLive).catch(() => setLive(null));
-  }, []);
-
-  useEffect(() => {
-    if (!live) return;
-    setNow(Date.now());
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [live]);
 
   useEffect(() => {
     const ids = leads.map((lead) => lead.id);
@@ -280,50 +268,30 @@ export function ProductionLeadsPage() {
       ? workspaces
       : workspaces.filter((item) => item.workspaceType === desk);
   const workspace = workspaces.find((item) => item.id === workspaceId);
-  const returnedAt = useDialEndedAt(Boolean(live));
-  const elapsed = live ? Math.max(0, Math.floor(((returnedAt ? new Date(returnedAt).getTime() : now) - new Date(live.startedAt).getTime()) / 1000)) : 0;
   const liveLead = leads.find((lead) => lead.id === live?.leadId);
-  const savedDial = useRef("");
 
   function beginCall(lead: ProductionLead) {
     if (!phoneTel(lead.phone)) {
       setError("This lead has no phone number to dial.");
       return;
     }
-    setCallBusy(true);
-    void startCall(lead.organizationId, lead.workspaceId, lead.id)
-      .then((row) => {
-        setLive(row);
-        setError("");
-      })
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Start call failed"))
-      .finally(() => setCallBusy(false));
+    void startDial({ organizationId: lead.organizationId, workspaceId: lead.workspaceId, leadId: lead.id, name: lead.fullName })
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Start call failed"));
   }
 
-  function finishCall(outcome: CallOutcome, endedAt?: string) {
-    if (!live || savedDial.current === live.id) return;
-    savedDial.current = live.id;
-    setCallBusy(true);
-    const sessionId = live.id;
-    void endCall(sessionId, outcome, endedAt)
-      .then(async () => {
-        setLive(null);
-        const ids = leads.map((lead) => lead.id);
-        if (ids.length) setCallStats(await leadCallStats(ids));
-        setNotice(outcome === "connected" ? "Connected call saved on this lead." : "Dial saved. Talk time was not added.");
-      })
-      .catch((reason: unknown) => {
-        savedDial.current = "";
-        setError(reason instanceof Error ? reason.message : "End call failed");
-      })
-      .finally(() => setCallBusy(false));
+  function finishCall(outcome: CallOutcome) {
+    finishDial(outcome);
+    setNotice("Call time saved.");
   }
 
   useEffect(() => {
-    if (!live || !returnedAt) return;
-    const seconds = Math.max(0, Math.floor((new Date(returnedAt).getTime() - new Date(live.startedAt).getTime()) / 1000));
-    finishCall(outcomeFromPhoneReturn(seconds), returnedAt);
-  }, [live, returnedAt]);
+    const refreshStats = () => {
+      const ids = leads.map((lead) => lead.id);
+      if (ids.length) void leadCallStats(ids).then(setCallStats).catch(() => undefined);
+    };
+    window.addEventListener("bitvion-call-saved", refreshStats);
+    return () => window.removeEventListener("bitvion-call-saved", refreshStats);
+  }, [leads]);
 
   const changeStage = (lead: ProductionLead, next: LeadStatus) => {
     if (next === "selected") {

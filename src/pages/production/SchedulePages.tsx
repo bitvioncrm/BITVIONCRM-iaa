@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Portrait } from "@/components/shared/Portrait";
+import { DialLink } from "@/components/calls/DialLink";
 import { phoneTel } from "@/lib/phone";
 import { listDoctors, listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
 import {
@@ -198,7 +199,7 @@ export function AppointmentsPage() {
                 }} className="mt-1 h-11 w-full rounded-md border border-line px-3" />
               </label>
               <div className="flex flex-wrap gap-3">
-                {phoneTel(row.patientMobile) ? <a href={phoneTel(row.patientMobile)} className="inline-flex min-h-11 items-center text-sm font-medium text-navy">Call</a> : null}
+                {workspace && phoneTel(row.patientMobile) ? <DialLink organizationId={workspace.organizationId} workspaceId={workspace.id} name={row.patientName} phone={row.patientMobile} /> : null}
                 <button type="button" className="min-h-11 text-sm font-medium text-danger" onClick={() => {
                   if (!window.confirm(`Delete the appointment for ${row.patientName}?`)) return;
                   void removeAppointment(row.id).then(() => { if (workspace) load(workspace.id); setNotice("Appointment deleted."); }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not delete the appointment"));
@@ -319,7 +320,7 @@ export function BookingsPage() {
                 </label>
                 <div className="flex flex-wrap gap-3">
                   <button type="button" disabled={savingId === student.id} onClick={() => save(student)} className="min-h-11 rounded-md bg-navy px-3 text-sm text-white">{savingId === student.id ? "Saving" : "Save booking"}</button>
-                  {phoneTel(student.mobile) ? <a href={phoneTel(student.mobile)} className="inline-flex min-h-11 items-center text-sm font-medium text-navy">Call</a> : null}
+                  {workspace && phoneTel(student.mobile) ? <DialLink organizationId={workspace.organizationId} workspaceId={workspace.id} leadId={student.lead_id || null} name={student.full_name} phone={student.mobile} /> : null}
                 </div>
               </article>
             );

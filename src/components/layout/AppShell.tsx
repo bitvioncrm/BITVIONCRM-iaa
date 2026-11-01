@@ -8,6 +8,7 @@ import { MobileNav } from "@/components/layout/MobileNav";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
 import { useAuth } from "@/context/AuthContext";
+import { CallSessionProvider } from "@/context/CallSessionContext";
 import { DeskProvider } from "@/context/DeskContext";
 import { useCrm } from "@/context/CrmContext";
 import { ROLE_LABEL } from "@/data/catalog";
@@ -24,6 +25,7 @@ export function AppShell() {
 
   return (
     <DeskProvider>
+    <CallSessionProvider>
     <div className="flex h-dvh overflow-hidden bg-canvas text-ink">
       {productionUser ? <LeadRealtime /> : null}
       {productionUser ? <StockLive roleKey={productionUser.roleKey} /> : null}
@@ -46,6 +48,7 @@ export function AppShell() {
       </div>
       <MobileNav />
     </div>
+    </CallSessionProvider>
     </DeskProvider>
   );
 }

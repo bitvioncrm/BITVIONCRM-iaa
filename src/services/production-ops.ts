@@ -1,4 +1,4 @@
-import { elapsedSeconds, emptyCallTotals, formatClock, remainingSeconds, sumCompleted, summarizeCalls, type CallOutcome, type CallTotals } from "@/lib/call-time";
+import { elapsedSeconds, emptyCallTotals, formatClock, outcomeFromPhoneReturn, remainingSeconds, sumCompleted, summarizeCalls, type CallOutcome, type CallTotals } from "@/lib/call-time";
 import { balance, invoiceTotal } from "@/lib/money";
 import { optimizeImage, sha256 } from "@/lib/files";
 import { supabase } from "@/lib/supabase";
@@ -98,30 +98,33 @@ export interface LiveCall {
   leadId: string;
   workspaceId: string;
   startedAt: string;
+  name: string;
 }
 
-export async function startCall(organizationId: string, workspaceId: string, leadId: string) {
-  if (!leadId) throw new Error("Choose the lead you are calling.");
+export async function startCall(organizationId: string, workspaceId: string, leadId: string | null, partyName = "") {
   const uid = await userId();
-  const { data: active, error: activeError } = await client().from("call_time_sessions").select("id").eq("user_id", uid).eq("status", "active");
+  const { data: active, error: activeError } = await client().from("call_time_sessions").select("id, started_at").eq("user_id", uid).eq("status", "active");
   if (activeError) throw new Error(activeError.message);
-  if (active?.length) {
-    const { error } = await client().from("call_time_sessions").update({ status: "interrupted", ended_at: new Date().toISOString(), duration_seconds: null, outcome: null }).in("id", active.map((row) => row.id as string));
-    if (error) throw new Error(error.message);
+  const ended = new Date().toISOString();
+  for (const row of active ?? []) {
+    const elapsed = elapsedSeconds(String(row.started_at), ended) ?? 0;
+    await endCall(String(row.id), outcomeFromPhoneReturn(elapsed), ended);
   }
   const { data, error } = await client().from("call_time_sessions").insert({
     organization_id: organizationId,
     workspace_id: workspaceId,
     user_id: uid,
-    lead_id: leadId,
+    lead_id: leadId || null,
+    party_name: partyName.trim(),
     status: "active",
-  }).select("id, started_at, lead_id, workspace_id").single();
+  }).select("id, started_at, lead_id, workspace_id, party_name").single();
   if (error) throw new Error(error.message);
   return {
     id: data.id as string,
     startedAt: data.started_at as string,
-    leadId: data.lead_id as string,
+    leadId: String(data.lead_id || ""),
     workspaceId: data.workspace_id as string,
+    name: String(data.party_name || ""),
   } satisfies LiveCall;
 }
 
@@ -131,7 +134,7 @@ export async function endCall(sessionId: string, outcome: CallOutcome, endedAt =
   if (data.status !== "active") throw new Error("This timing session is not active.");
   const elapsed = elapsedSeconds(data.started_at as string, endedAt);
   if (elapsed === null) throw new Error("The timer could not be calculated. It was not added to call time.");
-  const duration = outcome === "connected" ? elapsed : 0;
+  const duration = elapsed;
   const { error: updateError } = await client().from("call_time_sessions").update({
     status: "completed",
     outcome,
@@ -146,19 +149,22 @@ export async function activeCall() {
   const uid = await userId();
   const { data, error } = await client()
     .from("call_time_sessions")
-    .select("id, lead_id, workspace_id, started_at")
+    .select("id, lead_id, workspace_id, started_at, party_name, leads(full_name)")
     .eq("user_id", uid)
     .eq("status", "active")
     .order("started_at", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  if (!data?.lead_id) return null;
+  if (!data) return null;
+  const lead = data.leads as { full_name?: string } | { full_name?: string }[] | null;
+  const leadName = Array.isArray(lead) ? lead[0]?.full_name : lead?.full_name;
   return {
     id: data.id as string,
-    leadId: data.lead_id as string,
+    leadId: String(data.lead_id || ""),
     workspaceId: data.workspace_id as string,
     startedAt: data.started_at as string,
+    name: leadName || String(data.party_name || ""),
   } satisfies LiveCall;
 }
 
@@ -190,7 +196,7 @@ export async function callDeskReport(workspaceId: string, everyone: boolean) {
   start.setHours(0, 0, 0, 0);
   let request = client()
     .from("call_time_sessions")
-    .select("status, outcome, duration_seconds, started_at, lead_id, leads(full_name)")
+    .select("status, outcome, duration_seconds, started_at, ended_at, lead_id, party_name, leads(full_name)")
     .eq("workspace_id", workspaceId)
     .gte("started_at", start.toISOString())
     .order("started_at", { ascending: false })
@@ -211,10 +217,11 @@ export async function callDeskReport(workspaceId: string, everyone: boolean) {
       const name = Array.isArray(lead) ? lead[0]?.full_name : lead?.full_name;
       return {
         leadId: (row.lead_id as string | null) ?? "",
-        leadName: name || "Lead",
+        leadName: name || String(row.party_name || "") || "Call",
         outcome: row.outcome as CallOutcome,
-        talkSeconds: row.outcome === "connected" ? Number(row.duration_seconds ?? 0) : 0,
+        talkSeconds: Number(row.duration_seconds ?? 0),
         startedAt: row.started_at as string,
+        endedAt: String(row.ended_at || ""),
       };
     });
   return { ...totals, calls };

@@ -12,6 +12,7 @@ import { useDesk } from "@/context/DeskContext";
 import { listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
 import { loadDoctorPulse } from "@/services/clinic-care";
 import { formatClock } from "@/lib/call-time";
+import { DialLink } from "@/components/calls/DialLink";
 import { phoneTel } from "@/lib/phone";
 import { rangeBounds, type RangeKey } from "@/lib/range";
 import { callDeskReport, countRows, listClinicBills, listDeskMoney, listDeskPatients, listDeskStudents, listFollowUps, clearDeskCache, removeAppointment, removePatient, removeStudent, savePersonPhoto, saveStudentDetails, updateAppointment, updatePatient, type ClinicBill, type DeskMoney, type DeskPatient, type DeskStudent, type StudentDetails } from "@/services/production-ops";
@@ -292,7 +293,7 @@ function ReceptionDashboard() {
                     </span>
                   </div>
                 </button>
-                {phoneTel(patient.mobile) ? <a href={phoneTel(patient.mobile)} className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-navy">Call</a> : null}
+                {clinic && phoneTel(patient.mobile) ? <DialLink organizationId={clinic.organizationId} workspaceId={clinic.id} name={patient.full_name} phone={patient.mobile} className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-navy" /> : null}
               </article>
             );
           })}
@@ -316,7 +317,7 @@ function ReceptionDashboard() {
               <PatientFileSummary patient={open} bills={bills.filter((bill) => bill.patientId === open.id)} recorded={patientTotal.get(open.id) ?? 0} />
               <VisitAccount bills={bills.filter((bill) => bill.patientId === open.id)} treatments={open.treatments} collected={money.filter((row) => row.kind === "income" && row.patientId === open.id).map((row) => ({ note: row.note, amount: row.amount }))} />
               <div className="flex flex-wrap gap-2">
-                {phoneTel(open.mobile) ? <a href={phoneTel(open.mobile)} className="inline-flex min-h-11 items-center rounded-full border border-line bg-white px-4 text-sm font-medium text-navy">Call</a> : null}
+                {clinic && phoneTel(open.mobile) ? <DialLink organizationId={clinic.organizationId} workspaceId={clinic.id} name={open.full_name} phone={open.mobile} className="inline-flex min-h-11 items-center rounded-full border border-line bg-white px-4 text-sm font-medium text-navy" /> : null}
                 <Link to={`/billing?patient=${open.id}`} className="inline-flex min-h-11 items-center rounded-full bg-navy px-4 text-sm font-medium text-white">Open billing</Link>
                 {clinic ? (
                   <label className="inline-flex min-h-11 cursor-pointer items-center rounded-full border border-line bg-white px-4 text-sm">
@@ -540,7 +541,7 @@ function CallerDashboard({ title, institute }: { title: string; institute: boole
                     if (!window.confirm(`Delete ${student.full_name}?`)) return;
                     void removeStudent(student.id).then(() => setStudents((current) => current.filter((item) => item.id !== student.id))).catch(() => undefined);
                   }}>Delete</button>
-                  {phoneTel(student.mobile) ? <a href={phoneTel(student.mobile)} className="inline-flex min-h-11 items-center text-sm font-medium text-navy">Call</a> : null}
+                  {workspace && phoneTel(student.mobile) ? <DialLink organizationId={workspace.organizationId} workspaceId={workspace.id} leadId={student.lead_id || null} name={student.full_name} phone={student.mobile} /> : null}
                 </span>
                 </div>
               ))}

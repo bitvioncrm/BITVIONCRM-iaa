@@ -1,25 +1,38 @@
 import { useEffect, useState } from "react";
 
-export function useDialEndedAt(active: boolean) {
+const AWAY_MS = 1500;
+
+export function useDialEndedAt(sessionId: string) {
   const [endedAt, setEndedAt] = useState<string | null>(null);
 
   useEffect(() => {
     setEndedAt(null);
-    if (!active) return;
-    let left = false;
-    const onChange = () => {
-      if (document.visibilityState === "hidden") left = true;
-      if ((document.visibilityState === "visible" || document.hasFocus()) && left) {
-        setEndedAt((current) => current ?? new Date().toISOString());
-      }
+    if (!sessionId) return;
+    let hiddenAt = 0;
+    const markHidden = () => {
+      hiddenAt = Date.now();
+      sessionStorage.setItem("bitvion-call-away", sessionId);
     };
-    document.addEventListener("visibilitychange", onChange);
-    window.addEventListener("focus", onChange);
+    const markBack = () => {
+      if (!hiddenAt) return;
+      const away = Date.now() - hiddenAt;
+      hiddenAt = 0;
+      if (away < AWAY_MS) return;
+      setEndedAt((current) => current ?? new Date().toISOString());
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") markHidden();
+      else markBack();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", markHidden);
+    window.addEventListener("pageshow", markBack);
     return () => {
-      document.removeEventListener("visibilitychange", onChange);
-      window.removeEventListener("focus", onChange);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", markHidden);
+      window.removeEventListener("pageshow", markBack);
     };
-  }, [active]);
+  }, [sessionId]);
 
   return endedAt;
 }

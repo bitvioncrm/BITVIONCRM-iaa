@@ -9,6 +9,7 @@ import { BusinessBoard } from "@/components/dashboard/BusinessBoard";
 import { useAuth } from "@/context/AuthContext";
 import { canOperateWhatsApp } from "@/lib/production-access";
 import { listDoctors, listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
+import { DialLink } from "@/components/calls/DialLink";
 import { phoneTel } from "@/lib/phone";
 import { inr } from "@/lib/money";
 import { BillingDesk } from "@/components/clinic/BillingDesk";
@@ -352,7 +353,7 @@ function InstitutePanel({ workspace, onError, onNotice }: PanelProps) {
           <span className="mt-2 flex flex-wrap gap-2">
             <button type="button" className="inline-flex min-h-11 items-center rounded-full border border-line px-3 text-sm" onClick={() => show(student)}>Edit</button>
             <button type="button" className="inline-flex min-h-11 items-center rounded-full px-3 text-sm font-medium text-danger" onClick={() => remove(student)}>Delete</button>
-            {phoneTel(student.mobile) ? <a href={phoneTel(student.mobile)} className="inline-flex min-h-11 items-center text-sm font-medium text-navy">Call</a> : null}
+            {phoneTel(student.mobile) ? <DialLink organizationId={workspace.organizationId} workspaceId={workspace.id} leadId={student.lead_id || null} name={student.full_name} phone={student.mobile} /> : null}
           </span>
           </div>
         ))}

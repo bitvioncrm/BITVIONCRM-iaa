@@ -1,13 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { CallResultButtons } from "@/components/calls/CallResultButtons";
-import { useDialEndedAt } from "@/components/calls/useDialEndedAt";
+import { DialLink } from "@/components/calls/DialLink";
 import { useAuth } from "@/context/AuthContext";
-import { formatClock, outcomeFromPhoneReturn, type CallOutcome } from "@/lib/call-time";
-import { phoneTel } from "@/lib/phone";
+import { useCallSession } from "@/context/CallSessionContext";
+import { formatCallWhen, formatClock, type CallOutcome } from "@/lib/call-time";
 import { canOperateWhatsApp, whatsAppDesk } from "@/lib/production-access";
-import { listLeads, listWorkspaces, type ProductionLead, type WorkspaceOption } from "@/services/production-leads";
-import { activeCall, callDeskReport, endCall, startCall, type LiveCall } from "@/services/production-ops";
+import { listLeads, listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
+import { callDeskReport } from "@/services/production-ops";
 
 const outcomeLabel: Record<CallOutcome, string> = {
   connected: "Connected",
@@ -22,14 +21,10 @@ export function ProductionCallTime() {
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
   const [workspaceId, setWorkspaceId] = useState("");
   const [search, setSearch] = useState("");
-  const [leads, setLeads] = useState<ProductionLead[]>([]);
-  const [live, setLive] = useState<LiveCall | null>(null);
-  const [now, setNow] = useState(0);
+  const [leads, setLeads] = useState<Awaited<ReturnType<typeof listLeads>>["leads"]>([]);
   const [report, setReport] = useState<Awaited<ReturnType<typeof callDeskReport>> | null>(null);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const returnedAt = useDialEndedAt(Boolean(live));
-  const savedDial = useRef("");
+  const { live, elapsed } = useCallSession();
 
   useEffect(() => {
     void listWorkspaces()
@@ -42,22 +37,16 @@ export function ProductionCallTime() {
   }, [desk]);
 
   useEffect(() => {
-    void activeCall().then(setLive).catch(() => setLive(null));
-  }, []);
-
-  useEffect(() => {
-    if (!live) return;
-    setNow(Date.now());
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [live]);
-
-  useEffect(() => {
     if (!workspaceId) return;
-    void callDeskReport(workspaceId, seesEveryone)
-      .then(setReport)
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load call time"));
-  }, [workspaceId, seesEveryone, live]);
+    const load = () => {
+      void callDeskReport(workspaceId, seesEveryone)
+        .then(setReport)
+        .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load call time"));
+    };
+    load();
+    window.addEventListener("bitvion-call-saved", load);
+    return () => window.removeEventListener("bitvion-call-saved", load);
+  }, [workspaceId, seesEveryone]);
 
   useEffect(() => {
     if (!workspaceId) return;
@@ -67,31 +56,7 @@ export function ProductionCallTime() {
   }, [workspaceId, search]);
 
   const workspace = workspaces.find((item) => item.id === workspaceId);
-  const speaking = live ? leads.find((lead) => lead.id === live.leadId) : undefined;
-  const elapsed = live ? Math.max(0, Math.floor(((returnedAt ? new Date(returnedAt).getTime() : now) - new Date(live.startedAt).getTime()) / 1000)) : 0;
   const title = desk === "institute" ? "Institute call time" : desk === "clinic" ? "Clinic call time" : "Call time";
-
-  function finish(outcome: CallOutcome, endedAt?: string) {
-    if (!live || savedDial.current === live.id) return;
-    savedDial.current = live.id;
-    setBusy(true);
-    void endCall(live.id, outcome, endedAt)
-      .then(() => {
-        setLive(null);
-        setError("");
-      })
-      .catch((reason: unknown) => {
-        savedDial.current = "";
-        setError(reason instanceof Error ? reason.message : "End call failed");
-      })
-      .finally(() => setBusy(false));
-  }
-
-  useEffect(() => {
-    if (!live || !returnedAt) return;
-    const seconds = Math.max(0, Math.floor((new Date(returnedAt).getTime() - new Date(live.startedAt).getTime()) / 1000));
-    finish(outcomeFromPhoneReturn(seconds), returnedAt);
-  }, [live, returnedAt]);
 
   return (
     <div className="space-y-4">
@@ -106,20 +71,20 @@ export function ProductionCallTime() {
       ) : (
         <p className="text-sm font-medium">{workspace?.name}</p>
       )}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <Stat label="Total dials" value={String(report?.dials ?? 0)} />
         <Stat label="Connected" value={String(report?.connected ?? 0)} />
         <Stat label="Rejected" value={String(report?.rejected ?? 0)} />
         <Stat label="No answer" value={String(report?.noAnswer ?? 0)} />
+        <Stat label="Call time" value={formatClock(report?.callSeconds ?? 0)} />
         <Stat label="Talk time" value={formatClock(report?.talkSeconds ?? 0)} />
       </div>
-      <section className="rounded-lg border border-line bg-white p-4">
-        <h2 className="font-semibold">While calling</h2>
+      <section className="rounded-2xl border border-[#eadfca] bg-white p-4">
+        <h2 className="font-semibold">Call someone</h2>
         {live ? (
-          <div className="mt-3 space-y-3">
-            <p className="text-sm">{speaking?.fullName ?? "Lead"} · {workspace?.name}</p>
-            <p className="text-4xl font-semibold tabular">{formatClock(elapsed)}</p>
-            <CallResultButtons busy={busy} onResult={finish} />
+          <div className="mt-3">
+            <p className="text-sm text-muted">{live.name || "Call"} · timer is running</p>
+            <p className="mt-1 text-4xl font-semibold tabular">{formatClock(elapsed)}</p>
           </div>
         ) : (
           <div className="mt-3 space-y-3">
@@ -127,7 +92,7 @@ export function ProductionCallTime() {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search a lead by name or phone"
-              className="w-full max-w-md rounded-md border border-line px-2 py-2"
+              className="h-11 w-full max-w-md rounded-md border border-line px-3"
             />
             <div className="max-h-64 space-y-2 overflow-auto">
               {leads.map((lead) => (
@@ -136,28 +101,7 @@ export function ProductionCallTime() {
                     <Link className="font-medium" to={`/leads/${lead.id}`}>{lead.fullName}</Link>
                     <p className="text-xs text-muted">{lead.phone}</p>
                   </div>
-                  <a
-                    href={phoneTel(lead.phone) || undefined}
-                    className="rounded-md bg-navy px-3 py-1.5 text-sm text-white aria-disabled:opacity-50"
-                    aria-disabled={busy || !workspace || !phoneTel(lead.phone)}
-                    onClick={(event) => {
-                      if (!workspace || busy || !phoneTel(lead.phone)) {
-                        event.preventDefault();
-                        if (!phoneTel(lead.phone)) setError("This lead has no phone number to dial.");
-                        return;
-                      }
-                      setBusy(true);
-                      void startCall(workspace.organizationId, workspace.id, lead.id)
-                        .then((row) => {
-                          setLive(row);
-                          setError("");
-                        })
-                        .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Start call failed"))
-                        .finally(() => setBusy(false));
-                    }}
-                  >
-                    Call
-                  </a>
+                  {workspace ? <DialLink organizationId={workspace.organizationId} workspaceId={workspace.id} leadId={lead.id} name={lead.fullName} phone={lead.phone} className="inline-flex min-h-11 items-center rounded-md bg-navy px-3 text-sm text-white" /> : null}
                 </div>
               ))}
               {leads.length === 0 ? <p className="text-sm text-muted">No leads on this desk.</p> : null}
@@ -167,26 +111,29 @@ export function ProductionCallTime() {
       </section>
       <section className="space-y-2 lg:hidden">
         {(report?.calls ?? []).map((call, index) => (
-          <article key={`${call.leadId}-${call.startedAt}-${index}`} className="rounded-lg border border-line bg-white p-3 text-sm">
+          <article key={`${call.leadId}-${call.startedAt}-${index}`} className="rounded-2xl border border-line bg-white p-3 text-sm">
             <p className="font-medium">{call.leadId ? <Link to={`/leads/${call.leadId}`}>{call.leadName}</Link> : call.leadName}</p>
-            <p className="text-muted">{outcomeLabel[call.outcome]} · {call.outcome === "connected" ? formatClock(call.talkSeconds) : "No talk time"}</p>
+            <p className="mt-1 text-muted">{outcomeLabel[call.outcome]} · {formatClock(call.talkSeconds)}</p>
+            <p className="text-xs text-muted">{formatCallWhen(call.startedAt)}{call.endedAt ? ` – ${formatCallWhen(call.endedAt)}` : ""}</p>
           </article>
         ))}
-        {(report?.calls.length ?? 0) === 0 ? <p className="rounded-lg border border-line bg-white px-3 py-6 text-sm text-muted">No completed dials today.</p> : null}
+        {(report?.calls.length ?? 0) === 0 ? <p className="rounded-2xl border border-line bg-white px-3 py-6 text-sm text-muted">No completed dials today.</p> : null}
       </section>
-      <section className="hidden overflow-x-auto rounded-lg border border-line bg-white lg:block">
-        <table className="w-full min-w-[640px] text-left text-sm">
+      <section className="hidden overflow-x-auto rounded-2xl border border-line bg-white lg:block">
+        <table className="w-full min-w-[760px] text-left text-sm">
           <thead className="border-b border-line text-xs text-muted">
             <tr>
-              {["Lead", "Result", "Talk time"].map((heading) => <th key={heading} className="px-3 py-2 font-medium">{heading}</th>)}
+              {["Person", "Started", "Ended", "Length", "Result"].map((heading) => <th key={heading} className="px-3 py-2 font-medium">{heading}</th>)}
             </tr>
           </thead>
           <tbody>
             {(report?.calls ?? []).map((call, index) => (
               <tr key={`${call.leadId}-${call.startedAt}-${index}`} className="border-b border-line last:border-0">
                 <td className="px-3 py-2">{call.leadId ? <Link to={`/leads/${call.leadId}`}>{call.leadName}</Link> : call.leadName}</td>
+                <td className="px-3 py-2 whitespace-nowrap">{formatCallWhen(call.startedAt)}</td>
+                <td className="px-3 py-2 whitespace-nowrap">{call.endedAt ? formatCallWhen(call.endedAt) : ""}</td>
+                <td className="px-3 py-2 tabular">{formatClock(call.talkSeconds)}</td>
                 <td className="px-3 py-2">{outcomeLabel[call.outcome]}</td>
-                <td className="px-3 py-2 tabular">{call.outcome === "connected" ? formatClock(call.talkSeconds) : "—"}</td>
               </tr>
             ))}
           </tbody>

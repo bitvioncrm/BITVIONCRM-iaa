@@ -27,10 +27,11 @@ export interface CallTotals {
   rejected: number;
   noAnswer: number;
   talkSeconds: number;
+  callSeconds: number;
 }
 
 export function emptyCallTotals(): CallTotals {
-  return { dials: 0, connected: 0, rejected: 0, noAnswer: 0, talkSeconds: 0 };
+  return { dials: 0, connected: 0, rejected: 0, noAnswer: 0, talkSeconds: 0, callSeconds: 0 };
 }
 
 export function summarizeCalls(rows: Array<{ status?: string | null; outcome?: string | null; duration_seconds?: number | null }>) {
@@ -39,9 +40,11 @@ export function summarizeCalls(rows: Array<{ status?: string | null; outcome?: s
     if (row.status && row.status !== "completed") continue;
     if (row.outcome !== "connected" && row.outcome !== "rejected" && row.outcome !== "no_answer") continue;
     totals.dials += 1;
+    const seconds = typeof row.duration_seconds === "number" && row.duration_seconds > 0 ? row.duration_seconds : 0;
+    totals.callSeconds += seconds;
     if (row.outcome === "connected") {
       totals.connected += 1;
-      totals.talkSeconds += typeof row.duration_seconds === "number" && row.duration_seconds > 0 ? row.duration_seconds : 0;
+      totals.talkSeconds += seconds;
     } else if (row.outcome === "rejected") {
       totals.rejected += 1;
     } else {
@@ -49,6 +52,12 @@ export function summarizeCalls(rows: Array<{ status?: string | null; outcome?: s
     }
   }
   return totals;
+}
+
+export function formatCallWhen(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 }
 
 export function formatClock(seconds: number) {

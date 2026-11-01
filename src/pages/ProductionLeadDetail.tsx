@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { PhoneLink } from "@/components/shared/PhoneLink";
 import { WhatsAppLink } from "@/components/shared/WhatsAppLink";
@@ -7,12 +7,12 @@ import { Select } from "@/components/ui/select";
 import { STATUS_LABEL, STATUS_ORDER } from "@/data/catalog";
 import { addFollowUp, addLeadNote, getLead, listFollowUps, listNotes, listWorkspaces, updateLeadStatus, type ProductionLead } from "@/services/production-leads";
 import { CallResultButtons } from "@/components/calls/CallResultButtons";
-import { useDialEndedAt } from "@/components/calls/useDialEndedAt";
-import { formatClock, outcomeFromPhoneReturn, type CallOutcome, type CallTotals } from "@/lib/call-time";
+import { formatClock, type CallOutcome, type CallTotals } from "@/lib/call-time";
 import { phoneTel } from "@/lib/phone";
 import { canWriteWhatsApp } from "@/lib/production-access";
 import { useAuth } from "@/context/AuthContext";
-import { createCourse, createPatient, createStudent, endCall, leadCallStats, startCall } from "@/services/production-ops";
+import { useCallSession } from "@/context/CallSessionContext";
+import { createCourse, createPatient, createStudent, leadCallStats } from "@/services/production-ops";
 import type { LeadStatus } from "@/types";
 
 export function ProductionLeadDetail({ id }: { id: string }) {
@@ -22,11 +22,8 @@ export function ProductionLeadDetail({ id }: { id: string }) {
   const [notes, setNotes] = useState<{ id: string; body: string; created_at: string }[]>([]);
   const [followups, setFollowups] = useState<{ id: string; due_at: string; notes: string; status: string }[]>([]);
   const [workspaceType, setWorkspaceType] = useState("clinic");
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [startedAt, setStartedAt] = useState<string | null>(null);
-  const [now, setNow] = useState(0);
   const [callTotals, setCallTotals] = useState<CallTotals | null>(null);
-  const [ending, setEnding] = useState(false);
+  const { live, busy, elapsed, start, finish } = useCallSession();
   const [note, setNote] = useState("");
   const [followAt, setFollowAt] = useState("");
   const [notice, setNotice] = useState("");
@@ -47,39 +44,20 @@ export function ProductionLeadDetail({ id }: { id: string }) {
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load the lead"));
   }, [id]);
 
-  const returnedAt = useDialEndedAt(Boolean(sessionId));
-  const savedDial = useRef("");
-
   useEffect(() => {
-    if (!sessionId) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    setNow(Date.now());
-    return () => window.clearInterval(timer);
-  }, [sessionId]);
-
-  useEffect(() => {
-    if (!lead || !sessionId || !returnedAt || savedDial.current === sessionId) return;
-    savedDial.current = sessionId;
-    const seconds = Math.max(0, Math.floor((new Date(returnedAt).getTime() - new Date(startedAt ?? returnedAt).getTime()) / 1000));
-    const outcome = outcomeFromPhoneReturn(seconds);
-    setEnding(true);
-    void endCall(sessionId, outcome, returnedAt).then(async () => {
-      setSessionId(null);
-      setStartedAt(null);
-      const stats = await leadCallStats([lead.id]);
-      setCallTotals(stats[lead.id] ?? null);
-      setNotice(outcome === "connected" ? `Connected call saved: ${formatClock(seconds)}.` : "Rejected. No talk time was added.");
-    }).catch((reason: unknown) => {
-      savedDial.current = "";
-      setError(reason instanceof Error ? reason.message : "End call failed");
-    }).finally(() => setEnding(false));
-  }, [lead, returnedAt, sessionId, startedAt]);
+    if (!lead) return;
+    const refresh = () => {
+      void leadCallStats([lead.id]).then((stats) => setCallTotals(stats[lead.id] ?? null)).catch(() => undefined);
+    };
+    window.addEventListener("bitvion-call-saved", refresh);
+    return () => window.removeEventListener("bitvion-call-saved", refresh);
+  }, [lead]);
 
   if (lead === null) return <Navigate to="/leads" replace />;
   if (!lead) return <p className="text-sm text-muted">{error || "Loading lead."}</p>;
 
   const institute = workspaceType === "institute";
-  const live = startedAt ? Math.max(0, Math.floor(((returnedAt ? new Date(returnedAt).getTime() : now) - new Date(startedAt).getTime()) / 1000)) : 0;
+  const onThisLead = live?.leadId === lead.id;
   const nextDesk = institute ? "/institute" : "/clinic";
 
   return (
@@ -88,12 +66,9 @@ export function ProductionLeadDetail({ id }: { id: string }) {
       <h1 className="text-2xl font-semibold">{lead.fullName}</h1>
       <div className="flex items-center gap-2">
         <PhoneLink phone={lead.phone} onClick={() => {
-          if (sessionId || !phoneTel(lead.phone)) return;
-          void startCall(lead.organizationId, lead.workspaceId, lead.id).then((row) => {
-            setSessionId(row.id);
-            setStartedAt(row.startedAt);
-            setNotice("");
-          }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Start call failed"));
+          if (live || busy || !phoneTel(lead.phone)) return;
+          void start({ organizationId: lead.organizationId, workspaceId: lead.workspaceId, leadId: lead.id, name: lead.fullName })
+            .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Start call failed"));
         }} />
         {canWhatsApp ? <WhatsAppLink phone={lead.phone} label={`Open WhatsApp for ${lead.fullName}`} /> : null}
       </div>
@@ -114,42 +89,25 @@ export function ProductionLeadDetail({ id }: { id: string }) {
       <section className="rounded-lg border border-line bg-white p-4">
         <h2 className="font-semibold">Call time on this lead</h2>
         <p className="mt-1 text-sm text-muted">
-          Talk time {formatClock(callTotals?.talkSeconds ?? 0)} · {callTotals?.dials ?? 0} dials · {callTotals?.connected ?? 0} connected · {callTotals?.rejected ?? 0} rejected · {callTotals?.noAnswer ?? 0} no answer
+          Call time {formatClock(callTotals?.callSeconds ?? 0)} · Talk time {formatClock(callTotals?.talkSeconds ?? 0)} · {callTotals?.dials ?? 0} dials · {callTotals?.connected ?? 0} connected · {callTotals?.rejected ?? 0} rejected · {callTotals?.noAnswer ?? 0} no answer
         </p>
-        <p className="mt-3 text-3xl font-semibold tabular">{sessionId ? formatClock(live) : formatClock(callTotals?.talkSeconds ?? 0)}</p>
-        {sessionId ? (
-          <div className="mt-3 space-y-2">
-            <CallResultButtons busy={ending} onResult={(outcome: CallOutcome) => {
-              if (savedDial.current === sessionId) return;
-              savedDial.current = sessionId;
-              setEnding(true);
-              void endCall(sessionId, outcome, returnedAt ?? undefined).then(async (seconds) => {
-                setSessionId(null);
-                setStartedAt(null);
-                const stats = await leadCallStats([lead.id]);
-                setCallTotals(stats[lead.id] ?? null);
-                setNotice(outcome === "connected" ? `Connected call saved: ${formatClock(seconds)}.` : "Dial saved. No talk time was added.");
-              }).catch((reason: unknown) => {
-                savedDial.current = "";
-                setError(reason instanceof Error ? reason.message : "End call failed");
-              }).finally(() => setEnding(false));
-            }} />
+        <p className="mt-3 text-3xl font-semibold tabular">{onThisLead ? formatClock(elapsed) : formatClock(callTotals?.callSeconds ?? 0)}</p>
+        {onThisLead ? (
+          <div className="mt-3">
+            <CallResultButtons busy={busy} onResult={(outcome: CallOutcome) => finish(outcome)} />
           </div>
         ) : (
-          <Button asChild className="mt-3">
+          <Button asChild className="mt-3" disabled={busy || Boolean(live)}>
             <a
               href={phoneTel(lead.phone) || undefined}
               onClick={(event) => {
-                if (!phoneTel(lead.phone)) {
+                if (!phoneTel(lead.phone) || busy || live) {
                   event.preventDefault();
-                  setError("This lead has no phone number to dial.");
+                  if (!phoneTel(lead.phone)) setError("This lead has no phone number to dial.");
                   return;
                 }
-                void startCall(lead.organizationId, lead.workspaceId, lead.id).then((row) => {
-                  setSessionId(row.id);
-                  setStartedAt(row.startedAt);
-                  setNotice("");
-                }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Start call failed"));
+                void start({ organizationId: lead.organizationId, workspaceId: lead.workspaceId, leadId: lead.id, name: lead.fullName })
+                  .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Start call failed"));
               }}
             >
               Call

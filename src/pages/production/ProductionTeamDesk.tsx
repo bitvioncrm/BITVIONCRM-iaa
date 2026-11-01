@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { useAuth } from "@/context/AuthContext";
+import { useCallSession } from "@/context/CallSessionContext";
 import { canOperateWhatsApp } from "@/lib/production-access";
 import {
   assignLeadCount,
@@ -195,6 +196,7 @@ export function ProductionDeskPage() {
   const [loading, setLoading] = useState(true);
 
   const workspace = workspaces.find((item) => item.id === workspaceId);
+  const { start, live, busy } = useCallSession();
   const owner = useMemo(
     () => members.find((item) => item.userId === ownerId) ?? { userId: ownerId, name: "My desk", role: productionUser?.roleKey ?? "", workspaceId },
     [members, ownerId, productionUser?.roleKey, workspaceId],
@@ -278,7 +280,7 @@ export function ProductionDeskPage() {
               <Link className="font-medium" to={`/leads/${lead.id}`}>{lead.fullName}</Link>
               <span className="text-xs capitalize text-muted">{lead.status.replaceAll("_", " ")}</span>
             </div>
-            <PhoneLink phone={lead.phone} />
+            <PhoneLink phone={lead.phone} onClick={() => { if (workspace && !live && !busy) void start({ organizationId: workspace.organizationId, workspaceId: workspace.id, leadId: lead.id, name: lead.fullName }); }} />
             <p className="text-xs text-muted">{lead.location || "No place"} · {lead.position || "No interest"}</p>
             <Link className="inline-flex min-h-11 items-center text-sm text-accent" to={`/leads/${lead.id}`}>Open</Link>
           </article>
@@ -297,7 +299,7 @@ export function ProductionDeskPage() {
             ) : leads.map((lead) => (
               <tr key={lead.id} className="border-b border-line last:border-0">
                 <td className="px-3 py-2 font-medium"><Link to={`/leads/${lead.id}`}>{lead.fullName}</Link></td>
-                <td className="px-3 py-2"><PhoneLink phone={lead.phone} /></td>
+                <td className="px-3 py-2"><PhoneLink phone={lead.phone} onClick={() => { if (workspace && !live && !busy) void start({ organizationId: workspace.organizationId, workspaceId: workspace.id, leadId: lead.id, name: lead.fullName }); }} /></td>
                 <td className="px-3 py-2">{lead.location || "—"}</td>
                 <td className="px-3 py-2">{lead.position || "—"}</td>
                 <td className="px-3 py-2 capitalize">{lead.status.replaceAll("_", " ")}</td>
