@@ -196,6 +196,11 @@ export async function loadDoctorPulse(workspaceId: string, fromDate: string, toD
   };
 }
 
+export async function removeLedgerEntry(id: string) {
+  const { error } = await db().from("clinic_ledger").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
 export async function addLedgerEntry(input: {
   organizationId: string;
   workspaceId: string;

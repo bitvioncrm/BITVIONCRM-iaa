@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { MetaLeadCentre } from "@/pages/production/MetaLeadCentre";
 import { listLeads, listWorkspaces, updateLeadStatus, type ProductionLead, type WorkspaceOption } from "@/services/production-leads";
-import { createTask, listAudit, listTasks, revenueSummary } from "@/services/production-ops";
+import { createTask, listAudit, listTasks, removeTask, revenueSummary, updateTask } from "@/services/production-ops";
 import { useAuth } from "@/context/AuthContext";
 import { STATUS_LABEL, STATUS_ORDER } from "@/data/catalog";
 import type { LeadStatus } from "@/types";
@@ -117,7 +117,15 @@ export function ProductionTasks() {
         <input value={title} onChange={(event) => setTitle(event.target.value)} required placeholder="Task" className="h-11 flex-1 rounded-md border border-line px-2 text-base sm:h-9 sm:text-sm" />
         <button className="h-11 rounded-md bg-navy px-3 text-sm text-white sm:h-9" type="submit">Add</button>
       </form>
-      {rows.length === 0 ? <p className="text-sm text-muted">No tasks.</p> : rows.map((task) => <p key={task.id} className="text-sm">{task.title} · {task.status}</p>)}
+      {rows.length === 0 ? <p className="text-sm text-muted">No tasks.</p> : rows.map((task) => (
+        <div key={task.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span>{task.title} · {task.status}</span>
+          <span className="flex gap-2">
+            <button type="button" className="text-xs font-medium" onClick={() => { void updateTask(task.id, { status: task.status === "completed" ? "pending" : "completed" }).then(() => load(workspaceId)).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not update the task")); }}>{task.status === "completed" ? "Reopen" : "Complete"}</button>
+            <button type="button" className="text-xs font-medium text-danger" onClick={() => { if (!window.confirm(`Delete ${task.title}?`)) return; void removeTask(task.id).then(() => load(workspaceId)).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not delete the task")); }}>Delete</button>
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

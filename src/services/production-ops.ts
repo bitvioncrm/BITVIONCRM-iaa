@@ -14,6 +14,16 @@ async function userId() {
   return data.user.id;
 }
 
+export async function completeFollowUp(id: string) {
+  const { error } = await client().from("followups").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function removeFollowUp(id: string) {
+  const { error } = await client().from("followups").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
 export async function listFollowUps(workspaceId: string) {
   const { data, error } = await client().from("followups").select("id, lead_id, due_at, status, notes").eq("workspace_id", workspaceId).order("due_at").limit(50);
   if (error) throw new Error(error.message);
@@ -24,6 +34,16 @@ export async function listTasks(workspaceId: string) {
   const { data, error } = await client().from("tasks").select("id, title, status, priority, due_at, assigned_to").eq("workspace_id", workspaceId).is("deleted_at", null).order("due_at").limit(50);
   if (error) throw new Error(error.message);
   return data ?? [];
+}
+
+export async function updateTask(id: string, patch: { title?: string; status?: string }) {
+  const { error } = await client().from("tasks").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id).is("deleted_at", null);
+  if (error) throw new Error(error.message);
+}
+
+export async function removeTask(id: string) {
+  const { error } = await client().from("tasks").update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", id).is("deleted_at", null);
+  if (error) throw new Error(error.message);
 }
 
 export async function createTask(input: { organizationId: string; workspaceId: string; title: string; dueAt: string; assignedTo: string }) {
@@ -186,6 +206,106 @@ export async function callSummary(workspaceId: string) {
   return { today, week: inRange(startOfWeek), month: inRange(startOfMonth), target, remaining: remainingSeconds(target, today), active: (data ?? []).some((row) => row.status === "active") };
 }
 
+export interface DeskAppointment {
+  id: string;
+  starts_at: string;
+  status: string;
+  reason: string;
+}
+
+export interface DeskPatient {
+  id: string;
+  patient_code: string;
+  full_name: string;
+  mobile: string;
+  email: string;
+  gender: string;
+  date_of_birth: string | null;
+  age: number | null;
+  place: string;
+  address: string;
+  emergency_contact: string;
+  notes: string;
+  created_at: string;
+  appointments: DeskAppointment[];
+}
+
+export async function listDeskPatients(workspaceId: string) {
+  const [patients, appointments] = await Promise.all([
+    client().from("patients").select("id, patient_code, full_name, mobile, email, gender, date_of_birth, age, place, address, emergency_contact, notes, created_at").eq("workspace_id", workspaceId).is("deleted_at", null).order("created_at", { ascending: false }).limit(200),
+    client().from("appointments").select("id, patient_id, starts_at, status, reason").eq("workspace_id", workspaceId).order("starts_at", { ascending: false }).limit(500),
+  ]);
+  if (patients.error) throw new Error(patients.error.message);
+  if (appointments.error) throw new Error(appointments.error.message);
+  const byPatient = new Map<string, DeskAppointment[]>();
+  for (const row of appointments.data ?? []) {
+    const patientId = String(row.patient_id);
+    const list = byPatient.get(patientId) ?? [];
+    list.push({ id: String(row.id), starts_at: String(row.starts_at), status: String(row.status), reason: String(row.reason || "") });
+    byPatient.set(patientId, list);
+  }
+  return (patients.data ?? []).map((row) => ({
+    id: String(row.id),
+    patient_code: String(row.patient_code || ""),
+    full_name: String(row.full_name || ""),
+    mobile: String(row.mobile || ""),
+    email: String(row.email || ""),
+    gender: String(row.gender || ""),
+    date_of_birth: row.date_of_birth ? String(row.date_of_birth) : null,
+    age: row.age == null ? null : Number(row.age),
+    place: String(row.place || ""),
+    address: String(row.address || ""),
+    emergency_contact: String(row.emergency_contact || ""),
+    notes: String(row.notes || ""),
+    created_at: String(row.created_at),
+    appointments: byPatient.get(String(row.id)) ?? [],
+  })) satisfies DeskPatient[];
+}
+
+export interface DeskStudent {
+  id: string;
+  student_code: string;
+  full_name: string;
+  mobile: string;
+  email: string;
+  gender: string;
+  date_of_birth: string | null;
+  address: string;
+  status: string;
+  admission_date: string | null;
+  created_at: string;
+  course: string;
+}
+
+export async function listDeskStudents(workspaceId: string) {
+  const { data, error } = await client()
+    .from("students")
+    .select("id, student_code, full_name, mobile, email, gender, date_of_birth, address, status, admission_date, created_at, courses(name)")
+    .eq("workspace_id", workspaceId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((row) => {
+    const course = row.courses as { name?: string } | { name?: string }[] | null;
+    const name = Array.isArray(course) ? course[0]?.name : course?.name;
+    return {
+      id: String(row.id),
+      student_code: String(row.student_code || ""),
+      full_name: String(row.full_name || ""),
+      mobile: String(row.mobile || ""),
+      email: String(row.email || ""),
+      gender: String(row.gender || ""),
+      date_of_birth: row.date_of_birth ? String(row.date_of_birth) : null,
+      address: String(row.address || ""),
+      status: String(row.status || ""),
+      admission_date: row.admission_date ? String(row.admission_date) : null,
+      created_at: String(row.created_at),
+      course: name || "",
+    } satisfies DeskStudent;
+  });
+}
+
 export async function listPatients(workspaceId: string, search: string) {
   let request = client().from("patients").select("id, patient_code, full_name, mobile, place").eq("workspace_id", workspaceId).is("deleted_at", null).order("created_at", { ascending: false }).limit(30);
   if (search.trim()) request = request.ilike("full_name", `%${search.trim().replace(/[%_]/g, "")}%`);
@@ -226,6 +346,21 @@ export async function createPatient(input: { organizationId: string; workspaceId
   return code;
 }
 
+export async function updatePatient(id: string, input: { fullName: string; mobile: string; place: string }) {
+  const { error } = await client().from("patients").update({
+    full_name: input.fullName.trim(),
+    mobile: input.mobile.trim(),
+    place: input.place.trim(),
+    updated_at: new Date().toISOString(),
+  }).eq("id", id).is("deleted_at", null);
+  if (error) throw new Error(error.message);
+}
+
+export async function removePatient(id: string) {
+  const { error } = await client().from("patients").update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", id).is("deleted_at", null);
+  if (error) throw new Error(error.message);
+}
+
 export async function updateAppointmentStatus(id: string, status: string) {
   const { error } = await client().from("appointments").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
   if (error) throw new Error(error.message);
@@ -233,6 +368,13 @@ export async function updateAppointmentStatus(id: string, status: string) {
 
 export async function mergeLeads(keeperId: string, duplicateId: string) {
   const { error } = await client().rpc("merge_leads", { keeper: keeperId, duplicate: duplicateId });
+  if (error) throw new Error(error.message);
+}
+
+export async function removeAppointment(id: string) {
+  const removed = await client().from("appointments").delete().eq("id", id);
+  if (!removed.error) return;
+  const { error } = await client().from("appointments").update({ status: "cancelled", updated_at: new Date().toISOString() }).eq("id", id);
   if (error) throw new Error(error.message);
 }
 
@@ -431,6 +573,16 @@ export async function revenueSummary(workspaceId: string, from = "1970-01-01", t
     net: Number(row?.net ?? 0),
     pending: Number(row?.pending ?? 0),
   };
+}
+
+export async function updateStudent(id: string, status: string) {
+  const { error } = await client().from("students").update({ status }).eq("id", id).is("deleted_at", null);
+  if (error) throw new Error(error.message);
+}
+
+export async function removeStudent(id: string) {
+  const { error } = await client().from("students").update({ deleted_at: new Date().toISOString() }).eq("id", id).is("deleted_at", null);
+  if (error) throw new Error(error.message);
 }
 
 export async function listStudents(workspaceId: string) {

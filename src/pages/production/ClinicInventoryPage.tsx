@@ -36,6 +36,16 @@ function canManageInventory(roleKey: string) {
   return canOperateWhatsApp(roleKey) || roleKey === "doctor" || roleKey === "duty_doctor" || roleKey === "receptionist";
 }
 
+function StockStepper({ stock, busy, onAdd, onRemove }: { stock: number; busy: boolean; onAdd: () => void; onRemove: () => void }) {
+  return (
+    <div className="inline-flex h-8 overflow-hidden rounded-md border border-slate-200 bg-white text-[15px] text-slate-800">
+      <button type="button" className="grid w-8 place-items-center hover:bg-slate-50 disabled:opacity-40" disabled={busy || stock <= 0} onClick={onRemove} aria-label="Remove one from stock">−</button>
+      <span className="grid min-w-8 place-items-center border-x border-slate-200 px-2 font-medium tabular">{stock}</span>
+      <button type="button" className="grid w-8 place-items-center hover:bg-slate-50 disabled:opacity-40" disabled={busy} onClick={onAdd} aria-label="Add one to stock">+</button>
+    </div>
+  );
+}
+
 function ProductImage({ path, name, size = "card" }: { path: string; name: string; size?: "card" | "thumb" | "preview" }) {
   const [url, setUrl] = useState("");
   useEffect(() => {
@@ -126,6 +136,7 @@ function InventoryShell() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<CatalogueProduct | null>(null);
   const [stockProduct, setStockProduct] = useState<CatalogueProduct | null>(null);
+  const [stockBusy, setStockBusy] = useState("");
 
   const workspace = workspaces.find((item) => item.id === workspaceId);
 
@@ -192,6 +203,29 @@ function InventoryShell() {
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, pages);
   const pageRows = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  const changeStock = (product: CatalogueProduct, delta: 1 | -1) => {
+    if (delta < 0 && product.currentStock <= 0) return;
+    setStockBusy(product.id);
+    setError("");
+    void adjustCatalogueStock(product.id, delta > 0 ? "purchase" : "adjustment", 1, delta > 0 ? "Stock added" : "Stock reduced")
+      .then(() => {
+        const nextStock = product.currentStock + delta;
+        setProducts((current) => {
+          const next = current.map((item) => item.id === product.id ? { ...item, currentStock: nextStock } : item);
+          cart.syncStock(next);
+          return next;
+        });
+        setDashboard((board) => board ? {
+          ...board,
+          units: board.units + delta,
+          recentProducts: board.recentProducts.map((item) => item.id === product.id ? { ...item, currentStock: nextStock } : item),
+        } : board);
+        setNotice(`${product.name} is now ${nextStock} in stock.`);
+      })
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Stock update failed"))
+      .finally(() => setStockBusy(""));
+  };
 
   useEffect(() => {
     setPage(1);
@@ -276,7 +310,10 @@ function InventoryShell() {
           <div className="grid gap-4 lg:grid-cols-2">
             <Card title="Recently added">
               {dashboard.recentProducts.length === 0 ? <p className="text-sm text-muted">No products yet.</p> : dashboard.recentProducts.map((product) => (
-                <p key={product.id} className="border-t border-line py-2 text-sm first:border-0">{product.name} · {product.currentStock} units · {formatInr(product.sellingPrice)}</p>
+                <div key={product.id} className="flex items-center justify-between gap-3 border-t border-line py-2 text-sm first:border-0">
+                  <span className="min-w-0 truncate">{product.name} · {formatInr(product.sellingPrice)}</span>
+                  {manager ? <StockStepper stock={product.currentStock} busy={stockBusy === product.id} onAdd={() => changeStock(product, 1)} onRemove={() => changeStock(product, -1)} /> : <span className="tabular">{product.currentStock}</span>}
+                </div>
               ))}
             </Card>
             <Card title="Recent stock adjustments">
@@ -350,10 +387,10 @@ function InventoryShell() {
                             {formatInr(product.sellingPrice)}
                           </p>
                           <p className="mt-0.5 text-[12px] text-muted">
-                            <span className="font-medium tabular text-ink">{product.currentStock}</span> in stock
-                            {!product.isActive ? <span className="text-danger"> · Inactive</span> : null}
+                            {!product.isActive ? <span className="text-danger">Inactive</span> : "In stock"}
                           </p>
                         </div>
+                        {manager ? <StockStepper stock={product.currentStock} busy={stockBusy === product.id} onAdd={() => changeStock(product, 1)} onRemove={() => changeStock(product, -1)} /> : <span className="text-sm font-medium tabular">{product.currentStock}</span>}
                       </div>
                       <div className="mt-2.5 flex flex-wrap gap-1.5 border-t border-line/70 pt-2.5">
                         <Button

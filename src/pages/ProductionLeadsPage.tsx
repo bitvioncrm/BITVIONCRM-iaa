@@ -24,6 +24,7 @@ import {
   clearAssignedLeads,
   clearLeadAssignment,
   createLead,
+  deleteLead,
   downloadWorkspaceCsv,
   leadAssignmentTotals,
   leadSourceTotals,
@@ -35,6 +36,7 @@ import {
   loadLeadList,
   PAGE_SIZE,
   listWorkspaces,
+  updateLead,
   updateLeadStatus,
   type LeadDayCount,
   type MemberOption,
@@ -82,7 +84,8 @@ export function ProductionLeadsPage() {
   const [assigningId, setAssigningId] = useState("");
   const [totals, setTotals] = useState<AssignmentTotals>({ unassigned: 0, desks: {}, assigned: {} });
   const [notice, setNotice] = useState("");
-  const [sheet, setSheet] = useState<{ lead: ProductionLead; kind: "note" | "follow" } | null>(null);
+  const [sheet, setSheet] = useState<{ lead: ProductionLead; kind: "note" | "follow" | "edit" } | null>(null);
+  const [editDraft, setEditDraft] = useState({ fullName: "", phone: "", email: "", location: "", position: "" });
   const [sheetValue, setSheetValue] = useState("");
   const [callStats, setCallStats] = useState<Record<string, CallTotals>>({});
   const [live, setLive] = useState<LiveCall | null>(null);
@@ -371,6 +374,16 @@ export function ProductionLeadsPage() {
           onSubmit={(event) => {
             event.preventDefault();
             const value = sheetValue.trim();
+            if (sheet.kind === "edit") {
+              void updateLead(sheet.lead, editDraft)
+                .then(() => {
+                  setLeads((current) => current.map((item) => item.id === sheet.lead.id ? { ...item, ...editDraft } : item));
+                  setNotice(`Updated ${editDraft.fullName}.`);
+                  setSheet(null);
+                })
+                .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not update the lead"));
+              return;
+            }
             if (!value) return;
             if (sheet.kind === "follow" && Number.isNaN(new Date(value).getTime())) {
               setError("Choose a follow-up time.");
@@ -389,8 +402,16 @@ export function ProductionLeadsPage() {
           }}
         >
           <label className="min-w-64 flex-1 text-sm">
-            {sheet.kind === "note" ? `Note for ${sheet.lead.fullName}` : `Follow-up for ${sheet.lead.fullName}`}
-            {sheet.kind === "note" ? (
+            {sheet.kind === "edit" ? `Edit ${sheet.lead.fullName}` : sheet.kind === "note" ? `Note for ${sheet.lead.fullName}` : `Follow-up for ${sheet.lead.fullName}`}
+            {sheet.kind === "edit" ? (
+              <span className="mt-1 grid gap-2 sm:grid-cols-2">
+                <Input value={editDraft.fullName} onChange={(event) => setEditDraft({ ...editDraft, fullName: event.target.value })} placeholder="Name" />
+                <Input value={editDraft.phone} onChange={(event) => setEditDraft({ ...editDraft, phone: event.target.value })} placeholder="Phone" />
+                <Input value={editDraft.email} onChange={(event) => setEditDraft({ ...editDraft, email: event.target.value })} placeholder="Email" />
+                <Input value={editDraft.location} onChange={(event) => setEditDraft({ ...editDraft, location: event.target.value })} placeholder="Place" />
+                <Input value={editDraft.position} onChange={(event) => setEditDraft({ ...editDraft, position: event.target.value })} placeholder="Interest" />
+              </span>
+            ) : sheet.kind === "note" ? (
               <textarea value={sheetValue} onChange={(event) => setSheetValue(event.target.value)} rows={2} className="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm outline-none" placeholder="Write the note" />
             ) : (
               <Input className="mt-1" type="datetime-local" value={sheetValue} onChange={(event) => setSheetValue(event.target.value)} />
@@ -641,6 +662,13 @@ export function ProductionLeadsPage() {
               )}
               <Button type="button" size="sm" variant="secondary" onClick={() => { setSheet({ lead, kind: "note" }); setSheetValue(""); }}>Note</Button>
               <Button type="button" size="sm" variant="secondary" onClick={() => { setSheet({ lead, kind: "follow" }); setSheetValue(""); }}>Follow-up</Button>
+              <Button type="button" size="sm" variant="secondary" onClick={() => { setEditDraft({ fullName: lead.fullName, phone: lead.phone, email: lead.email, location: lead.location, position: lead.position }); setSheet({ lead, kind: "edit" }); }}>Edit</Button>
+              <Button type="button" size="sm" variant="secondary" onClick={() => {
+                if (!window.confirm(`Delete ${lead.fullName}?`)) return;
+                void deleteLead(lead)
+                  .then(() => { setLeads((current) => current.filter((item) => item.id !== lead.id)); setTotal((value) => Math.max(0, value - 1)); setNotice(`${lead.fullName} deleted.`); })
+                  .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not delete the lead"));
+              }}>Delete</Button>
             </div>
           </article>
         ))}
@@ -727,6 +755,13 @@ export function ProductionLeadsPage() {
                   <div className="flex flex-wrap gap-2">
                     <Button type="button" size="sm" variant="secondary" onClick={() => { setSheet({ lead, kind: "note" }); setSheetValue(""); }}>Note</Button>
                     <Button type="button" size="sm" variant="secondary" onClick={() => { setSheet({ lead, kind: "follow" }); setSheetValue(""); }}>Follow-up</Button>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => { setEditDraft({ fullName: lead.fullName, phone: lead.phone, email: lead.email, location: lead.location, position: lead.position }); setSheet({ lead, kind: "edit" }); }}>Edit</Button>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => {
+                      if (!window.confirm(`Delete ${lead.fullName}?`)) return;
+                      void deleteLead(lead)
+                        .then(() => { setLeads((current) => current.filter((item) => item.id !== lead.id)); setTotal((value) => Math.max(0, value - 1)); setNotice(`${lead.fullName} deleted.`); })
+                        .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not delete the lead"));
+                    }}>Delete</Button>
                   </div>
                 </td>
               </tr>

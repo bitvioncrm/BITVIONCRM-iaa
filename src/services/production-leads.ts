@@ -469,6 +469,20 @@ export async function clearAssignedLeads(assigneeId: string) {
   return Number(data ?? 0);
 }
 
+export async function updateLead(lead: ProductionLead, input: { fullName: string; phone: string; email: string; location: string; position: string }) {
+  const userId = await currentUserId();
+  const { error } = await client().from("leads").update({
+    full_name: input.fullName.trim(),
+    phone: input.phone.trim(),
+    email: normalizeEmail(input.email),
+    location: input.location.trim(),
+    position: input.position.trim(),
+    updated_by: userId,
+    updated_at: new Date().toISOString(),
+  }).eq("id", lead.id).is("deleted_at", null);
+  if (error) throw new Error(error.message);
+}
+
 export async function deleteLead(lead: ProductionLead) {
   const userId = await currentUserId();
   const { error } = await client().from("leads").update({ deleted_at: new Date().toISOString(), deleted_by: userId, updated_by: userId }).eq("id", lead.id);

@@ -14,7 +14,7 @@ import { useCrm } from "@/context/CrmContext";
 import { FOLLOW_UP_LABEL, STATUS_LABEL, STATUS_ORDER } from "@/data/catalog";
 import { followUpBucket, formatDateTime } from "@/lib/dates";
 import { userName } from "@/lib/template";
-import { listFollowUps } from "@/services/production-ops";
+import { completeFollowUp, listFollowUps, removeFollowUp } from "@/services/production-ops";
 import { listWorkspaces } from "@/services/production-leads";
 import type { AutomationNode, FollowUp, Lead } from "@/types";
 
@@ -37,7 +37,15 @@ function ProductionFollowUps() {
     <div className="space-y-3">
       <h1 className="text-2xl font-semibold">Follow-ups</h1>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
-      {rows.length === 0 ? <p className="text-sm text-muted">No follow-ups.</p> : rows.map((row) => <p key={row.id} className="text-sm">{row.due_at} · {row.status} · {row.notes}</p>)}
+      {rows.length === 0 ? <p className="text-sm text-muted">No follow-ups.</p> : rows.map((row) => (
+        <div key={row.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span>{row.due_at} · {row.status} · {row.notes}</span>
+          <span className="flex gap-2">
+            {row.status !== "completed" ? <button type="button" className="text-xs font-medium" onClick={() => { void completeFollowUp(row.id).then(() => setRows((current) => current.map((item) => item.id === row.id ? { ...item, status: "completed" } : item))).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not update the follow-up")); }}>Complete</button> : null}
+            <button type="button" className="text-xs font-medium text-danger" onClick={() => { if (!window.confirm("Delete this follow-up?")) return; void removeFollowUp(row.id).then(() => setRows((current) => current.filter((item) => item.id !== row.id))).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not delete the follow-up")); }}>Delete</button>
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

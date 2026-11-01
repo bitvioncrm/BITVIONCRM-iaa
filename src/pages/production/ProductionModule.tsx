@@ -5,8 +5,8 @@ import { useAuth } from "@/context/AuthContext";
 import { canOperateWhatsApp } from "@/lib/production-access";
 import { listDoctors, listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
 import { inr } from "@/lib/money";
-import { addLedgerEntry, listLedger } from "@/services/clinic-care";
-import { changeStock, createAppointment, createCourse, createExam, createInvoice, createPatient, createProduct, createStudent, issueCertificate, listAppointments, listCertificates, listDocuments, listExams, listPatients, listProducts, listStockMoves, listStudents, recordMark, recordPayment, recordRefund, removeProduct, saveConsultation, seedClinicSkincareStock, setDocumentStatus, signedDocumentUrl, updateAppointmentStatus, updateProductPricing, uploadPrivateFile, type InventoryProduct } from "@/services/production-ops";
+import { addLedgerEntry, listLedger, removeLedgerEntry } from "@/services/clinic-care";
+import { changeStock, createAppointment, createCourse, createExam, createInvoice, createPatient, createProduct, createStudent, issueCertificate, listAppointments, listCertificates, listDocuments, listExams, listPatients, listProducts, listStockMoves, listStudents, recordMark, recordPayment, recordRefund, removeAppointment, removePatient, removeProduct, removeStudent, saveConsultation, seedClinicSkincareStock, setDocumentStatus, signedDocumentUrl, updateAppointmentStatus, updatePatient, updateProductPricing, updateStudent, uploadPrivateFile, type InventoryProduct } from "@/services/production-ops";
 
 export function ProductionModule({ module }: { module: "clinic" | "institute" | "inventory" | "billing" }) {
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
@@ -50,12 +50,12 @@ function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
   const { productionUser } = useAuth();
   const key = productionUser?.roleKey ?? "admin";
   const clinical = key === "doctor" || key === "duty_doctor";
-  const reception = key === "receptionist";
-  const [patients, setPatients] = useState<Array<{ id: string; patient_code: string; full_name: string; mobile: string }>>([]);
+  const [patients, setPatients] = useState<Array<{ id: string; patient_code: string; full_name: string; mobile: string; place: string }>>([]);
   const [appointments, setAppointments] = useState<Array<{ id: string; starts_at: string; status: string; reason: string }>>([]);
   const [patientId, setPatientId] = useState("");
   const [doctors, setDoctors] = useState<Array<{ userId: string; name: string }>>([]);
   const [query, setQuery] = useState("");
+  const [editing, setEditing] = useState<{ id: string; full_name: string; mobile: string; place: string } | null>(null);
   const reloadPatients = (search = query) => void listPatients(workspace.id, search).then((rows) => setPatients(rows as typeof patients)).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load patients"));
   useEffect(() => {
     void listPatients(workspace.id, "").then((rows) => setPatients(rows as typeof patients)).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load patients"));
@@ -70,8 +70,7 @@ function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search patients" className="w-full rounded-md border border-line px-2 py-2" />
           <button className="rounded-md border border-line px-3 py-2 text-sm" type="submit">Search</button>
         </form>
-        {clinical ? null : (
-          <form className="space-y-2" onSubmit={(event) => submit(event, async (data) => {
+        <form className="space-y-2" onSubmit={(event) => submit(event, async (data) => {
             const code = await createPatient({
               organizationId: workspace.organizationId,
               workspaceId: workspace.id,
@@ -99,8 +98,31 @@ function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
             <input name="notes" placeholder="Notes" className="w-full rounded-md border border-line px-2 py-2" />
             <button className="rounded-md bg-navy px-3 py-2 text-sm text-white" type="submit">Save</button>
           </form>
-        )}
-        {patients.length === 0 ? <p className="text-sm text-muted">No patients yet.</p> : patients.map((patient) => <p key={patient.id} className="text-sm">{patient.patient_code} · {patient.full_name} · {patient.mobile}</p>)}
+        {patients.length === 0 ? <p className="text-sm text-muted">No patients yet.</p> : patients.map((patient) => (
+          <div key={patient.id} className="space-y-2 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span>{patient.patient_code} · {patient.full_name} · {patient.mobile}</span>
+              <span className="flex gap-2">
+                <button type="button" className="text-xs font-medium" onClick={() => setEditing({ id: patient.id, full_name: patient.full_name, mobile: patient.mobile, place: patient.place ?? "" })}>Edit</button>
+                <button type="button" className="text-xs font-medium text-danger" onClick={() => {
+                  if (!window.confirm(`Delete ${patient.full_name}?`)) return;
+                  void removePatient(patient.id).then(() => { onNotice(`${patient.full_name} deleted.`); reloadPatients(""); }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not delete the patient"));
+                }}>Delete</button>
+              </span>
+            </div>
+            {editing?.id === patient.id ? (
+              <form className="grid gap-2" onSubmit={(event) => { event.preventDefault(); void updatePatient(patient.id, { fullName: editing.full_name, mobile: editing.mobile, place: editing.place }).then(() => { setEditing(null); onNotice("Patient updated."); reloadPatients(""); }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not update the patient")); }}>
+                <input value={editing.full_name} onChange={(event) => setEditing({ ...editing, full_name: event.target.value })} className="rounded-md border border-line px-2 py-2" />
+                <input value={editing.mobile} onChange={(event) => setEditing({ ...editing, mobile: event.target.value })} className="rounded-md border border-line px-2 py-2" />
+                <input value={editing.place} onChange={(event) => setEditing({ ...editing, place: event.target.value })} placeholder="Place" className="rounded-md border border-line px-2 py-2" />
+                <span className="flex gap-2">
+                  <button className="rounded-md bg-navy px-3 py-2 text-sm text-white" type="submit">Save</button>
+                  <button className="rounded-md border border-line px-3 py-2 text-sm" type="button" onClick={() => setEditing(null)}>Cancel</button>
+                </span>
+              </form>
+            ) : null}
+          </div>
+        ))}
       </div>
       <form className="space-y-2 rounded-lg border border-line bg-white p-4" onSubmit={(event) => submit(event, async (data) => {
         await createAppointment({
@@ -117,8 +139,7 @@ function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
         setAppointments(rows as typeof appointments);
       }, onError)}>
         <h2 className="font-semibold">{clinical ? "Today's queue" : "Appointments"}</h2>
-        {clinical ? null : (
-          <>
+        <>
             <select name="patient" className="w-full rounded-md border border-line px-2 py-2" value={patientId} onChange={(event) => setPatientId(event.target.value)}>
               <option value="">Patient</option>
               {patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.full_name}</option>)}
@@ -131,21 +152,25 @@ function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
             <input name="when" type="datetime-local" required className="w-full rounded-md border border-line px-2 py-2" />
             <input name="reason" placeholder="Reason" className="w-full rounded-md border border-line px-2 py-2" />
             <button className="rounded-md bg-navy px-3 py-2 text-sm text-white" type="submit">Book</button>
-          </>
-        )}
+        </>
         {appointments.map((item) => (
           <div key={item.id} className="flex items-center justify-between gap-2 text-sm">
             <span>{item.starts_at} · {item.status} · {item.reason}</span>
-            <select value={item.status} onChange={(event) => {
-              void updateAppointmentStatus(item.id, event.target.value).then(async () => setAppointments(await listAppointments(workspace.id) as typeof appointments)).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not update the appointment"));
-            }}>
-              {(clinical ? ["arrived", "in_consultation", "completed", "no_show"] : ["scheduled", "confirmed", "arrived", "cancelled", "no_show"]).map((status) => <option key={status} value={status}>{status}</option>)}
-            </select>
+            <span className="flex items-center gap-2">
+              <select value={item.status} onChange={(event) => {
+                void updateAppointmentStatus(item.id, event.target.value).then(async () => setAppointments(await listAppointments(workspace.id) as typeof appointments)).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not update the appointment"));
+              }}>
+                {["scheduled", "confirmed", "arrived", "in_consultation", "completed", "cancelled", "no_show"].map((status) => <option key={status} value={status}>{status}</option>)}
+              </select>
+              <button type="button" className="text-xs font-medium text-danger" onClick={() => {
+                if (!window.confirm("Delete this appointment?")) return;
+                void removeAppointment(item.id).then(async () => { onNotice("Appointment deleted."); setAppointments(await listAppointments(workspace.id) as typeof appointments); }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not delete the appointment"));
+              }}>Delete</button>
+            </span>
           </div>
         ))}
       </form>
-      {reception ? null : (
-        <form className="space-y-2 rounded-lg border border-line bg-white p-4 lg:col-span-2" onSubmit={(event) => submit(event, async (data) => {
+      <form className="space-y-2 rounded-lg border border-line bg-white p-4 lg:col-span-2" onSubmit={(event) => submit(event, async (data) => {
           await saveConsultation({
             organizationId: workspace.organizationId,
             workspaceId: workspace.id,
@@ -167,7 +192,6 @@ function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
           <input name="follow" type="date" className="w-full rounded-md border border-line px-2 py-2" />
           <button className="rounded-md bg-navy px-3 py-2 text-sm text-white" type="submit">Save consultation</button>
         </form>
-      )}
       <ClinicCare
         workspace={workspace}
         patients={patients}
@@ -210,7 +234,20 @@ function InstitutePanel({ workspace, onError, onNotice }: PanelProps) {
       <input name="admitted" type="date" className="w-full rounded-md border border-line px-2 py-2" />
       <select name="status" className="w-full rounded-md border border-line px-2 py-2"><option value="enquiry">Enquiry</option><option value="admitted">Admitted</option><option value="active">Active</option><option value="completed">Completed</option></select>
       <button className="rounded-md bg-navy px-3 py-2 text-sm text-white" type="submit">Admit</button>
-      {students.length === 0 ? <p className="text-sm text-muted">No students yet.</p> : students.map((student) => <p key={student.id} className="text-sm">{student.student_code} · {student.full_name} · {student.status}</p>)}
+      {students.length === 0 ? <p className="text-sm text-muted">No students yet.</p> : students.map((student) => (
+        <div key={student.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span>{student.student_code} · {student.full_name}</span>
+          <span className="flex items-center gap-2">
+            <select value={student.status} onChange={(event) => { void updateStudent(student.id, event.target.value).then(() => { onNotice("Student updated."); load(); }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not update the student")); }}>
+              {["enquiry", "admitted", "active", "completed"].map((status) => <option key={status} value={status}>{status}</option>)}
+            </select>
+            <button type="button" className="text-xs font-medium text-danger" onClick={() => {
+              if (!window.confirm(`Delete ${student.full_name}?`)) return;
+              void removeStudent(student.id).then(() => { onNotice("Student deleted."); load(); }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not delete the student"));
+            }}>Delete</button>
+          </span>
+        </div>
+      ))}
     </form>
     <AcademicPanel workspace={workspace} students={students} onError={onError} onNotice={onNotice} />
     </div>
@@ -617,7 +654,13 @@ function BillingPanel({ workspace, onError, onNotice }: PanelProps) {
         <button className="rounded-md bg-navy px-3 py-2 text-sm text-white" type="submit">Save entry</button>
       </form>
       {rows.length === 0 ? <p className="text-sm text-muted">No income or expense entries yet.</p> : rows.map((row) => (
-        <p key={row.id} className="text-sm">{row.kind === "income" ? "Income" : "Expense"} · ₹{row.amount.toLocaleString("en-IN")} · {row.patientName || "No patient"} · {row.note}</p>
+        <div key={row.id} className="flex items-center justify-between gap-2 text-sm">
+          <span>{row.kind === "income" ? "Income" : "Expense"} · ₹{row.amount.toLocaleString("en-IN")} · {row.patientName || "No patient"} · {row.note}</span>
+          <button type="button" className="text-xs font-medium text-danger" onClick={() => {
+            if (!window.confirm("Delete this entry?")) return;
+            void removeLedgerEntry(row.id).then(() => { onNotice("Entry deleted."); loadLedger(); }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not delete the entry"));
+          }}>Delete</button>
+        </div>
       ))}
     </section>
     </div>
