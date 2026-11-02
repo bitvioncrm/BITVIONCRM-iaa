@@ -14,7 +14,7 @@ import { useCrm } from "@/context/CrmContext";
 import { FOLLOW_UP_LABEL, STATUS_LABEL, STATUS_ORDER } from "@/data/catalog";
 import { followUpBucket, formatDateTime } from "@/lib/dates";
 import { userName } from "@/lib/template";
-import { completeFollowUp, listFollowUps, removeFollowUp } from "@/services/production-ops";
+import { completeFollowUp, listDeskAppointments, listFollowUps, removeAppointment, removeFollowUp, updateAppointment } from "@/services/production-ops";
 import { listWorkspaces } from "@/services/production-leads";
 import type { AutomationNode, FollowUp, Lead } from "@/types";
 
@@ -30,29 +30,87 @@ function formatFollowUp(iso: string) {
   return date.toLocaleString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
+type FollowRow = {
+  id: string;
+  kind: "lead" | "patient";
+  name: string;
+  dueAt: string;
+  status: string;
+  notes: string;
+  leadId: string;
+};
+
 function ProductionFollowUps() {
-  const [rows, setRows] = useState<Array<{ id: string; lead_id: string; due_at: string; status: string; notes: string; lead_name: string }>>([]);
+  const [rows, setRows] = useState<FollowRow[]>([]);
   const [error, setError] = useState("");
   useEffect(() => {
     void listWorkspaces()
-      .then((workspaces) => Promise.all(workspaces.map((item) => listFollowUps(item.id))))
-      .then((lists) => setRows(lists.flat().sort((left, right) => left.due_at.localeCompare(right.due_at))))
+      .then(async (workspaces) => {
+        const clinic = workspaces.filter((item) => item.workspaceType === "clinic");
+        const [leadLists, visitLists] = await Promise.all([
+          Promise.all(workspaces.map((item) => listFollowUps(item.id))),
+          Promise.all(clinic.map((item) => listDeskAppointments(item.id))),
+        ]);
+        const leads: FollowRow[] = leadLists.flat().map((row) => ({
+          id: row.id,
+          kind: "lead",
+          name: row.lead_name,
+          dueAt: row.due_at,
+          status: row.status,
+          notes: row.notes,
+          leadId: row.lead_id,
+        }));
+        const patients: FollowRow[] = visitLists.flat()
+          .filter((row) => row.reason === "Follow-up" && row.status !== "cancelled")
+          .map((row) => ({
+            id: row.id,
+            kind: "patient",
+            name: row.patientName,
+            dueAt: row.startsAt,
+            status: row.status,
+            notes: "Patient follow-up",
+            leadId: "",
+          }));
+        return [...leads, ...patients].sort((left, right) => left.dueAt.localeCompare(right.dueAt));
+      })
+      .then(setRows)
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load follow-ups"));
   }, []);
+  const finish = (row: FollowRow) => {
+    const run = row.kind === "patient" ? updateAppointment(row.id, { status: "completed" }) : completeFollowUp(row.id);
+    void run
+      .then(() => setRows((current) => current.map((item) => item.id === row.id ? { ...item, status: "completed" } : item)))
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not update the follow-up"));
+  };
+  const remove = (row: FollowRow) => {
+    if (!window.confirm("Delete this follow-up?")) return;
+    const run = row.kind === "patient" ? removeAppointment(row.id) : removeFollowUp(row.id);
+    void run
+      .then(() => setRows((current) => current.filter((item) => item.id !== row.id)))
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not delete the follow-up"));
+  };
   return (
     <div className="space-y-3">
       <h1 className="text-2xl font-semibold">Follow-ups</h1>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {rows.length === 0 ? <p className="text-sm text-muted">No follow-ups.</p> : rows.map((row) => (
-        <div key={row.id} className="touch-card rounded-2xl border border-line bg-white p-4 text-sm">
-          <Link to={`/leads/${row.lead_id}`} className="block rounded-xl hover:bg-slate-50">
-            <p className="text-base font-semibold break-words">{row.lead_name}</p>
-            <p className="mt-1">{formatFollowUp(row.due_at)}</p>
-            <p className="mt-1 text-xs capitalize text-muted">{row.status}{row.notes ? ` · ${row.notes}` : ""} · Open lead</p>
-          </Link>
+        <div key={`${row.kind}-${row.id}`} className="touch-card rounded-2xl border border-line bg-white p-4 text-sm">
+          {row.kind === "lead" ? (
+            <Link to={`/leads/${row.leadId}`} className="block rounded-xl hover:bg-slate-50">
+              <p className="text-base font-semibold break-words">{row.name}</p>
+              <p className="mt-1">{formatFollowUp(row.dueAt)}</p>
+              <p className="mt-1 text-xs capitalize text-muted">{row.status}{row.notes ? ` · ${row.notes}` : ""} · Open lead</p>
+            </Link>
+          ) : (
+            <div>
+              <p className="text-base font-semibold break-words">{row.name}</p>
+              <p className="mt-1">{formatFollowUp(row.dueAt)}</p>
+              <p className="mt-1 text-xs capitalize text-muted">{row.status} · {row.notes}</p>
+            </div>
+          )}
           <div className="mt-2 flex gap-2">
-            {row.status !== "completed" ? <button type="button" className="inline-flex min-h-11 items-center rounded-full border border-line px-3 font-medium" onClick={() => { void completeFollowUp(row.id).then(() => setRows((current) => current.map((item) => item.id === row.id ? { ...item, status: "completed" } : item))).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not update the follow-up")); }}>Complete</button> : null}
-            <button type="button" className="inline-flex min-h-11 items-center rounded-full px-3 font-medium text-danger" onClick={() => { if (!window.confirm("Delete this follow-up?")) return; void removeFollowUp(row.id).then(() => setRows((current) => current.filter((item) => item.id !== row.id))).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not delete the follow-up")); }}>Delete</button>
+            {row.status !== "completed" ? <button type="button" className="inline-flex min-h-11 items-center rounded-full border border-line px-3 font-medium" onClick={() => finish(row)}>Complete</button> : null}
+            <button type="button" className="inline-flex min-h-11 items-center rounded-full px-3 font-medium text-danger" onClick={() => remove(row)}>Delete</button>
           </div>
         </div>
       ))}

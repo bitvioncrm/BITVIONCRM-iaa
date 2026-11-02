@@ -785,6 +785,62 @@ export async function createAppointment(input: { organizationId: string; workspa
   if (error) throw new Error(error.message);
 }
 
+function clinicDay(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso.slice(0, 10);
+  return date.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+}
+
+function followUpStamp(value: string) {
+  if (value.includes("T")) {
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) return date.toISOString();
+  }
+  const day = value.slice(0, 10);
+  return new Date(`${day}T10:00:00+05:30`).toISOString();
+}
+
+export async function ensureFollowUpVisit(input: { organizationId: string; workspaceId: string; patientId: string; when: string; doctorId?: string | null; exact?: boolean }) {
+  const startsAt = followUpStamp(input.when);
+  if (Number.isNaN(new Date(startsAt).getTime())) throw new Error("Choose a follow-up date.");
+  const day = clinicDay(startsAt);
+  const existing = await client().from("appointments").select("id, starts_at, status, reason").eq("patient_id", input.patientId).in("status", ["scheduled", "confirmed"]);
+  if (existing.error) throw new Error(existing.error.message);
+  const rows = existing.data ?? [];
+  const follow = rows.find((row) => String(row.reason || "") === "Follow-up");
+  const sameDay = rows.find((row) => clinicDay(String(row.starts_at)) === day);
+  if (!input.exact && follow && clinicDay(String(follow.starts_at)) === day) return;
+  if (!input.exact && sameDay && String(sameDay.reason || "") !== "Follow-up") return;
+  const target = follow ?? (input.exact ? undefined : sameDay);
+  forgetDeskLists();
+  if (target) {
+    const { error } = await client().from("appointments").update({
+      starts_at: startsAt,
+      reason: "Follow-up",
+      status: "scheduled",
+      ...(input.doctorId !== undefined ? { doctor_id: input.doctorId } : {}),
+      updated_at: new Date().toISOString(),
+    }).eq("id", target.id);
+    if (error) throw new Error(error.message);
+    return;
+  }
+  await createAppointment({
+    organizationId: input.organizationId,
+    workspaceId: input.workspaceId,
+    patientId: input.patientId,
+    doctorId: input.doctorId ?? null,
+    startsAt,
+    reason: "Follow-up",
+    status: "scheduled",
+  });
+}
+
+async function clearFollowUpVisit(patientId: string) {
+  forgetDeskLists();
+  const { error } = await client().from("appointments").update({ status: "cancelled", updated_at: new Date().toISOString() }).eq("patient_id", patientId).eq("reason", "Follow-up").in("status", ["scheduled", "confirmed"]);
+  if (error) throw new Error(error.message);
+}
+
 export async function saveConsultation(input: { organizationId: string; workspaceId: string; patientId: string; diagnosis: string; plan: string; medicine: string; dosage: string; frequency?: string; duration?: string; instructions?: string; followUpOn: string | null }) {
   const { data, error } = await client().from("consultations").insert({
     organization_id: input.organizationId,
@@ -796,6 +852,14 @@ export async function saveConsultation(input: { organizationId: string; workspac
     follow_up_on: input.followUpOn,
   }).select("id").single();
   if (error) throw new Error(error.message);
+  if (input.followUpOn) {
+    await ensureFollowUpVisit({
+      organizationId: input.organizationId,
+      workspaceId: input.workspaceId,
+      patientId: input.patientId,
+      when: input.followUpOn,
+    });
+  }
   if (input.medicine.trim() || input.duration?.trim() || input.dosage.trim()) {
     const { error: prescriptionError } = await client().from("prescriptions").insert({
       organization_id: input.organizationId,
@@ -833,12 +897,25 @@ export async function removeProcedure(id: string) {
 }
 
 export async function updateConsultation(id: string, input: { organizationId: string; workspaceId: string; diagnosis: string; plan: string; followUpOn: string | null; prescriptionId: string; medicine: string; dosage: string; frequency: string; duration: string; instructions: string }) {
+  const current = await client().from("consultations").select("patient_id").eq("id", id).maybeSingle();
+  if (current.error) throw new Error(current.error.message);
   const { error } = await client().from("consultations").update({
     diagnosis: input.diagnosis.trim(),
     treatment_plan: input.plan.trim(),
     follow_up_on: input.followUpOn,
   }).eq("id", id);
   if (error) throw new Error(error.message);
+  const patientId = current.data?.patient_id ? String(current.data.patient_id) : "";
+  if (patientId && input.followUpOn) {
+    await ensureFollowUpVisit({
+      organizationId: input.organizationId,
+      workspaceId: input.workspaceId,
+      patientId,
+      when: input.followUpOn,
+    });
+  } else if (patientId) {
+    await clearFollowUpVisit(patientId);
+  }
   const row = {
     medicine: input.medicine.trim(),
     dosage: input.dosage.trim(),

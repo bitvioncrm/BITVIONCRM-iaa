@@ -15,7 +15,7 @@ import { formatClock } from "@/lib/call-time";
 import { DialLink } from "@/components/calls/DialLink";
 import { phoneTel } from "@/lib/phone";
 import { rangeBounds, type RangeKey } from "@/lib/range";
-import { callDeskReport, countRows, listClinicBills, listDeskMoney, listDeskPatients, listDeskStudents, listFollowUps, clearDeskCache, removeAppointment, removePatient, removeStudent, savePersonPhoto, saveStudentDetails, updateAppointment, updatePatient, type ClinicBill, type DeskMoney, type DeskPatient, type DeskStudent, type StudentDetails } from "@/services/production-ops";
+import { callDeskReport, countRows, listClinicBills, listDeskMoney, listDeskPatients, listDeskStudents, listFollowUps, clearDeskCache, ensureFollowUpVisit, removeAppointment, removePatient, removeStudent, savePersonPhoto, saveStudentDetails, updateAppointment, updatePatient, type ClinicBill, type DeskMoney, type DeskPatient, type DeskStudent, type StudentDetails } from "@/services/production-ops";
 import { listDoctors } from "@/services/production-leads";
 import { inr } from "@/lib/money";
 
@@ -183,7 +183,8 @@ function ReceptionDashboard() {
   const [bills, setBills] = useState<ClinicBill[]>([]);
   const [money, setMoney] = useState<DeskMoney[]>([]);
   const [filter, setFilter] = useState<DeskFilter>("all");
-  const [focus, setFocus] = useState<"patients" | "appointments" | "arrived">("patients");
+  const [focus, setFocus] = useState<"patients" | "appointments" | "arrived" | "followups">("patients");
+  const [followAt, setFollowAt] = useState("");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [open, setOpen] = useState<DeskPatient | null>(null);
@@ -210,6 +211,8 @@ function ReceptionDashboard() {
       notes: open.notes,
     });
     setRecordError("");
+    const next = nextFollowUp(open);
+    setFollowAt(next ? localFollowInput(next.starts_at) : "");
   }, [open]);
   useEffect(() => {
     if (!clinic) return;
@@ -240,9 +243,10 @@ function ReceptionDashboard() {
   const arrivedPatients = useMemo(() => cards.filter((patient) => rangedAppointments(patient, filter, customFrom, customTo).some((item) => item.status === "arrived")), [cards, filter, customFrom, customTo]);
   const appointmentCount = useMemo(() => cards.reduce((sum, patient) => sum + rangedAppointments(patient, filter, customFrom, customTo).length, 0), [cards, filter, customFrom, customTo]);
   const arrivedCount = useMemo(() => cards.reduce((sum, patient) => sum + rangedAppointments(patient, filter, customFrom, customTo).filter((item) => item.status === "arrived").length, 0), [cards, filter, customFrom, customTo]);
-  const shown = focus === "appointments" ? withAppointments : focus === "arrived" ? arrivedPatients : visible;
-  const shownLabel = focus === "appointments" ? "patients with appointments" : focus === "arrived" ? "arrived patients" : "patients";
-  const choose = (next: "patients" | "appointments" | "arrived") => {
+  const followPatients = useMemo(() => cards.filter((patient) => Boolean(nextFollowUp(patient))), [cards]);
+  const shown = focus === "appointments" ? withAppointments : focus === "arrived" ? arrivedPatients : focus === "followups" ? followPatients : visible;
+  const shownLabel = focus === "appointments" ? "patients with appointments" : focus === "arrived" ? "arrived patients" : focus === "followups" ? "follow-ups" : "patients";
+  const choose = (next: "patients" | "appointments" | "arrived" | "followups") => {
     setFocus(next);
     document.getElementById("reception-cards")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -253,6 +257,7 @@ function ReceptionDashboard() {
         <Stat label="Patients" value={String(visible.length)} hint="Open the cards" active={focus === "patients"} onClick={() => choose("patients")} />
         <Stat label="Appointments" value={String(appointmentCount)} hint={`${withAppointments.length} patients`} active={focus === "appointments"} onClick={() => choose("appointments")} />
         <Stat label="Arrived" value={String(arrivedCount)} hint={`${arrivedPatients.length} patients`} active={focus === "arrived"} onClick={() => choose("arrived")} />
+        <Stat label="Follow-ups" value={String(followPatients.length)} hint="Due back" active={focus === "followups"} onClick={() => choose("followups")} />
         <Stat label="Income" value={inr(incomeTotal)} hint="Collected for the clinic" />
       </div>
       <section className="rounded-2xl border border-line bg-white p-3 sm:p-4">
@@ -290,6 +295,7 @@ function ReceptionDashboard() {
                       </span>
                       <span className="mt-0.5 block text-xs text-muted">{patient.patient_code}</span>
                       <span className="mt-2 block truncate text-sm text-ink">{patient.mobile || "No mobile"}{patient.place ? ` · ${patient.place}` : ""}</span>
+                      {nextFollowUp(patient) ? <span className="mt-1 block text-sm font-medium text-[#8a6a2f]">Follow-up {formatWhen(nextFollowUp(patient)?.starts_at || "")}</span> : null}
                     </span>
                   </div>
                 </button>
@@ -420,6 +426,34 @@ function ReceptionDashboard() {
                   onError={setRecordError}
                 />
               ) : null}
+              <section className="rounded-2xl border border-line bg-white p-3 sm:p-4">
+                <h3 className="text-sm font-semibold">Follow-up</h3>
+                <form className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]" onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!clinic || !followAt) return;
+                  setCardBusy(true);
+                  void ensureFollowUpVisit({
+                    organizationId: clinic.organizationId,
+                    workspaceId: clinic.id,
+                    patientId: open.id,
+                    when: followAt,
+                    exact: true,
+                  }).then(() => {
+                    clearDeskCache();
+                    return listDeskPatients(clinic.id);
+                  }).then((rows) => {
+                    setCards(rows);
+                    const next = rows.find((item) => item.id === open.id);
+                    if (next) setOpen(next);
+                    setCardNote("Follow-up saved on the reception list.");
+                  }).catch((reason: unknown) => setRecordError(reason instanceof Error ? reason.message : "Could not save the follow-up")).finally(() => setCardBusy(false));
+                }}>
+                  <label className="text-sm">Date and time
+                    <input required type="datetime-local" value={followAt} onChange={(event) => setFollowAt(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-line px-3" />
+                  </label>
+                  <button type="submit" disabled={cardBusy} className="min-h-11 rounded-md bg-navy px-3 text-sm text-white sm:self-end">{cardBusy ? "Saving" : "Save follow-up"}</button>
+                </form>
+              </section>
               <section className="rounded-2xl border border-line bg-white p-3 sm:p-4">
                 <h3 className="text-sm font-semibold">Bookings</h3>
                 {open.appointments.length === 0 ? <p className="mt-2 text-sm text-muted">No appointments yet.</p> : open.appointments.map((item) => (
@@ -722,7 +756,8 @@ function StatusChip({ status }: { status: string }) {
 
 function PatientFileSummary({ patient, bills, recorded }: { patient: DeskPatient; bills: ClinicBill[]; recorded: number }) {
   const visits = [...patient.appointments].sort((left, right) => left.starts_at.localeCompare(right.starts_at));
-  const nextVisit = visits.find((item) => !["completed", "cancelled", "no_show"].includes(item.status)) ?? visits.at(-1);
+  const follow = nextFollowUp(patient);
+  const nextVisit = follow ?? visits.find((item) => !["completed", "cancelled", "no_show"].includes(item.status)) ?? visits.at(-1);
   const latestCare = [...patient.treatments].sort((left, right) => right.performed_on.localeCompare(left.performed_on))[0];
   const due = bills.reduce((sum, bill) => sum + bill.balance, 0);
   const billed = bills.reduce((sum, bill) => sum + bill.total, 0);
@@ -734,7 +769,7 @@ function PatientFileSummary({ patient, bills, recorded }: { patient: DeskPatient
         <p className="mt-1 text-xs text-muted">{latestCare ? formatWhen(latestCare.performed_on) : "Waiting for the doctor"}</p>
       </article>
       <article className="rounded-2xl border border-[#eadfca] bg-white px-3 py-3">
-        <p className="text-[11px] font-medium tracking-wide text-[#8a6a2f] uppercase">Appointment</p>
+        <p className="text-[11px] font-medium tracking-wide text-[#8a6a2f] uppercase">{follow ? "Follow-up" : "Appointment"}</p>
         <p className="mt-1 text-sm font-medium">{nextVisit ? formatWhen(nextVisit.starts_at) : "None booked"}</p>
         <p className="mt-1 text-xs text-muted">{nextVisit ? `${nextVisit.reason || "Visit"} · ${nextVisit.status.replaceAll("_", " ")}` : "No booking yet"}</p>
       </article>
@@ -745,6 +780,19 @@ function PatientFileSummary({ patient, bills, recorded }: { patient: DeskPatient
       </article>
     </div>
   );
+}
+
+function nextFollowUp(patient: DeskPatient) {
+  return patient.appointments
+    .filter((item) => item.reason === "Follow-up" && (item.status === "scheduled" || item.status === "confirmed"))
+    .sort((left, right) => left.starts_at.localeCompare(right.starts_at))[0];
+}
+
+function localFollowInput(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function doctorName(doctorId: string, doctors: Array<{ userId: string; name: string }>) {
