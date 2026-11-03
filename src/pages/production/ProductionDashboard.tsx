@@ -796,9 +796,6 @@ function localFollowInput(iso: string) {
 }
 
 function doctorName(doctorId: string, doctors: Array<{ userId: string; name: string }>) {
-  const row = doctors.find((item) => item.userId === doctorId);
-  if (!row) return "Doctor";
-  const [person, role] = row.name.split(" · ");
-  return person && person !== "Doctor" ? person : role || "Doctor";
+  return doctors.find((item) => item.userId === doctorId)?.name || "Doctor";
 }
 

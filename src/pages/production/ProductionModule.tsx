@@ -13,7 +13,7 @@ import { DialLink } from "@/components/calls/DialLink";
 import { phoneTel } from "@/lib/phone";
 import { inr } from "@/lib/money";
 import { BillingDesk } from "@/components/clinic/BillingDesk";
-import { changeStock, clearDeskCache, createAppointment, createExam, createPatient, createProduct, createStudent, issueCertificate, listCertificates, listDeskAppointments, listDeskPatients, listDeskStudents, listDocuments, listExams, listProducts, listStockMoves, recordMark, removeAppointment, removeProduct, removeStudent, savePersonPhoto, saveStudentDetails, seedClinicSkincareStock, setDocumentStatus, signedDocumentUrl, updateAppointment, updateProductPricing, uploadPrivateFile, type DeskAppointmentRow, type DeskPatient, type DeskStudent, type InventoryProduct, type StudentDetails } from "@/services/production-ops";
+import { changeStock, clearDeskCache, createAppointment, createExam, createPatient, createProduct, createStudent, documentTypeLabel, issueCertificate, listCertificates, listDeskAppointments, listDeskPatients, listDeskStudents, listDocuments, listExams, listProducts, listStockMoves, recordMark, removeAppointment, removeDocument, removeProduct, removeStudent, savePersonPhoto, saveStudentDetails, seedClinicSkincareStock, setDocumentStatus, signedDocumentUrl, STUDENT_DOCUMENT_TYPES, updateAppointment, updateDocument, updateProductPricing, uploadPrivateFile, type DeskAppointmentRow, type DeskPatient, type DeskStudent, type InventoryProduct, type StudentDetails } from "@/services/production-ops";
 
 export function ProductionModule({ module }: { module: "clinic" | "institute" | "inventory" | "billing" | "institute-billing" }) {
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
@@ -394,39 +394,63 @@ function InstitutePanel({ workspace, onError, onNotice }: PanelProps) {
 function AcademicPanel({ workspace, students, onError, onNotice }: PanelProps & { students: Array<{ id: string; full_name: string }> }) {
   const [exams, setExams] = useState<Array<{ id: string; name: string }>>([]);
   const [certificates, setCertificates] = useState<Array<{ id: string; title: string; certificate_number: string; issued_on: string; status: string }>>([]);
-  const [documents, setDocuments] = useState<Array<{ id: string; filename: string; verification_status: string; storage_path: string }>>([]);
+  const [documents, setDocuments] = useState<Array<{ id: string; filename: string; category: string; verification_status: string; storage_path: string }>>([]);
   const [documentStudent, setDocumentStudent] = useState("");
   const activeStudent = documentStudent || students[0]?.id || "";
+  const reloadDocuments = (studentId: string) => listDocuments(workspace.id, studentId).then((rows) => setDocuments(rows as typeof documents));
   useEffect(() => {
     void listExams(workspace.id).then((rows) => setExams(rows as typeof exams)).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load exams"));
     void listCertificates(workspace.id).then((rows) => setCertificates(rows as typeof certificates)).catch(() => setCertificates([]));
   }, [onError, workspace.id]);
   useEffect(() => {
     if (!activeStudent) return;
-    void listDocuments(workspace.id, activeStudent).then((rows) => setDocuments(rows as typeof documents)).catch(() => setDocuments([]));
+    void reloadDocuments(activeStudent).catch(() => setDocuments([]));
   }, [activeStudent, workspace.id]);
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <form className="space-y-2 rounded-lg border border-line bg-white p-4" onSubmit={(event) => submit(event, async (data) => {
         const file = data.get("file");
-        if (!(file instanceof File) || file.size === 0) throw new Error("Choose a file");
-        await uploadPrivateFile({ organizationId: workspace.organizationId, workspaceId: workspace.id, entityType: "student", entityId: data.get("student") as string, file, category: "academic" });
-        onNotice("Document stored in the private bucket. PDF and Office files are kept as uploaded.");
+        if (!(file instanceof File) || file.size === 0) throw new Error("Choose a PDF, JPG, JPEG, PNG, or WEBP file.");
         const studentId = data.get("student") as string;
+        const sizes = await uploadPrivateFile({
+          organizationId: workspace.organizationId,
+          workspaceId: workspace.id,
+          entityType: "student",
+          entityId: studentId,
+          file,
+          category: (data.get("category") as string) || "aadhaar",
+        });
+        onNotice(sizes.optimizedSize < sizes.originalSize
+          ? `Document saved and compressed for storage.`
+          : "Document saved on the student file.");
         setDocumentStudent(studentId);
-        setDocuments(await listDocuments(workspace.id, studentId) as typeof documents);
+        await reloadDocuments(studentId);
       }, onError)}>
         <h2 className="font-semibold">Student document</h2>
+        <p className="text-xs text-muted">Aadhaar, PAN, other IDs, or academic files. Images are compressed automatically.</p>
         <select name="student" className="w-full rounded-md border border-line px-2 py-2" value={activeStudent} onChange={(event) => setDocumentStudent(event.target.value)}>{students.map((student) => <option key={student.id} value={student.id}>{student.full_name}</option>)}</select>
-        <input name="file" type="file" required className="w-full text-sm" />
+        <select name="category" defaultValue="aadhaar" className="w-full rounded-md border border-line px-2 py-2">
+          {STUDENT_DOCUMENT_TYPES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </select>
+        <input name="file" type="file" required accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" className="w-full text-sm" />
         <button className="rounded-md bg-navy px-3 py-2 text-sm text-white" type="submit">Upload</button>
         {documents.map((item) => (
-          <div key={item.id} className="flex flex-wrap items-center gap-2 text-sm">
-            <span>{item.filename} · {item.verification_status}</span>
-            <button type="button" className="rounded-md border border-line px-2 py-1" onClick={() => void signedDocumentUrl(item.storage_path).then((url) => window.open(url, "_blank", "noopener")).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not open the file"))}>Download</button>
-            <select value={item.verification_status} onChange={(event) => void setDocumentStatus(item.id, event.target.value).then(() => listDocuments(workspace.id, activeStudent)).then((rows) => setDocuments(rows as typeof documents)).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not update the document"))}>
-              {["pending", "verified", "rejected"].map((status) => <option key={status} value={status}>{status}</option>)}
-            </select>
+          <div key={item.id} className="space-y-2 rounded-xl border border-line px-3 py-2 text-sm">
+            <p className="font-medium break-words">{item.filename}</p>
+            <p className="text-xs text-muted">{documentTypeLabel(item.category)} · {item.verification_status}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" className="min-h-11 rounded-md border border-line px-2" onClick={() => void signedDocumentUrl(item.storage_path).then((url) => window.open(url, "_blank", "noopener")).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not open the file"))}>Download</button>
+              <select value={STUDENT_DOCUMENT_TYPES.some((row) => row.value === item.category) ? item.category : "other"} onChange={(event) => void updateDocument(item.id, { category: event.target.value }).then(() => reloadDocuments(activeStudent)).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not update the document"))} className="h-11 rounded-md border border-line px-2">
+                {STUDENT_DOCUMENT_TYPES.map((row) => <option key={row.value} value={row.value}>{row.label}</option>)}
+              </select>
+              <select value={item.verification_status} onChange={(event) => void setDocumentStatus(item.id, event.target.value).then(() => reloadDocuments(activeStudent)).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not update the document"))} className="h-11 rounded-md border border-line px-2 capitalize">
+                {["pending", "verified", "rejected"].map((status) => <option key={status} value={status}>{status}</option>)}
+              </select>
+              <button type="button" className="min-h-11 text-sm font-medium text-danger" onClick={() => {
+                if (!window.confirm(`Delete ${item.filename}?`)) return;
+                void removeDocument(item.id).then(() => reloadDocuments(activeStudent)).then(() => onNotice("Document deleted.")).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not delete the document"));
+              }}>Delete</button>
+            </div>
           </div>
         ))}
       </form>

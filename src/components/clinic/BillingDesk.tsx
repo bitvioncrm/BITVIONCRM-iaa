@@ -2,20 +2,21 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Portrait } from "@/components/shared/Portrait";
 import { billParts, inr, invoiceTotal } from "@/lib/money";
-import { addLedgerEntry, listLedger, removeLedgerEntry } from "@/services/clinic-care";
+import { addLedgerEntry, listCareProducts, listLedger, recordPatientCare, removeLedgerEntry } from "@/services/clinic-care";
 import { addToPatientBill, addToStudentBill, listClinicBills, listDeskPatients, listDeskStudents, loadPatientRecord, recordPayment, recordRefund, type ClinicBill, type DeskPatient, type DeskStudent } from "@/services/production-ops";
 import type { WorkspaceOption } from "@/services/production-leads";
 
 type ChargeKind = "Treatment" | "Booking" | "Product" | "Course fee" | "Registration" | "Material" | "Exam" | "Certificate";
-type DraftLine = { kind: ChargeKind; description: string; quantity: string; price: string };
+type DraftLine = { kind: ChargeKind; description: string; quantity: string; price: string; productId?: string };
 type PayMethod = "cash" | "upi" | "card";
+type StockProduct = { id: string; name: string; stock: number; price: number };
 
 const CLINIC_KINDS: ChargeKind[] = ["Treatment", "Booking", "Product"];
 const INSTITUTE_KINDS: ChargeKind[] = ["Course fee", "Registration", "Material", "Exam", "Certificate"];
 const CLINIC_EXPENSES = ["Rent", "Salary", "Supplies", "Utilities", "Maintenance", "Other"];
 const INSTITUTE_EXPENSES = ["Rent", "Salary", "Materials", "Faculty", "Utilities", "Other"];
 
-const emptyLine = (kind: ChargeKind): DraftLine => ({ kind, description: "", quantity: "1", price: "" });
+const emptyLine = (kind: ChargeKind): DraftLine => ({ kind, description: "", quantity: "1", price: "", productId: "" });
 
 export function BillingDesk({ workspace, mode = "clinic", onError, onNotice }: { workspace: WorkspaceOption; mode?: "clinic" | "institute"; onError: (value: string) => void; onNotice: (value: string) => void }) {
   const [params, setParams] = useSearchParams();
@@ -39,12 +40,14 @@ export function BillingDesk({ workspace, mode = "clinic", onError, onNotice }: {
   const [expenseCategory, setExpenseCategory] = useState(institute ? INSTITUTE_EXPENSES[0] : CLINIC_EXPENSES[0]);
   const [expenseDetail, setExpenseDetail] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
+  const [stockProducts, setStockProducts] = useState<StockProduct[]>([]);
 
   const reload = () => {
     if (institute) void listDeskStudents(workspace.id).then(setStudents).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load students"));
     else void listDeskPatients(workspace.id).then(setPatients).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load patients"));
     void listClinicBills(workspace.id).then(setBills).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load bills"));
     void listLedger(workspace.id).then(setLedger).catch(() => setLedger([]));
+    if (!institute) void listCareProducts(workspace.id).then(setStockProducts).catch(() => setStockProducts([]));
   };
 
   useEffect(() => {
@@ -64,6 +67,9 @@ export function BillingDesk({ workspace, mode = "clinic", onError, onNotice }: {
   const personBills = bills.filter((bill) => (institute ? bill.studentId === selectedId : bill.patientId === selectedId));
   const previousDue = personBills.filter((bill) => bill.status !== "cancelled" && bill.status !== "refunded").reduce((sum, bill) => sum + bill.balance, 0);
   const draftTotal = invoiceTotal(lines.map((line) => ({ quantity: Number(line.quantity) || 0, unitPrice: Number(line.price) || 0 })), Number(discount) || 0);
+  const productsTotal = lines
+    .filter((line) => line.kind === "Product")
+    .reduce((sum, line) => sum + (Number(line.quantity) || 0) * (Number(line.price) || 0), 0);
   const collected = bills.reduce((sum, bill) => sum + bill.paid, 0);
   const otherIncome = ledger.filter((row) => row.kind === "income").reduce((sum, row) => sum + row.amount, 0);
   const expenses = ledger.filter((row) => row.kind === "expense").reduce((sum, row) => sum + row.amount, 0);
@@ -201,41 +207,125 @@ export function BillingDesk({ workspace, mode = "clinic", onError, onNotice }: {
           <form className="space-y-3" onSubmit={(event) => {
             event.preventDefault();
             setBusy(true);
-            const payload = {
-              organizationId: workspace.organizationId,
-              workspaceId: workspace.id,
-              discount: Number(discount) || 0,
-              paid: Number(paid) || 0,
-              method,
-              lines: lines.map((line) => ({ kind: line.kind, description: line.description, quantity: Number(line.quantity) || 0, unitPrice: Number(line.price) || 0 })),
+            const stockItems = !institute
+              ? lines
+                .filter((line) => line.kind === "Product" && line.productId && (Number(line.quantity) || 0) > 0)
+                .map((line) => ({
+                  productId: line.productId as string,
+                  quantity: Number(line.quantity) || 0,
+                  unitPrice: Number(line.price) || 0,
+                }))
+              : [];
+            const billedNames = new Set(stockItems.map((item) => {
+              const named = stockProducts.find((product) => product.id === item.productId)?.name || "";
+              return named.toLowerCase();
+            }).filter(Boolean));
+            const payloadLines = lines
+              .filter((line) => !(line.kind === "Product" && line.productId && billedNames.has(line.description.trim().toLowerCase())))
+              .map((line) => ({ kind: line.kind, description: line.description, quantity: Number(line.quantity) || 0, unitPrice: Number(line.price) || 0 }));
+            const run = async () => {
+              if (stockItems.length) {
+                await recordPatientCare({
+                  patientId: selected.id,
+                  doctorId: null,
+                  procedure1: "Products",
+                  procedure2: "",
+                  performedOn: new Date().toISOString().slice(0, 10),
+                  notes: "Products billed",
+                  items: stockItems,
+                });
+              }
+              const payload = {
+                organizationId: workspace.organizationId,
+                workspaceId: workspace.id,
+                discount: Number(discount) || 0,
+                paid: Number(paid) || 0,
+                method,
+                lines: payloadLines,
+              };
+              if (institute) {
+                return addToStudentBill({
+                  ...payload,
+                  studentId: selected.id,
+                  lines: payload.lines.map((line) => ({ ...line, kind: line.kind as "Course fee" | "Registration" | "Material" | "Exam" | "Certificate" })),
+                });
+              }
+              if (!payload.lines.length) {
+                if (!stockItems.length) throw new Error("Add a treatment, booking, or product charge.");
+                const bills = await listClinicBills(workspace.id);
+                const latest = bills.find((bill) => bill.patientId === selected.id && bill.status !== "cancelled" && bill.status !== "refunded");
+                if (payload.paid > 0 && latest) {
+                  await recordPayment({ organizationId: workspace.organizationId, workspaceId: workspace.id, invoiceId: latest.id, amount: payload.paid, method });
+                }
+                return { number: latest?.number || "Bill", total: (latest?.total || 0) + productsTotal };
+              }
+              return addToPatientBill({
+                ...payload,
+                patientId: selected.id,
+                lines: payload.lines.map((line) => ({ ...line, kind: line.kind as "Treatment" | "Booking" | "Product" })),
+              });
             };
-            const saving = institute
-              ? addToStudentBill({ ...payload, studentId: selected.id, lines: payload.lines.map((line) => ({ ...line, kind: line.kind as "Course fee" | "Registration" | "Material" | "Exam" | "Certificate" })) })
-              : addToPatientBill({ ...payload, patientId: selected.id, lines: payload.lines.map((line) => ({ ...line, kind: line.kind as "Treatment" | "Booking" | "Product" })) });
-            void saving.then((bill) => {
+            void run().then((bill) => {
               setLines([emptyLine(kinds[0])]);
               setDiscount("0");
               setPaid("");
-              onNotice(`${bill.number} saved. Total ${inr(bill.total)}.`);
+              onNotice(`${bill.number} saved. Total ${inr(bill.total)}.${stockItems.length ? " Stock reduced for billed products." : ""}`);
               reload();
+              window.dispatchEvent(new CustomEvent("bitvion-stock"));
             }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not save the bill")).finally(() => setBusy(false));
           }}>
             <h3 className="text-sm font-semibold">{previousDue > 0 ? (institute ? "Add this scheme to the balance" : "Add this visit to the balance") : "New bill"}</h3>
             {previousDue > 0 ? <p className="text-sm text-muted">Previous balance {inr(previousDue)}. This charge is added on top, under its own name.</p> : null}
-            {lines.map((line, index) => (
+            {!institute ? <p className="text-sm text-muted">Choose products from inventory to fill quantity and price. Price stays editable. Multiple products can be added for one patient.</p> : null}
+            {lines.map((line, index) => {
+              const lineTotal = (Number(line.quantity) || 0) * (Number(line.price) || 0);
+              return (
               <div key={index} className="grid gap-2 rounded-2xl border border-line p-3 sm:grid-cols-4">
                 <label className="text-sm">Kind
-                  <select value={line.kind} onChange={(event) => setLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, kind: event.target.value as ChargeKind } : item))} className="mt-1 h-11 w-full rounded-md border border-line bg-white px-3">
+                  <select value={line.kind} onChange={(event) => {
+                    const kind = event.target.value as ChargeKind;
+                    setLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...emptyLine(kind), kind } : item));
+                  }} className="mt-1 h-11 w-full rounded-md border border-line bg-white px-3">
                     {kinds.map((kind) => <option key={kind}>{kind}</option>)}
                   </select>
                 </label>
-                <label className="text-sm sm:col-span-1">{institute ? "Scheme name" : "Detail"}<input value={line.description} onChange={(event) => setLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, description: event.target.value } : item))} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
+                {!institute && line.kind === "Product" ? (
+                  <label className="text-sm sm:col-span-1">Product
+                    <select
+                      value={line.productId || ""}
+                      onChange={(event) => {
+                        const productId = event.target.value;
+                        const product = stockProducts.find((item) => item.id === productId);
+                        setLines((current) => current.map((item, itemIndex) => itemIndex === index
+                          ? {
+                              ...item,
+                              productId,
+                              description: product?.name || "",
+                              price: product ? String(product.price) : item.price,
+                              quantity: item.quantity || "1",
+                            }
+                          : item));
+                      }}
+                      className="mt-1 h-11 w-full rounded-md border border-line bg-white px-3"
+                    >
+                      <option value="">Choose a product</option>
+                      {stockProducts.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.stock} in stock · {inr(item.price)}</option>)}
+                    </select>
+                  </label>
+                ) : (
+                  <label className="text-sm sm:col-span-1">{institute ? "Scheme name" : "Detail"}<input value={line.description} onChange={(event) => setLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, description: event.target.value, productId: "" } : item))} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
+                )}
                 <label className="text-sm">Quantity<input inputMode="decimal" value={line.quantity} onChange={(event) => setLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, quantity: event.target.value } : item))} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
                 <label className="text-sm">Price<input inputMode="decimal" value={line.price} onChange={(event) => setLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, price: event.target.value } : item))} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
+                <p className="text-sm sm:col-span-3">Line total {inr(lineTotal)}</p>
                 {lines.length > 1 ? <button type="button" className="min-h-11 text-left text-sm font-medium text-danger" onClick={() => setLines((current) => current.filter((_, itemIndex) => itemIndex !== index))}>Remove line</button> : null}
               </div>
-            ))}
-            <button type="button" className="min-h-11 text-sm font-medium text-navy" onClick={() => setLines((current) => [...current, emptyLine(kinds[0])])}>Add a line</button>
+              );
+            })}
+            <div className="flex flex-wrap gap-3">
+              <button type="button" className="min-h-11 text-sm font-medium text-navy" onClick={() => setLines((current) => [...current, emptyLine(kinds[0])])}>Add a line</button>
+              {!institute ? <button type="button" className="min-h-11 text-sm font-medium text-navy" onClick={() => setLines((current) => [...current, emptyLine("Product")])}>Add a product</button> : null}
+            </div>
             <div className="grid gap-2 sm:grid-cols-3">
               <label className="text-sm">Discount<input inputMode="decimal" value={discount} onChange={(event) => setDiscount(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
               <label className="text-sm">Received now<input inputMode="decimal" value={paid} onChange={(event) => setPaid(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
@@ -248,7 +338,10 @@ export function BillingDesk({ workspace, mode = "clinic", onError, onNotice }: {
               </label>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm font-semibold">{institute ? "This scheme" : "This visit"} {inr(draftTotal)} · Balance {inr(previousDue + draftTotal)}</p>
+              <p className="text-sm font-semibold">
+                {!institute && productsTotal > 0 ? `Products ${inr(productsTotal)} · ` : null}
+                {institute ? "This scheme" : "This visit"} {inr(draftTotal)} · Balance {inr(previousDue + draftTotal)}
+              </p>
               <button type="submit" disabled={busy} className="min-h-11 rounded-md bg-navy px-4 text-sm text-white">{busy ? "Saving" : previousDue > 0 ? "Add to balance" : "Save bill"}</button>
             </div>
           </form>

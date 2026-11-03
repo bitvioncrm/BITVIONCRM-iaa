@@ -117,12 +117,7 @@ export function AppointmentsPage() {
     void listDoctors(workspace.id).then(setDoctors).catch(() => setDoctors([]));
   }, [workspace]);
   const visible = useMemo(() => rows.filter((row) => matchesWhen(row.startsAt, filter)), [rows, filter]);
-  const doctorName = (id: string) => {
-    const row = doctors.find((item) => item.userId === id);
-    if (!row) return "";
-    const [person, role] = row.name.split(" · ");
-    return person && person !== "Doctor" ? person : role || "";
-  };
+  const doctorName = (id: string) => doctors.find((item) => item.userId === id)?.name || "";
   const book = () => {
     if (!workspace || !patientId || !when) return;
     setSaving(true);

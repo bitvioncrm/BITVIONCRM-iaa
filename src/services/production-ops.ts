@@ -1,6 +1,19 @@
 import { elapsedSeconds, emptyCallTotals, formatClock, outcomeFromPhoneReturn, remainingSeconds, sumCompleted, summarizeCalls, type CallOutcome, type CallTotals } from "@/lib/call-time";
 import { balance, invoiceTotal } from "@/lib/money";
-import { optimizeImage, sha256 } from "@/lib/files";
+import { isAllowedDocument, optimizeDocument, optimizeImage, sha256 } from "@/lib/files";
+
+export const STUDENT_DOCUMENT_TYPES = [
+  { value: "aadhaar", label: "Aadhaar card" },
+  { value: "pan", label: "PAN card" },
+  { value: "passport", label: "Passport" },
+  { value: "other_id", label: "Other government ID" },
+  { value: "academic", label: "Academic" },
+  { value: "other", label: "Other" },
+] as const;
+
+export function documentTypeLabel(category: string) {
+  return STUDENT_DOCUMENT_TYPES.find((item) => item.value === category)?.label || category || "Document";
+}
 import { supabase } from "@/lib/supabase";
 
 function client() {
@@ -1700,13 +1713,21 @@ export async function bookFromLead(input: {
 }
 
 export async function uploadPrivateFile(input: { organizationId: string; workspaceId: string; entityType: string; entityId: string; file: File; category: string }) {
-  const checksum = await sha256(input.file);
+  if (input.entityType === "student" && input.category !== "photo" && !isAllowedDocument(input.file)) {
+    throw new Error("Use a PDF, JPG, JPEG, PNG, or WEBP file.");
+  }
+  const optimized = input.category === "marketing" || input.category === "photo"
+    ? await optimizeImage(input.file)
+    : input.entityType === "student"
+      ? await optimizeDocument(input.file)
+      : input.file;
+  const checksum = await sha256(optimized);
   const { data: existing, error: existingError } = await client().from("documents").select("id, storage_path").eq("organization_id", input.organizationId).eq("checksum", checksum).limit(1);
   if (existingError) throw new Error(existingError.message);
-  const optimized = input.category === "marketing" || input.category === "photo" ? await optimizeImage(input.file) : input.file;
-  const path = existing?.[0]?.storage_path as string | undefined ?? `${input.organizationId}/${input.workspaceId}/${input.entityType}/${crypto.randomUUID()}-${optimized.name}`;
+  const safeName = optimized.name.replace(/[^\w.\-()+ ]+/g, "_");
+  const path = existing?.[0]?.storage_path as string | undefined ?? `${input.organizationId}/${input.workspaceId}/${input.entityType}/${crypto.randomUUID()}-${safeName}`;
   if (!existing?.length) {
-    const { error } = await client().storage.from("documents").upload(path, optimized, { contentType: optimized.type, upsert: false });
+    const { error } = await client().storage.from("documents").upload(path, optimized, { contentType: optimized.type || "application/octet-stream", upsert: false });
     if (error) throw new Error(error.message);
   }
   const { error } = await client().from("documents").insert({
@@ -1725,6 +1746,28 @@ export async function uploadPrivateFile(input: { organizationId: string; workspa
     created_by: await userId(),
   });
   if (error) throw new Error(error.message);
+  return { originalSize: input.file.size, optimizedSize: optimized.size };
+}
+
+export async function updateDocument(id: string, patch: { category?: string; verificationStatus?: string }) {
+  const { error } = await client().from("documents").update({
+    ...(patch.category ? { category: patch.category } : {}),
+    ...(patch.verificationStatus ? { verification_status: patch.verificationStatus } : {}),
+  }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function removeDocument(id: string) {
+  const current = await client().from("documents").select("id, storage_path").eq("id", id).maybeSingle();
+  if (current.error) throw new Error(current.error.message);
+  if (!current.data) return;
+  const path = String(current.data.storage_path || "");
+  const removed = await client().from("documents").delete().eq("id", id);
+  if (removed.error) throw new Error(removed.error.message);
+  if (!path) return;
+  const others = await client().from("documents").select("id").eq("storage_path", path).limit(1);
+  if (others.error || (others.data ?? []).length) return;
+  await client().storage.from("documents").remove([path]);
 }
 
 export async function listIntegrationStatus(organizationId: string) {
@@ -1768,7 +1811,7 @@ export async function listCertificates(workspaceId: string) {
 
 export async function listStudentFile(workspaceId: string, studentId: string) {
   const [documents, marks, certificates] = await Promise.all([
-    client().from("documents").select("id, filename, category, verification_status, storage_path, created_at").eq("workspace_id", workspaceId).eq("entity_id", studentId).neq("category", "photo").order("created_at", { ascending: false }).limit(40),
+    client().from("documents").select("id, filename, category, verification_status, storage_path, original_size, optimized_size, mime_type, created_at").eq("workspace_id", workspaceId).eq("entity_id", studentId).neq("category", "photo").order("created_at", { ascending: false }).limit(40),
     client().from("marks").select("id, score, exams(name, held_on)").eq("student_id", studentId),
     client().from("certificates").select("id, title, certificate_number, issued_on, status").eq("workspace_id", workspaceId).eq("student_id", studentId).order("issued_on", { ascending: false }).limit(20),
   ]);
@@ -1782,6 +1825,9 @@ export async function listStudentFile(workspaceId: string, studentId: string) {
       category: String(row.category || ""),
       verification_status: String(row.verification_status || "pending"),
       storage_path: String(row.storage_path || ""),
+      originalSize: Number(row.original_size ?? 0),
+      optimizedSize: Number(row.optimized_size ?? row.original_size ?? 0),
+      mimeType: String(row.mime_type || ""),
       created_at: String(row.created_at || ""),
     })),
     marks: (marks.data ?? []).map((row) => {

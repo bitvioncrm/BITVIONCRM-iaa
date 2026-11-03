@@ -73,8 +73,7 @@ function doctorLabel(doctorId: string, doctors: Array<{ userId: string; name: st
   if (doctorId && doctorId === currentUserId) return "You";
   const row = doctors.find((item) => item.userId === doctorId);
   if (!row) return doctorId ? "Doctor" : "Doctor not recorded";
-  const [person, role] = row.name.split(" · ");
-  return person && person !== "Doctor" ? person : role || "Doctor";
+  return row.name || "Doctor";
 }
 
 export function PatientHistory({
@@ -104,12 +103,16 @@ export function PatientHistory({
   const [edits, setEdits] = useState<Record<string, VisitEdit>>({});
   const [profile, setProfile] = useState({ fullName: patient.full_name, mobile: patient.mobile, email: patient.email, gender: patient.gender || "other", dateOfBirth: patient.date_of_birth ?? "", place: patient.place, address: patient.address, emergency: patient.emergency_contact, notes: patient.notes });
   const [products, setProducts] = useState<Array<{ id: string; name: string; stock: number; price: number }>>([]);
-  const [issueProduct, setIssueProduct] = useState("");
-  const [issueQty, setIssueQty] = useState("1");
+  const [productLines, setProductLines] = useState<Array<{ productId: string; quantity: string; price: string }>>([{ productId: "", quantity: "1", price: "" }]);
   const [procedure1, setProcedure1] = useState("");
   const [procedure2, setProcedure2] = useState("");
   const [consult, setConsult] = useState({ diagnosis: "", plan: "", medicine: "", dosage: "", frequency: "", duration: "", followUpOn: "" });
   const [busy, setBusy] = useState(false);
+  const productTotal = productLines.reduce((sum, line) => {
+    const qty = Number(line.quantity) || 0;
+    const price = Number(line.price) || 0;
+    return sum + qty * price;
+  }, 0);
 
   const reload = async () => {
     clearDeskCache();
@@ -264,8 +267,14 @@ export function PatientHistory({
 
       <form className="grid gap-3 rounded-2xl border border-line bg-white p-3 sm:grid-cols-2" onSubmit={(event) => {
         event.preventDefault();
-        const count = Number(issueQty);
-        if (!procedure1.trim() && !issueProduct) return;
+        const items = productLines
+          .map((line) => ({
+            productId: line.productId,
+            quantity: Number(line.quantity) || 0,
+            unitPrice: line.price === "" ? undefined : Number(line.price) || 0,
+          }))
+          .filter((line) => line.productId && line.quantity > 0);
+        if (!procedure1.trim() && items.length === 0) return;
         setBusy(true);
         void recordPatientCare({
           patientId: patient.id,
@@ -274,12 +283,14 @@ export function PatientHistory({
           procedure2,
           performedOn: new Date().toISOString().slice(0, 10),
           notes: "",
-          items: issueProduct && count > 0 ? [{ productId: issueProduct, quantity: count }] : [],
+          items,
         }).then(reload).then(() => {
           setProcedure1("");
           setProcedure2("");
-          setIssueQty("1");
-          onNotice("Treatment saved. Stock is reduced for any product used.");
+          setProductLines([{ productId: "", quantity: "1", price: "" }]);
+          onNotice(items.length
+            ? "Treatment saved. Stock is reduced and product prices are on the patient bill."
+            : "Treatment saved.");
           onChanged(patient);
           window.dispatchEvent(new CustomEvent("bitvion-stock"));
         }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not save the treatment")).finally(() => setBusy(false));
@@ -287,14 +298,47 @@ export function PatientHistory({
         <h3 className="text-sm font-semibold sm:col-span-2">Add a treatment</h3>
         <label className="text-sm">Treatment<input value={procedure1} onChange={(event) => setProcedure1(event.target.value)} className={field} /></label>
         <label className="text-sm">Second treatment<input value={procedure2} onChange={(event) => setProcedure2(event.target.value)} className={field} /></label>
-        <label className="text-sm sm:col-span-2">Product used
-          <select value={issueProduct} onChange={(event) => setIssueProduct(event.target.value)} className={field}>
-            <option value="">No product</option>
-            {products.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.stock} in stock · {inr(item.price)}</option>)}
-          </select>
-        </label>
-        <label className="text-sm">Quantity<input inputMode="numeric" value={issueQty} onChange={(event) => setIssueQty(event.target.value)} className={field} /></label>
-        <button type="submit" disabled={busy} className="min-h-11 rounded-md bg-navy px-3 text-sm text-white sm:self-end">{busy ? "Saving" : "Save treatment and reduce stock"}</button>
+        <div className="space-y-2 sm:col-span-2">
+          <p className="text-sm font-medium">Products</p>
+          <p className="text-xs text-muted">Stock decreases automatically. Inventory price fills in and stays editable. Multiple products can be added.</p>
+          {productLines.map((line, index) => {
+            const chosen = products.find((item) => item.id === line.productId);
+            const lineTotal = (Number(line.quantity) || 0) * (Number(line.price) || 0);
+            return (
+              <div key={index} className="grid gap-2 rounded-xl border border-line p-3 sm:grid-cols-4">
+                <label className="text-sm sm:col-span-2">Product
+                  <select
+                    value={line.productId}
+                    onChange={(event) => {
+                      const productId = event.target.value;
+                      const product = products.find((item) => item.id === productId);
+                      setProductLines((current) => current.map((item, itemIndex) => itemIndex === index
+                        ? { ...item, productId, price: product ? String(product.price) : "" }
+                        : item));
+                    }}
+                    className={field}
+                  >
+                    <option value="">No product</option>
+                    {products.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.stock} in stock · {inr(item.price)}</option>)}
+                  </select>
+                </label>
+                <label className="text-sm">Quantity
+                  <input inputMode="numeric" value={line.quantity} onChange={(event) => setProductLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, quantity: event.target.value } : item))} className={field} />
+                </label>
+                <label className="text-sm">Price
+                  <input inputMode="decimal" value={line.price} onChange={(event) => setProductLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, price: event.target.value } : item))} className={field} />
+                </label>
+                <p className="text-sm sm:col-span-3">{chosen ? `${chosen.name} line ${inr(lineTotal)}` : "Choose a product to bill"}</p>
+                {productLines.length > 1 ? (
+                  <button type="button" className="min-h-11 text-sm font-medium text-danger" onClick={() => setProductLines((current) => current.filter((_, itemIndex) => itemIndex !== index))}>Remove</button>
+                ) : null}
+              </div>
+            );
+          })}
+          <button type="button" className="min-h-11 text-sm font-medium text-navy" onClick={() => setProductLines((current) => [...current, { productId: "", quantity: "1", price: "" }])}>Add another product</button>
+          {productTotal > 0 ? <p className="text-sm font-semibold">Products total {inr(productTotal)}</p> : null}
+        </div>
+        <button type="submit" disabled={busy} className="min-h-11 rounded-md bg-navy px-3 text-sm text-white sm:col-span-2">{busy ? "Saving" : "Save treatment, reduce stock, and bill products"}</button>
       </form>
 
       <form className="grid gap-3 rounded-2xl border border-line bg-white p-3 sm:grid-cols-2" onSubmit={(event) => {

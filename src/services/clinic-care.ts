@@ -60,7 +60,7 @@ export async function recordPatientCare(input: {
   procedure2: string;
   performedOn: string;
   notes: string;
-  items: Array<{ productId: string; quantity: number }>;
+  items: Array<{ productId: string; quantity: number; unitPrice?: number }>;
 }) {
   const { data, error } = await db().rpc("record_patient_care", {
     p_patient: input.patientId,
@@ -69,7 +69,11 @@ export async function recordPatientCare(input: {
     p_procedure_2: input.procedure2,
     p_performed_on: input.performedOn || new Date().toISOString().slice(0, 10),
     p_notes: input.notes,
-    p_items: input.items.map((item) => ({ product_id: item.productId, quantity: item.quantity })),
+    p_items: input.items.map((item) => ({
+      product_id: item.productId,
+      quantity: item.quantity,
+      ...(item.unitPrice == null ? {} : { unit_price: item.unitPrice }),
+    })),
   });
   if (error) throw new Error(error.message);
   return String(data ?? "");

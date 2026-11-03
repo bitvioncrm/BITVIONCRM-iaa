@@ -139,19 +139,12 @@ export async function listAssignableMembers(workspaceId: string, workspaceType?:
 }
 
 export async function listDoctors(workspaceId: string) {
-  const { data, error } = await client()
-    .from("user_roles")
-    .select("user_id, roles(key), profiles(full_name)")
-    .eq("workspace_id", workspaceId);
+  const { data, error } = await client().rpc("list_clinic_doctors", { ws: workspaceId });
   if (error) throw new Error(error.message);
-  return (data ?? []).flatMap((row) => {
-    const roles = row.roles as { key: string } | { key: string }[] | null;
-    const role = Array.isArray(roles) ? roles[0]?.key : roles?.key;
-    if (role !== "doctor" && role !== "duty_doctor") return [];
-    const profiles = row.profiles as { full_name: string } | { full_name: string }[] | null;
-    const name = Array.isArray(profiles) ? profiles[0]?.full_name : profiles?.full_name;
-    const label = role === "duty_doctor" ? "Duty doctor" : "Main doctor";
-    return [{ userId: row.user_id as string, name: `${name ?? "Doctor"} · ${label}` }];
+  return (data ?? []).map((row: { user_id: string; full_name: string; role_key: string }) => {
+    const role = String(row.role_key || "");
+    const label = role === "duty_doctor" ? "Duty Doctor" : "Doctor";
+    return { userId: String(row.user_id), name: label };
   });
 }
 
