@@ -321,7 +321,24 @@ function ReceptionDashboard() {
             </SheetHeader>
             <SheetBody className="space-y-4">
               <PatientFileSummary patient={open} bills={bills.filter((bill) => bill.patientId === open.id)} recorded={patientTotal.get(open.id) ?? 0} />
-              <VisitAccount bills={bills.filter((bill) => bill.patientId === open.id)} treatments={open.treatments} collected={money.filter((row) => row.kind === "income" && row.patientId === open.id).map((row) => ({ note: row.note, amount: row.amount }))} />
+              <VisitAccount
+                bills={bills.filter((bill) => bill.patientId === open.id)}
+                treatments={open.treatments}
+                collected={money.filter((row) => row.kind === "income" && row.patientId === open.id).map((row) => ({ note: row.note, amount: row.amount }))}
+                onChanged={() => {
+                  if (!clinic) return;
+                  clearDeskCache();
+                  setCardNote("Visit balance updated.");
+                  void listClinicBills(clinic.id).then(setBills).catch(() => undefined);
+                  void listDeskPatients(clinic.id).then((rows) => {
+                    setCards(rows);
+                    const next = rows.find((item) => item.id === open.id);
+                    if (next) setOpen(next);
+                  }).catch(() => undefined);
+                  void listDeskMoney(clinic.id).then(setMoney).catch(() => undefined);
+                }}
+                onError={setRecordError}
+              />
               <div className="flex flex-wrap gap-2">
                 {clinic && phoneTel(open.mobile) ? <DialLink organizationId={clinic.organizationId} workspaceId={clinic.id} name={open.full_name} phone={open.mobile} className="inline-flex min-h-11 items-center rounded-full border border-line bg-white px-4 text-sm font-medium text-navy" /> : null}
                 <Link to={`/billing?patient=${open.id}`} className="inline-flex min-h-11 items-center rounded-full bg-navy px-4 text-sm font-medium text-white">Open billing</Link>

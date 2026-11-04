@@ -4,7 +4,7 @@ import { Portrait } from "@/components/shared/Portrait";
 import { ProductSearchSelect } from "@/components/clinic/ProductSearchSelect";
 import { billParts, inr, invoiceTotal } from "@/lib/money";
 import { addLedgerEntry, listCareProducts, listLedger, recordPatientCare, removeLedgerEntry } from "@/services/clinic-care";
-import { addToPatientBill, addToStudentBill, cancelClinicBill, listClinicBills, listDeskPatients, listDeskStudents, loadPatientRecord, recordPayment, recordRefund, removeInvoiceItem, updateInvoiceItem, type ClinicBill, type DeskPatient, type DeskStudent } from "@/services/production-ops";
+import { addToPatientBill, addToStudentBill, cancelClinicBill, listClinicBills, listDeskPatients, listDeskStudents, loadPatientRecord, recordPayment, recordRefund, removeConsultation, removeInvoiceItem, removeProcedure, updateInvoiceItem, type ClinicBill, type DeskPatient, type DeskStudent } from "@/services/production-ops";
 import type { WorkspaceOption } from "@/services/production-leads";
 
 type ChargeKind = "Treatment" | "Booking" | "Product" | "Course fee" | "Registration" | "Material" | "Exam" | "Certificate";
@@ -173,7 +173,14 @@ export function BillingDesk({ workspace, mode = "clinic", onError, onNotice }: {
             <button type="button" disabled={busy} onClick={fillFromVisits} className="min-h-11 rounded-md border border-[#c6a15b] px-3 text-sm font-medium text-[#8a6a2f]">{institute ? "Add this course" : "Add this visit"}</button>
           </div>
 
-          <VisitAccount title={institute ? "Schemes and balance" : "Visits and balance"} bills={personBills} treatments={institute ? (selected.course ? [{ id: `${selected.id}-course`, title: selected.course, performed_on: selected.admission }] : []) : (selectedPatient?.treatments ?? [])} collected={ledger.filter((row) => row.kind === "income" && row.patientName === selected.full_name).map((row) => ({ note: row.note, amount: row.amount }))} />
+          <VisitAccount
+            title={institute ? "Schemes and balance" : "Visits and balance"}
+            bills={personBills}
+            treatments={institute ? (selected.course ? [{ id: `${selected.id}-course`, title: selected.course, performed_on: selected.admission }] : []) : (selectedPatient?.treatments ?? [])}
+            collected={ledger.filter((row) => row.kind === "income" && row.patientName === selected.full_name).map((row) => ({ note: row.note, amount: row.amount }))}
+            onChanged={() => { onNotice("Visit balance updated."); reload(); }}
+            onError={onError}
+          />
 
           {personBills.length === 0 ? null : personBills.map((bill) => (
             <article key={bill.id} className="rounded-2xl border border-[#eadfca] bg-[#faf6ee] p-3">
@@ -464,20 +471,67 @@ export function BillingDesk({ workspace, mode = "clinic", onError, onNotice }: {
   );
 }
 
-export function VisitAccount({ bills, treatments, collected = [], title = "Visits and balance" }: { bills: ClinicBill[]; treatments: Array<{ id: string; title: string; performed_on: string }>; collected?: Array<{ note: string; amount: number }>; title?: string }) {
+type VisitRow = {
+  key: string;
+  name: string;
+  at: string;
+  amount: number | null;
+  itemId?: string;
+  description?: string;
+  quantity?: number;
+  unitPrice?: number;
+  visitId?: string;
+  synthetic?: boolean;
+};
+
+export function VisitAccount({
+  bills,
+  treatments,
+  collected = [],
+  title = "Visits and balance",
+  onChanged,
+  onError,
+}: {
+  bills: ClinicBill[];
+  treatments: Array<{ id: string; title: string; performed_on: string }>;
+  collected?: Array<{ note: string; amount: number }>;
+  title?: string;
+  onChanged?: () => void;
+  onError?: (message: string) => void;
+}) {
+  const [editKey, setEditKey] = useState("");
+  const [draft, setDraft] = useState({ description: "", quantity: "1", price: "" });
+  const [busy, setBusy] = useState(false);
   const openBills = bills.filter((bill) => bill.status !== "cancelled" && bill.status !== "refunded");
-  const rows: Array<{ key: string; name: string; at: string; amount: number | null }> = [];
+  const rows: VisitRow[] = [];
   const billed = new Set<string>();
   for (const bill of [...openBills].sort((left, right) => left.issuedOn.localeCompare(right.issuedOn))) {
     bill.items.forEach((item, index) => {
       const name = billParts(item.description).name;
       billed.add(name.toLowerCase());
-      rows.push({ key: `${bill.id}-${index}`, name, at: bill.issuedOn, amount: item.amount });
+      rows.push({
+        key: item.id || `${bill.id}-${index}`,
+        name,
+        at: bill.issuedOn,
+        amount: item.amount,
+        itemId: item.id || undefined,
+        description: item.description,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+      });
     });
   }
   for (const visit of treatments) {
     if (!visit.title || billed.has(visit.title.toLowerCase())) continue;
-    rows.push({ key: visit.id, name: visit.title, at: visit.performed_on.slice(0, 10), amount: null });
+    const synthetic = visit.id.includes("-course");
+    rows.push({
+      key: visit.id,
+      name: visit.title,
+      at: visit.performed_on.slice(0, 10),
+      amount: null,
+      visitId: synthetic ? undefined : visit.id,
+      synthetic,
+    });
   }
   rows.sort((left, right) => left.at.localeCompare(right.at));
   const billPaid = openBills.reduce((sum, bill) => sum + bill.paid, 0);
@@ -500,16 +554,84 @@ export function VisitAccount({ bills, treatments, collected = [], title = "Visit
   let running = 0;
   const paid = billPaid + carried;
   if (!rows.length) return <p className="text-sm text-muted">Nothing on this account yet.</p>;
+
+  const startEdit = (row: VisitRow) => {
+    if (!row.itemId || !row.description) return;
+    setEditKey(row.key);
+    setDraft({
+      description: row.description,
+      quantity: String(row.quantity || 1),
+      price: String(row.unitPrice ?? ((row.quantity ? (row.amount || 0) / row.quantity : row.amount) || 0)),
+    });
+  };
+
   return (
     <div className="overflow-hidden rounded-2xl border border-[#eadfca]">
       <p className="bg-[#faf6ee] px-3 py-2 text-xs font-semibold tracking-wide text-[#8a6a2f] uppercase">{title}</p>
       {rows.map((row) => {
         if (row.amount != null) running += row.amount;
+        const editing = editKey === row.key && Boolean(row.itemId);
+        if (editing) {
+          return (
+            <div key={row.key} className="space-y-2 border-t border-[#eadfca] bg-white px-3 py-3">
+              <div className="grid gap-2 sm:grid-cols-3">
+                <label className="text-sm sm:col-span-3">Charge
+                  <input value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line px-3" />
+                </label>
+                <label className="text-sm">Quantity
+                  <input inputMode="decimal" value={draft.quantity} onChange={(event) => setDraft({ ...draft, quantity: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line px-3" />
+                </label>
+                <label className="text-sm">Price
+                  <input inputMode="decimal" value={draft.price} onChange={(event) => setDraft({ ...draft, price: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line px-3" />
+                </label>
+                <p className="self-end text-sm">Line {inr((Number(draft.quantity) || 0) * (Number(draft.price) || 0))}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" disabled={busy} className="min-h-11 rounded-md bg-navy px-3 text-sm text-white" onClick={() => {
+                  if (!row.itemId) return;
+                  setBusy(true);
+                  void updateInvoiceItem({
+                    itemId: row.itemId,
+                    description: draft.description,
+                    quantity: Number(draft.quantity) || 0,
+                    unitPrice: Number(draft.price) || 0,
+                  }).then(() => {
+                    setEditKey("");
+                    onChanged?.();
+                  }).catch((reason: unknown) => onError?.(reason instanceof Error ? reason.message : "Could not update this visit charge")).finally(() => setBusy(false));
+                }}>{busy ? "Saving" : "Save"}</button>
+                <button type="button" className="min-h-11 text-sm font-medium text-navy" onClick={() => setEditKey("")}>Cancel</button>
+              </div>
+            </div>
+          );
+        }
         return (
           <div key={row.key} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 border-t border-[#eadfca] bg-white px-3 py-2 text-sm sm:grid-cols-[minmax(0,1fr)_auto_auto]">
             <div className="min-w-0">
               <p className="truncate font-medium">{row.name}</p>
               <p className="text-xs text-muted">{row.at}</p>
+              {(row.itemId || row.visitId) ? (
+                <div className="mt-1 flex flex-wrap gap-3">
+                  {row.itemId ? (
+                    <button type="button" className="min-h-11 text-sm font-medium text-navy" onClick={() => startEdit(row)}>Edit</button>
+                  ) : null}
+                  <button type="button" disabled={busy} className="min-h-11 text-sm font-medium text-danger" onClick={() => {
+                    if (row.itemId) {
+                      if (!window.confirm(`Delete ${row.name} from this balance?`)) return;
+                      setBusy(true);
+                      void removeInvoiceItem(row.itemId).then(() => onChanged?.()).catch((reason: unknown) => onError?.(reason instanceof Error ? reason.message : "Could not delete this charge")).finally(() => setBusy(false));
+                      return;
+                    }
+                    if (!row.visitId || !window.confirm(`Delete unbilled visit ${row.name}?`)) return;
+                    setBusy(true);
+                    void removeProcedure(row.visitId)
+                      .catch(() => removeConsultation(row.visitId as string))
+                      .then(() => onChanged?.())
+                      .catch((reason: unknown) => onError?.(reason instanceof Error ? reason.message : "Could not delete this visit"))
+                      .finally(() => setBusy(false));
+                  }}>Delete</button>
+                </div>
+              ) : null}
             </div>
             <p className="sm:text-right">{row.amount == null ? "Not billed" : inr(row.amount)}</p>
             <p className="col-span-2 font-medium sm:col-span-1 sm:text-right">Balance {inr(running)}</p>
