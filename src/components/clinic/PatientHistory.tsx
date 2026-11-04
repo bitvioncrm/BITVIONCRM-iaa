@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Portrait } from "@/components/shared/Portrait";
 import { BillReceipt } from "@/components/clinic/BillingDesk";
 import { inr } from "@/lib/money";
+import { ProductSearchSelect } from "@/components/clinic/ProductSearchSelect";
 import { listCareProducts, recordPatientCare } from "@/services/clinic-care";
 import {
   clearDeskCache,
@@ -103,6 +104,7 @@ export function PatientHistory({
   const [edits, setEdits] = useState<Record<string, VisitEdit>>({});
   const [profile, setProfile] = useState({ fullName: patient.full_name, mobile: patient.mobile, email: patient.email, gender: patient.gender || "other", dateOfBirth: patient.date_of_birth ?? "", place: patient.place, address: patient.address, emergency: patient.emergency_contact, notes: patient.notes });
   const [products, setProducts] = useState<Array<{ id: string; name: string; stock: number; price: number }>>([]);
+  const [productsReady, setProductsReady] = useState(false);
   const [productLines, setProductLines] = useState<Array<{ productId: string; quantity: string; price: string }>>([{ productId: "", quantity: "1", price: "" }]);
   const [procedure1, setProcedure1] = useState("");
   const [procedure2, setProcedure2] = useState("");
@@ -114,16 +116,31 @@ export function PatientHistory({
     return sum + qty * price;
   }, 0);
 
+  const loadProducts = async () => {
+    const stock = await listCareProducts(workspace.id);
+    setProducts(stock);
+    setProductsReady(true);
+    return stock;
+  };
+
   const reload = async () => {
     clearDeskCache();
-    const next = await loadPatientRecord(patient.id);
+    const [next] = await Promise.all([
+      loadPatientRecord(patient.id),
+      loadProducts().catch(() => null),
+    ]);
     setRecord(next);
     setEdits(Object.fromEntries(next.treatments.map((visit) => [visit.id, editFrom(visit)])));
-    setProducts(await listCareProducts(workspace.id));
   };
 
   useEffect(() => {
     setProfile({ fullName: patient.full_name, mobile: patient.mobile, email: patient.email, gender: patient.gender || "other", dateOfBirth: patient.date_of_birth ?? "", place: patient.place, address: patient.address, emergency: patient.emergency_contact, notes: patient.notes });
+    setProductLines([{ productId: "", quantity: "1", price: "" }]);
+    setProductsReady(false);
+    void loadProducts().catch((reason: unknown) => {
+      setProductsReady(true);
+      onError(reason instanceof Error ? reason.message : "Could not load clinic products");
+    });
     void reload().catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not open this history"));
   }, [patient.id, workspace.id]);
 
@@ -274,12 +291,16 @@ export function PatientHistory({
             unitPrice: line.price === "" ? undefined : Number(line.price) || 0,
           }))
           .filter((line) => line.productId && line.quantity > 0);
-        if (!procedure1.trim() && items.length === 0) return;
+        if (!procedure1.trim() && items.length === 0) {
+          onError("Enter a treatment name or choose at least one product.");
+          return;
+        }
         setBusy(true);
+        onError("");
         void recordPatientCare({
           patientId: patient.id,
           doctorId: currentUserId || null,
-          procedure1,
+          procedure1: procedure1.trim() || (items.length ? "Products" : ""),
           procedure2,
           performedOn: new Date().toISOString().slice(0, 10),
           notes: "",
@@ -296,6 +317,19 @@ export function PatientHistory({
         }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not save the treatment")).finally(() => setBusy(false));
       }}>
         <h3 className="text-sm font-semibold sm:col-span-2">Add a treatment</h3>
+        {!productsReady ? <p className="text-sm text-muted sm:col-span-2">Loading clinic products…</p> : null}
+        {productsReady && products.length === 0 ? (
+          <p className="text-sm text-danger sm:col-span-2">
+            No clinic products loaded.{" "}
+            <button type="button" className="font-medium text-navy" onClick={() => {
+              setProductsReady(false);
+              void loadProducts().catch((reason: unknown) => {
+                setProductsReady(true);
+                onError(reason instanceof Error ? reason.message : "Could not load clinic products");
+              });
+            }}>Retry</button>
+          </p>
+        ) : null}
         <label className="text-sm">Treatment<input value={procedure1} onChange={(event) => setProcedure1(event.target.value)} className={field} /></label>
         <label className="text-sm">Second treatment<input value={procedure2} onChange={(event) => setProcedure2(event.target.value)} className={field} /></label>
         <div className="space-y-2 sm:col-span-2">
@@ -307,20 +341,18 @@ export function PatientHistory({
             return (
               <div key={index} className="grid gap-2 rounded-xl border border-line p-3 sm:grid-cols-4">
                 <label className="text-sm sm:col-span-2">Product
-                  <select
+                  <ProductSearchSelect
+                    products={products}
                     value={line.productId}
-                    onChange={(event) => {
-                      const productId = event.target.value;
-                      const product = products.find((item) => item.id === productId);
+                    disabled={!productsReady || products.length === 0}
+                    emptyLabel={productsReady ? (products.length ? "No product" : "No products available") : "Loading products…"}
+                    placeholder="Type to find a product…"
+                    onChange={(productId, product) => {
                       setProductLines((current) => current.map((item, itemIndex) => itemIndex === index
                         ? { ...item, productId, price: product ? String(product.price) : "" }
                         : item));
                     }}
-                    className={field}
-                  >
-                    <option value="">No product</option>
-                    {products.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.stock} in stock · {inr(item.price)}</option>)}
-                  </select>
+                  />
                 </label>
                 <label className="text-sm">Quantity
                   <input inputMode="numeric" value={line.quantity} onChange={(event) => setProductLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, quantity: event.target.value } : item))} className={field} />

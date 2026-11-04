@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ProductSearchSelect } from "@/components/clinic/ProductSearchSelect";
 import type { WorkspaceOption } from "@/services/production-leads";
 import { listCareProducts, listPatientCare, recordPatientCare, updatePatientDetails, type CareVisit } from "@/services/clinic-care";
 
@@ -81,10 +82,14 @@ export function ClinicCare({
         <input className="rounded-md border border-line px-2 py-2" placeholder="Notes" value={notes} onChange={(event) => setNotes(event.target.value)} />
       </div>
       <div className="flex flex-wrap gap-2">
-        <select className="min-w-56 flex-1 rounded-md border border-line px-2 py-2" value={productId} onChange={(event) => setProductId(event.target.value)}>
-          <option value="">Product used</option>
-          {products.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.stock} in stock · ₹{item.price}</option>)}
-        </select>
+        <ProductSearchSelect
+          className="min-w-56 flex-1"
+          products={products}
+          value={productId}
+          emptyLabel="Product used"
+          placeholder="Type to find a product…"
+          onChange={(nextId) => setProductId(nextId)}
+        />
         <input className="w-24 rounded-md border border-line px-2 py-2" type="number" min="1" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
         <button
           className="rounded-md border border-line px-3 py-2 text-sm"

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Portrait } from "@/components/shared/Portrait";
+import { ProductSearchSelect } from "@/components/clinic/ProductSearchSelect";
 import { billParts, inr, invoiceTotal } from "@/lib/money";
 import { addLedgerEntry, listCareProducts, listLedger, recordPatientCare, removeLedgerEntry } from "@/services/clinic-care";
 import { addToPatientBill, addToStudentBill, listClinicBills, listDeskPatients, listDeskStudents, loadPatientRecord, recordPayment, recordRefund, type ClinicBill, type DeskPatient, type DeskStudent } from "@/services/production-ops";
@@ -291,11 +292,12 @@ export function BillingDesk({ workspace, mode = "clinic", onError, onNotice }: {
                 </label>
                 {!institute && line.kind === "Product" ? (
                   <label className="text-sm sm:col-span-1">Product
-                    <select
+                    <ProductSearchSelect
+                      products={stockProducts}
                       value={line.productId || ""}
-                      onChange={(event) => {
-                        const productId = event.target.value;
-                        const product = stockProducts.find((item) => item.id === productId);
+                      emptyLabel="Choose a product"
+                      placeholder="Type to find a product…"
+                      onChange={(productId, product) => {
                         setLines((current) => current.map((item, itemIndex) => itemIndex === index
                           ? {
                               ...item,
@@ -306,11 +308,7 @@ export function BillingDesk({ workspace, mode = "clinic", onError, onNotice }: {
                             }
                           : item));
                       }}
-                      className="mt-1 h-11 w-full rounded-md border border-line bg-white px-3"
-                    >
-                      <option value="">Choose a product</option>
-                      {stockProducts.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.stock} in stock · {inr(item.price)}</option>)}
-                    </select>
+                    />
                   </label>
                 ) : (
                   <label className="text-sm sm:col-span-1">{institute ? "Scheme name" : "Detail"}<input value={line.description} onChange={(event) => setLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, description: event.target.value, productId: "" } : item))} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
