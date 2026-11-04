@@ -4,7 +4,7 @@ import { Portrait } from "@/components/shared/Portrait";
 import { ProductSearchSelect } from "@/components/clinic/ProductSearchSelect";
 import { billParts, inr, invoiceTotal } from "@/lib/money";
 import { addLedgerEntry, listCareProducts, listLedger, recordPatientCare, removeLedgerEntry } from "@/services/clinic-care";
-import { addToPatientBill, addToStudentBill, listClinicBills, listDeskPatients, listDeskStudents, loadPatientRecord, recordPayment, recordRefund, type ClinicBill, type DeskPatient, type DeskStudent } from "@/services/production-ops";
+import { addToPatientBill, addToStudentBill, cancelClinicBill, listClinicBills, listDeskPatients, listDeskStudents, loadPatientRecord, recordPayment, recordRefund, removeInvoiceItem, updateInvoiceItem, type ClinicBill, type DeskPatient, type DeskStudent } from "@/services/production-ops";
 import type { WorkspaceOption } from "@/services/production-leads";
 
 type ChargeKind = "Treatment" | "Booking" | "Product" | "Course fee" | "Registration" | "Material" | "Exam" | "Certificate";
@@ -177,30 +177,50 @@ export function BillingDesk({ workspace, mode = "clinic", onError, onNotice }: {
 
           {personBills.length === 0 ? null : personBills.map((bill) => (
             <article key={bill.id} className="rounded-2xl border border-[#eadfca] bg-[#faf6ee] p-3">
-              <BillReceipt bill={bill} />
-              {bill.balance > 0 ? (
-                <form className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto_auto]" onSubmit={(event) => {
-                  event.preventDefault();
-                  const amount = Number(collect[bill.id] || 0);
-                  if (amount <= 0) return;
-                  setBusy(true);
-                  void recordPayment({ organizationId: workspace.organizationId, workspaceId: workspace.id, invoiceId: bill.id, amount, method }).then(() => {
-                    setCollect((current) => ({ ...current, [bill.id]: "" }));
-                    onNotice("Payment saved on this bill.");
-                    reload();
-                  }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not save the payment")).finally(() => setBusy(false));
-                }}>
-                  <label className="text-sm">Receive now<input inputMode="decimal" value={collect[bill.id] ?? ""} onChange={(event) => setCollect((current) => ({ ...current, [bill.id]: event.target.value }))} className="mt-1 h-11 w-full rounded-md border border-line bg-white px-3" /></label>
-                  <button type="submit" disabled={busy} className="min-h-11 rounded-md bg-navy px-3 text-sm text-white sm:self-end">Save payment</button>
-                  <button type="button" className="min-h-11 text-sm font-medium text-danger sm:self-end" onClick={() => {
-                    const amount = Number(collect[bill.id] || bill.paid);
-                    if (!amount || !window.confirm(`Refund ${inr(amount)} on ${bill.number}?`)) return;
-                    void recordRefund({ organizationId: workspace.organizationId, workspaceId: workspace.id, invoiceId: bill.id, amount }).then(() => {
-                      onNotice("Refund saved.");
+              <BillReceipt
+                bill={bill}
+                editable={bill.status !== "cancelled" && bill.status !== "refunded"}
+                busy={busy}
+                onChanged={() => { onNotice("Bill updated."); reload(); }}
+                onError={onError}
+              />
+              {bill.status !== "cancelled" && bill.status !== "refunded" ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {bill.balance > 0 ? (
+                    <form className="grid min-w-0 flex-1 gap-2 sm:grid-cols-[1fr_auto]" onSubmit={(event) => {
+                      event.preventDefault();
+                      const amount = Number(collect[bill.id] || 0);
+                      if (amount <= 0) return;
+                      setBusy(true);
+                      void recordPayment({ organizationId: workspace.organizationId, workspaceId: workspace.id, invoiceId: bill.id, amount, method }).then(() => {
+                        setCollect((current) => ({ ...current, [bill.id]: "" }));
+                        onNotice("Payment saved on this bill.");
+                        reload();
+                      }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not save the payment")).finally(() => setBusy(false));
+                    }}>
+                      <label className="text-sm">Receive now<input inputMode="decimal" value={collect[bill.id] ?? ""} onChange={(event) => setCollect((current) => ({ ...current, [bill.id]: event.target.value }))} className="mt-1 h-11 w-full rounded-md border border-line bg-white px-3" /></label>
+                      <button type="submit" disabled={busy} className="min-h-11 rounded-md bg-navy px-3 text-sm text-white sm:self-end">Save payment</button>
+                    </form>
+                  ) : null}
+                  {bill.paid > 0 ? (
+                    <button type="button" className="min-h-11 text-sm font-medium text-danger" onClick={() => {
+                      const amount = Number(collect[bill.id] || bill.paid);
+                      if (!amount || !window.confirm(`Refund ${inr(amount)} on ${bill.number}?`)) return;
+                      void recordRefund({ organizationId: workspace.organizationId, workspaceId: workspace.id, invoiceId: bill.id, amount }).then(() => {
+                        onNotice("Refund saved.");
+                        reload();
+                      }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not save the refund"));
+                    }}>Refund</button>
+                  ) : null}
+                  <button type="button" className="min-h-11 text-sm font-medium text-danger" onClick={() => {
+                    if (!window.confirm(`Cancel ${bill.number}? Charge lines will be removed.`)) return;
+                    setBusy(true);
+                    void cancelClinicBill(bill.id).then(() => {
+                      onNotice("Bill cancelled.");
                       reload();
-                    }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not save the refund"));
-                  }}>Refund</button>
-                </form>
+                    }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not cancel the bill")).finally(() => setBusy(false));
+                  }}>Cancel bill</button>
+                </div>
               ) : null}
             </article>
           ))}
@@ -277,11 +297,27 @@ export function BillingDesk({ workspace, mode = "clinic", onError, onNotice }: {
           }}>
             <h3 className="text-sm font-semibold">{previousDue > 0 ? (institute ? "Add this scheme to the balance" : "Add this visit to the balance") : "New bill"}</h3>
             {previousDue > 0 ? <p className="text-sm text-muted">Previous balance {inr(previousDue)}. This charge is added on top, under its own name.</p> : null}
-            {!institute ? <p className="text-sm text-muted">Choose products from inventory to fill quantity and price. Price stays editable. Multiple products can be added for one patient.</p> : null}
+            {!institute ? <p className="text-sm text-muted">Add, edit, or remove charge lines. Products can be searched from inventory; stock drops when you save products.</p> : null}
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="min-h-11 rounded-md border border-line bg-white px-3 text-sm font-medium text-navy" onClick={() => setLines((current) => [...current, emptyLine(kinds[0])])}>Add line</button>
+              {!institute ? <button type="button" className="min-h-11 rounded-md border border-line bg-white px-3 text-sm font-medium text-navy" onClick={() => setLines((current) => [...current, emptyLine("Product")])}>Add product</button> : null}
+              {!institute ? <button type="button" className="min-h-11 rounded-md border border-line bg-white px-3 text-sm font-medium text-navy" onClick={() => setLines((current) => [...current, emptyLine("Booking")])}>Add booking</button> : null}
+              <button type="button" className="min-h-11 rounded-md border border-line bg-white px-3 text-sm font-medium text-danger" onClick={() => setLines([emptyLine(kinds[0])])}>Clear all lines</button>
+            </div>
             {lines.map((line, index) => {
               const lineTotal = (Number(line.quantity) || 0) * (Number(line.price) || 0);
               return (
               <div key={index} className="grid gap-2 rounded-2xl border border-line p-3 sm:grid-cols-4">
+                <div className="flex items-center justify-between gap-2 sm:col-span-4">
+                  <p className="text-xs font-semibold tracking-wide text-[#8a6a2f] uppercase">Line {index + 1}</p>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" className="min-h-11 text-sm font-medium text-navy" onClick={() => setLines((current) => {
+                      const copy = { ...current[index] };
+                      return [...current.slice(0, index + 1), copy, ...current.slice(index + 1)];
+                    })}>Duplicate</button>
+                    <button type="button" className="min-h-11 text-sm font-medium text-danger" onClick={() => setLines((current) => current.length <= 1 ? [emptyLine(kinds[0])] : current.filter((_, itemIndex) => itemIndex !== index))}>Remove</button>
+                  </div>
+                </div>
                 <label className="text-sm">Kind
                   <select value={line.kind} onChange={(event) => {
                     const kind = event.target.value as ChargeKind;
@@ -315,15 +351,10 @@ export function BillingDesk({ workspace, mode = "clinic", onError, onNotice }: {
                 )}
                 <label className="text-sm">Quantity<input inputMode="decimal" value={line.quantity} onChange={(event) => setLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, quantity: event.target.value } : item))} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
                 <label className="text-sm">Price<input inputMode="decimal" value={line.price} onChange={(event) => setLines((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, price: event.target.value } : item))} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
-                <p className="text-sm sm:col-span-3">Line total {inr(lineTotal)}</p>
-                {lines.length > 1 ? <button type="button" className="min-h-11 text-left text-sm font-medium text-danger" onClick={() => setLines((current) => current.filter((_, itemIndex) => itemIndex !== index))}>Remove line</button> : null}
+                <p className="text-sm font-medium sm:col-span-4">Line total {inr(lineTotal)}</p>
               </div>
               );
             })}
-            <div className="flex flex-wrap gap-3">
-              <button type="button" className="min-h-11 text-sm font-medium text-navy" onClick={() => setLines((current) => [...current, emptyLine(kinds[0])])}>Add a line</button>
-              {!institute ? <button type="button" className="min-h-11 text-sm font-medium text-navy" onClick={() => setLines((current) => [...current, emptyLine("Product")])}>Add a product</button> : null}
-            </div>
             <div className="grid gap-2 sm:grid-cols-3">
               <label className="text-sm">Discount<input inputMode="decimal" value={discount} onChange={(event) => setDiscount(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
               <label className="text-sm">Received now<input inputMode="decimal" value={paid} onChange={(event) => setPaid(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>
@@ -499,8 +530,47 @@ function Summary({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function BillReceipt({ bill }: { bill: { number: string; issuedOn: string; status: string; discount: number; total: number; paid: number; balance: number; items: Array<{ description: string; quantity: number; amount: number }> } }) {
+type ReceiptBill = {
+  id?: string;
+  number: string;
+  issuedOn: string;
+  status: string;
+  discount: number;
+  total: number;
+  paid: number;
+  balance: number;
+  items: Array<{ id?: string; description: string; quantity: number; unitPrice?: number; amount: number }>;
+};
+
+export function BillReceipt({
+  bill,
+  editable = false,
+  busy = false,
+  onChanged,
+  onError,
+}: {
+  bill: ReceiptBill;
+  editable?: boolean;
+  busy?: boolean;
+  onChanged?: () => void;
+  onError?: (message: string) => void;
+}) {
+  const [editId, setEditId] = useState("");
+  const [draft, setDraft] = useState({ description: "", quantity: "1", price: "" });
+  const [saving, setSaving] = useState(false);
   const groups = ["Treatment", "Booking", "Product", "Course fee", "Registration", "Material", "Exam", "Certificate", "Charge"];
+  const locked = bill.status === "cancelled" || bill.status === "refunded" || !editable;
+
+  const startEdit = (item: ReceiptBill["items"][number]) => {
+    if (!item.id) return;
+    setEditId(item.id);
+    setDraft({
+      description: item.description,
+      quantity: String(item.quantity || 1),
+      price: String(item.unitPrice ?? ((item.quantity ? item.amount / item.quantity : item.amount) || 0)),
+    });
+  };
+
   return (
     <div>
       <div className="flex items-start justify-between gap-3">
@@ -515,11 +585,58 @@ export function BillReceipt({ bill }: { bill: { number: string; issuedOn: string
         if (!rows.length) return null;
         const sum = rows.reduce((total, item) => total + item.amount, 0);
         return (
-          <div key={kind} className="mt-3">
+          <div key={kind} className="mt-3 space-y-2">
             <p className="text-xs font-semibold tracking-wide text-[#8a6a2f] uppercase">{kind} · {inr(sum)}</p>
-            {rows.map((item, index) => (
-              <p key={`${kind}-${index}`} className="mt-1 text-sm">{billParts(item.description).name} × {item.quantity} · {inr(item.amount)}</p>
-            ))}
+            {rows.map((item, index) => {
+              const editing = Boolean(item.id && editId === item.id);
+              if (editing) {
+                return (
+                  <div key={item.id || `${kind}-${index}`} className="grid gap-2 rounded-xl border border-line bg-white p-3 sm:grid-cols-3">
+                    <label className="text-sm sm:col-span-3">Charge
+                      <input value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line px-3" />
+                    </label>
+                    <label className="text-sm">Quantity
+                      <input inputMode="decimal" value={draft.quantity} onChange={(event) => setDraft({ ...draft, quantity: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line px-3" />
+                    </label>
+                    <label className="text-sm">Price
+                      <input inputMode="decimal" value={draft.price} onChange={(event) => setDraft({ ...draft, price: event.target.value })} className="mt-1 h-11 w-full rounded-md border border-line px-3" />
+                    </label>
+                    <p className="self-end text-sm">Line {inr((Number(draft.quantity) || 0) * (Number(draft.price) || 0))}</p>
+                    <div className="flex flex-wrap gap-2 sm:col-span-3">
+                      <button type="button" disabled={busy || saving} className="min-h-11 rounded-md bg-navy px-3 text-sm text-white" onClick={() => {
+                        if (!item.id) return;
+                        setSaving(true);
+                        void updateInvoiceItem({
+                          itemId: item.id,
+                          description: draft.description,
+                          quantity: Number(draft.quantity) || 0,
+                          unitPrice: Number(draft.price) || 0,
+                        }).then(() => {
+                          setEditId("");
+                          onChanged?.();
+                        }).catch((reason: unknown) => onError?.(reason instanceof Error ? reason.message : "Could not update this charge")).finally(() => setSaving(false));
+                      }}>{saving ? "Saving" : "Save charge"}</button>
+                      <button type="button" className="min-h-11 text-sm font-medium text-navy" onClick={() => setEditId("")}>Cancel</button>
+                    </div>
+                  </div>
+                );
+              }
+              return (
+                <div key={item.id || `${kind}-${index}`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-transparent px-1 py-1 text-sm hover:border-[#eadfca] hover:bg-white/70">
+                  <p>{billParts(item.description).name} × {item.quantity} · {inr(item.amount)}</p>
+                  {locked || !item.id ? null : (
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" className="min-h-11 text-sm font-medium text-navy" onClick={() => startEdit(item)}>Edit</button>
+                      <button type="button" disabled={busy || saving} className="min-h-11 text-sm font-medium text-danger" onClick={() => {
+                        if (!item.id || !window.confirm(`Delete ${billParts(item.description).name} from this bill?`)) return;
+                        setSaving(true);
+                        void removeInvoiceItem(item.id).then(() => onChanged?.()).catch((reason: unknown) => onError?.(reason instanceof Error ? reason.message : "Could not delete this charge")).finally(() => setSaving(false));
+                      }}>Delete</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         );
       })}

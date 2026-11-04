@@ -417,7 +417,18 @@ export function PatientHistory({
         <h3 className="text-sm font-semibold">Bill</h3>
         {!record ? <p className="text-sm text-muted">Loading the bill…</p> : record.bills.length === 0 ? <p className="text-sm text-muted">No bill saved yet.</p> : record.bills.map((bill) => (
           <article key={bill.id} className="rounded-2xl border border-[#eadfca] bg-[#faf6ee] px-3 py-3 text-sm">
-            <BillReceipt bill={bill} />
+            <BillReceipt
+              bill={bill}
+              editable={bill.status !== "cancelled" && bill.status !== "refunded"}
+              busy={busy}
+              onChanged={() => {
+                void reload().then(() => {
+                  onNotice("Bill updated.");
+                  onChanged(patient);
+                }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not refresh the bill"));
+              }}
+              onError={onError}
+            />
           </article>
         ))}
       </section>

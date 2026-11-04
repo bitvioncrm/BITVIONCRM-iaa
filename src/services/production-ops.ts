@@ -444,7 +444,7 @@ export interface PatientBill {
   total: number;
   paid: number;
   balance: number;
-  items: Array<{ description: string; quantity: number; amount: number }>;
+  items: Array<{ id: string; description: string; quantity: number; unitPrice: number; amount: number }>;
 }
 
 export interface PatientRecord {
@@ -461,7 +461,7 @@ export async function loadPatientRecord(patientId: string): Promise<PatientRecor
   const [procedures, consultations, invoices] = await Promise.all([
     client().from("patient_procedures").select("id, doctor_id, procedure_1, procedure_2, performed_on, notes, patient_procedure_items(id, product_id, quantity, line_total, inventory_products(name))").eq("patient_id", patientId).order("performed_on", { ascending: false }).limit(80),
     client().from("consultations").select("id, doctor_id, diagnosis, treatment_plan, follow_up_on, created_at, prescriptions(id, medicine, dosage, frequency, duration, instructions)").eq("patient_id", patientId).order("created_at", { ascending: false }).limit(80),
-    client().from("invoices").select("id, invoice_number, status, discount, total, issued_on, invoice_items(description, quantity, unit_price), payments(amount)").eq("patient_id", patientId).order("issued_on", { ascending: false }).limit(40),
+    client().from("invoices").select("id, invoice_number, status, discount, total, issued_on, invoice_items(id, description, quantity, unit_price), payments(amount)").eq("patient_id", patientId).order("issued_on", { ascending: false }).limit(40),
   ]);
   if (procedures.error) throw new Error(procedures.error.message);
   if (consultations.error) throw new Error(consultations.error.message);
@@ -524,11 +524,17 @@ export async function loadPatientRecord(patientId: string): Promise<PatientRecor
     };
   });
   const bills: PatientBill[] = (invoices.data ?? []).map((row) => {
-    const items = ((row.invoice_items as Array<Record<string, unknown>> | null) ?? []).map((item) => ({
-      description: String(item.description || "Item"),
-      quantity: Number(item.quantity ?? 1),
-      amount: Number(item.quantity ?? 1) * Number(item.unit_price ?? 0),
-    }));
+    const items = ((row.invoice_items as Array<Record<string, unknown>> | null) ?? []).map((item) => {
+      const quantity = Number(item.quantity ?? 1);
+      const unitPrice = Number(item.unit_price ?? 0);
+      return {
+        id: String(item.id || ""),
+        description: String(item.description || "Item"),
+        quantity,
+        unitPrice,
+        amount: quantity * unitPrice,
+      };
+    });
     const paid = ((row.payments as Array<{ amount?: number }> | null) ?? []).reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
     const total = Number(row.total ?? 0);
     return {
@@ -1051,6 +1057,7 @@ export async function seedClinicSkincareStock() {
 }
 
 export interface ClinicBillLine {
+  id: string;
   description: string;
   quantity: number;
   unitPrice: number;
@@ -1075,7 +1082,7 @@ export interface ClinicBill {
 export async function listClinicBills(workspaceId: string) {
   const { data, error } = await client()
     .from("invoices")
-    .select("id, invoice_number, patient_id, student_id, status, discount, total, issued_on, invoice_items(description, quantity, unit_price), payments(amount), patients(full_name), students(full_name)")
+    .select("id, invoice_number, patient_id, student_id, status, discount, total, issued_on, invoice_items(id, description, quantity, unit_price), payments(amount), patients(full_name), students(full_name)")
     .eq("workspace_id", workspaceId)
     .order("issued_on", { ascending: false })
     .limit(200);
@@ -1084,7 +1091,7 @@ export async function listClinicBills(workspaceId: string) {
     const items = ((row.invoice_items as Array<Record<string, unknown>> | null) ?? []).map((item) => {
       const quantity = Number(item.quantity ?? 1);
       const unitPrice = Number(item.unit_price ?? 0);
-      return { description: String(item.description || "Item"), quantity, unitPrice, amount: quantity * unitPrice };
+      return { id: String(item.id || ""), description: String(item.description || "Item"), quantity, unitPrice, amount: quantity * unitPrice };
     });
     const paid = ((row.payments as Array<{ amount?: number }> | null) ?? []).reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
     const total = Number(row.total ?? 0);
@@ -1331,6 +1338,59 @@ export async function recordRefund(input: { organizationId: string; workspaceId:
   if (error) throw new Error(error.message);
   const { error: statusError } = await client().from("invoices").update({ status: "refunded" }).eq("id", input.invoiceId);
   if (statusError) throw new Error(statusError.message);
+}
+
+async function syncInvoiceTotals(invoiceId: string) {
+  const { data: invoice, error: invoiceError } = await client()
+    .from("invoices")
+    .select("id, discount, status, invoice_items(quantity, unit_price), payments(amount)")
+    .eq("id", invoiceId)
+    .single();
+  if (invoiceError) throw new Error(invoiceError.message);
+  if (invoice.status === "cancelled" || invoice.status === "refunded") return;
+  const items = ((invoice.invoice_items as Array<{ quantity?: number; unit_price?: number }> | null) ?? []).map((item) => ({
+    quantity: Number(item.quantity ?? 1),
+    unitPrice: Number(item.unit_price ?? 0),
+  }));
+  const paid = ((invoice.payments as Array<{ amount?: number }> | null) ?? []).reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
+  const discount = Number(invoice.discount ?? 0);
+  const total = items.length ? invoiceTotal(items, discount) : 0;
+  const due = balance(total, paid, 0);
+  const status = items.length === 0 ? "cancelled" : due === 0 ? "paid" : paid > 0 ? "partial" : "pending";
+  const { error } = await client().from("invoices").update({ total, status }).eq("id", invoiceId);
+  if (error) throw new Error(error.message);
+}
+
+export async function updateInvoiceItem(input: { itemId: string; description: string; quantity: number; unitPrice: number }) {
+  const description = input.description.trim();
+  const quantity = Number(input.quantity);
+  const unitPrice = Number(input.unitPrice);
+  if (!description) throw new Error("Enter a charge name.");
+  if (!(quantity > 0) || unitPrice < 0) throw new Error("Quantity and price must be valid.");
+  forgetDeskLists();
+  const { data, error } = await client()
+    .from("invoice_items")
+    .update({ description, quantity, unit_price: unitPrice })
+    .eq("id", input.itemId)
+    .select("invoice_id")
+    .single();
+  if (error) throw new Error(error.message);
+  await syncInvoiceTotals(String(data.invoice_id));
+}
+
+export async function removeInvoiceItem(itemId: string) {
+  forgetDeskLists();
+  const { data, error } = await client().from("invoice_items").delete().eq("id", itemId).select("invoice_id").single();
+  if (error) throw new Error(error.message);
+  await syncInvoiceTotals(String(data.invoice_id));
+}
+
+export async function cancelClinicBill(invoiceId: string) {
+  forgetDeskLists();
+  const { error: itemsError } = await client().from("invoice_items").delete().eq("invoice_id", invoiceId);
+  if (itemsError) throw new Error(itemsError.message);
+  const { error } = await client().from("invoices").update({ total: 0, status: "cancelled" }).eq("id", invoiceId);
+  if (error) throw new Error(error.message);
 }
 
 export async function revenueSummary(workspaceId: string, from = "1970-01-01", to = "2999-12-31") {
