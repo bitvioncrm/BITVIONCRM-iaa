@@ -62,7 +62,6 @@ export function ProductionWhatsApp() {
   const [campaignName, setCampaignName] = useState("Clinic offer");
   const [campaigns, setCampaigns] = useState<WhatsAppCampaign[]>([]);
   const [sentToday, setSentToday] = useState(0);
-  const [balance, setBalance] = useState(250);
   const [pictureUrl, setPictureUrl] = useState("");
   const [phoneDraft, setPhoneDraft] = useState("");
   const [phoneReady, setPhoneReady] = useState("");
@@ -173,10 +172,7 @@ export function ProductionWhatsApp() {
       .catch(() => setLine(null));
     void listWhatsAppCampaigns(desk.id).then(setCampaigns).catch(() => setCampaigns([]));
     void countWhatsAppSentToday(desk.id)
-      .then((result) => {
-        setSentToday(result.sent);
-        setBalance(result.balance);
-      })
+      .then((result) => setSentToday(result.sent))
       .catch(() => undefined);
     void loadWhatsAppProfile(desk.id)
       .then((profile) => setPictureUrl(profile.pictureUrl))
@@ -296,10 +292,7 @@ export function ProductionWhatsApp() {
     if (!desk) return Promise.resolve();
     return Promise.all([
       listWhatsAppCampaigns(desk.id).then(setCampaigns),
-      countWhatsAppSentToday(desk.id).then((result) => {
-        setSentToday(result.sent);
-        setBalance(result.balance);
-      }),
+      countWhatsAppSentToday(desk.id).then((result) => setSentToday(result.sent)),
     ]).then(() => undefined);
   };
 
@@ -376,42 +369,47 @@ export function ProductionWhatsApp() {
       return;
     }
     const waiting = Math.max(0, recipientTotal - campaignCursor);
-    const nextGroup = Math.min(20, balance, waiting);
-    if (nextGroup < 1) {
-      setNotice(balance < 1 ? "Today's 250-message balance is used. Press Send again tomorrow for the next group." : "This campaign has already reached every lead.");
+    if (waiting < 1) {
+      setNotice("This campaign has already reached every lead.");
       return;
     }
     const together = poster?.url ? "this message and poster" : "this message";
-    const approved = window.confirm(`Send ${together} to the next ${nextGroup.toLocaleString("en-IN")} leads from ${fromLine}? Only this group goes out. Press Send again for the next group.`);
+    const approved = window.confirm(`Send ${together} to all ${waiting.toLocaleString("en-IN")} waiting leads from ${fromLine}?`);
     if (!approved) return;
     setBusy("bulk");
     setBulkSent(0);
     setBulkFailed(0);
     void (async () => {
-      const offset = campaignCursor;
+      let offset = campaignCursor;
+      let sent = 0;
+      let failed = 0;
+      let total = recipientTotal;
       const current = campaigns.find((item) => item.id === campaignId);
       try {
-        const savedId = await writeCampaign("draft", current?.sent ?? 0, current?.failed ?? 0, recipientTotal, offset);
-        const batch = await sendWhatsAppBulk({
-          text,
-          imageUrl: poster?.url || undefined,
-          workspaceId: desk.id,
-          offset,
-        });
-        setBulkSent(batch.sent);
-        setBulkFailed(batch.failed);
-        if (batch.total) setRecipientTotal(batch.total);
-        const next = batch.next;
-        setCampaignCursor(next);
-        const total = batch.total || recipientTotal;
-        const finished = next >= total;
-        await writeCampaign(finished ? "completed" : "draft", (current?.sent ?? 0) + batch.sent, (current?.failed ?? 0) + batch.failed, total, next, savedId);
-        const left = Math.max(total - next, 0);
-        setNotice(
-          batch.capped
-            ? `Sent ${batch.sent.toLocaleString("en-IN")} from ${fromLine}. Today's balance is used. The other ${left.toLocaleString("en-IN")} stay unsent until you press Send again.`
-            : `Sent ${batch.sent.toLocaleString("en-IN")} from ${fromLine}. ${left.toLocaleString("en-IN")} stay unsent until you press Send again.`,
-        );
+        const savedId = await writeCampaign("running", current?.sent ?? 0, current?.failed ?? 0, total, offset);
+        for (let guard = 0; guard < 5000; guard += 1) {
+          const batch = await sendWhatsAppBulk({
+            text,
+            imageUrl: poster?.url || undefined,
+            workspaceId: desk.id,
+            offset,
+          });
+          sent += batch.sent;
+          failed += batch.failed;
+          setBulkSent(sent);
+          setBulkFailed(failed);
+          if (batch.total) {
+            total = batch.total;
+            setRecipientTotal(batch.total);
+          }
+          const previous = offset;
+          offset = batch.next;
+          setCampaignCursor(offset);
+          if (batch.done || offset <= previous) break;
+        }
+        const finished = offset >= total;
+        await writeCampaign(finished ? "completed" : "running", (current?.sent ?? 0) + sent, (current?.failed ?? 0) + failed, total, offset, savedId);
+        setNotice(`Sent ${sent.toLocaleString("en-IN")} from ${fromLine}. Failed ${failed.toLocaleString("en-IN")}.`);
       } catch (reason: unknown) {
         setNotice(reason instanceof Error ? reason.message : "Could not send");
       } finally {
@@ -538,7 +536,7 @@ export function ProductionWhatsApp() {
                     <span className="absolute -right-6 -top-8 size-28 rounded-full bg-white/10" />
                     <p className="text-[11px] font-semibold tracking-[0.18em] text-white/70 uppercase">Campaigns running</p>
                     <p className="mt-3 text-4xl font-semibold tabular-nums">{campaigns.filter((item) => item.status === "running").length}</p>
-                    <p className="mt-2 text-xs text-white/80">{campaigns.length} saved · each group needs its own Send press</p>
+                    <p className="mt-2 text-xs text-white/80">{campaigns.length} saved · one press sends every waiting lead</p>
                   </article>
                   <article className="relative overflow-hidden rounded-3xl bg-[#111b21] p-5 text-white shadow-[0_18px_40px_rgba(17,27,33,0.22)]">
                     <span className="absolute -right-8 bottom-0 size-24 rounded-full bg-[#25D366]/20" />
@@ -547,11 +545,11 @@ export function ProductionWhatsApp() {
                     <p className="mt-2 text-xs text-[#8696a0]">{busy === "bulk" ? `${bulkSent.toLocaleString("en-IN")} in this send` : "Messages delivered today"}</p>
                   </article>
                   <article className="relative overflow-hidden rounded-3xl border border-[#e7d7b1] bg-gradient-to-br from-[#fffaf0] to-[#f3e6c8] p-5 text-[#3d2e12] shadow-[0_18px_40px_rgba(184,146,62,0.16)]">
-                    <p className="text-[11px] font-semibold tracking-[0.18em] text-[#8a6a32] uppercase">Balance today</p>
-                    <p className="mt-3 text-4xl font-semibold tabular-nums">{balance.toLocaleString("en-IN")}</p>
-                    <p className="mt-2 text-xs text-[#8a6a32]">of 250 · one press sends the next 20 only</p>
+                    <p className="text-[11px] font-semibold tracking-[0.18em] text-[#8a6a32] uppercase">Still waiting</p>
+                    <p className="mt-3 text-4xl font-semibold tabular-nums">{Math.max(recipientTotal - campaignCursor, 0).toLocaleString("en-IN")}</p>
+                    <p className="mt-2 text-xs text-[#8a6a32]">one press sends all of them</p>
                     <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#ead9b0]">
-                      <div className="h-full rounded-full bg-[#b8923e]" style={{ width: `${Math.min(100, (balance / 250) * 100)}%` }} />
+                      <div className="h-full rounded-full bg-[#b8923e]" style={{ width: `${recipientTotal > 0 ? Math.min(100, (Math.max(recipientTotal - campaignCursor, 0) / recipientTotal) * 100) : 0}%` }} />
                     </div>
                   </article>
                 </div>
@@ -602,7 +600,7 @@ export function ProductionWhatsApp() {
                       Name
                       <input value={campaignName} onChange={(event) => setCampaignName(event.target.value)} className="mt-1 h-10 w-full rounded-xl border border-[#e9edef] px-3 text-sm text-[#111b21] outline-none" />
                     </label>
-                    <p className="mt-2 text-sm text-[#667781]">{fromLine} · next group {Math.min(20, balance, Math.max(recipientTotal - campaignCursor, 0)).toLocaleString("en-IN")} of {Math.max(recipientTotal - campaignCursor, 0).toLocaleString("en-IN")} waiting</p>
+                    <p className="mt-2 text-sm text-[#667781]">{fromLine} · {Math.max(recipientTotal - campaignCursor, 0).toLocaleString("en-IN")} waiting</p>
                     {lineBlocked ? (
                       <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
                         {lineMessage}{" "}
@@ -658,12 +656,12 @@ export function ProductionWhatsApp() {
                       </button>
                       <button
                         type="submit"
-                        disabled={busy === "bulk" || busy === "poster" || lineBlocked || Math.min(balance, Math.max(recipientTotal - campaignCursor, 0)) < 1}
+                        disabled={busy === "bulk" || busy === "poster" || lineBlocked || Math.max(recipientTotal - campaignCursor, 0) < 1}
                         className="h-11 flex-1 rounded-full bg-[#00a884] text-sm font-semibold text-white disabled:opacity-60"
                       >
                         {busy === "bulk"
                           ? `Sending ${bulkSent.toLocaleString("en-IN")} · failed ${bulkFailed.toLocaleString("en-IN")}`
-                          : `Send next ${Math.min(20, balance, Math.max(recipientTotal - campaignCursor, 0)).toLocaleString("en-IN")}${poster?.url ? " + poster" : ""}`}
+                          : `Send to ${Math.max(recipientTotal - campaignCursor, 0).toLocaleString("en-IN")}${poster?.url ? " + poster" : ""}`}
                       </button>
                     </div>
                   </section>
@@ -693,7 +691,7 @@ export function ProductionWhatsApp() {
                         <button type="button" className="rounded-full bg-[#fff1f0] px-3 py-1 text-xs font-medium text-[#9b2c2c]" onClick={() => deleteCampaign(item.id)}>Delete</button>
                       </div>
                     ))}
-                    {campaigns.length === 0 ? <p className="text-sm text-[#667781]">No campaigns yet. Name one, write the message, add a poster, then save or send today’s balance.</p> : null}
+                    {campaigns.length === 0 ? <p className="text-sm text-[#667781]">No campaigns yet. Name one, write the message, add a poster, then save or send it to every waiting lead.</p> : null}
                   </div>
                 </section>
               </div>
@@ -893,7 +891,7 @@ export function ProductionWhatsApp() {
             <div className="m-auto max-w-md px-8 text-center">
               <p className="text-[32px] font-light text-[#41525d]">Inbox</p>
               <p className="mt-3 text-sm text-[#667781]">
-                {admin ? "Select a chat, or open Bulk messaging to send the next group yourself." : "Bulk messaging is limited to Admin. Select a chat to reply."}
+                {admin ? "Select a chat, or open Bulk messaging and press Send for every waiting lead." : "Bulk messaging is limited to Admin. Select a chat to reply."}
               </p>
               {admin ? (
                 <button type="button" className="mt-4 rounded-full bg-[#00a884] px-4 py-2 text-sm font-medium text-white" onClick={() => setMode("automation")}>
