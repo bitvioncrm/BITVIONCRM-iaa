@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Fix WAHA Dashboard Connection</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background:#0b1220; color:#e8eefc; max-width:720px; margin:40px auto; padding:0 16px; line-height:1.5; }
+    code, pre { background:#111827; padding:2px 6px; border-radius:6px; }
+    pre { padding:12px; overflow:auto; }
+    .ok { color:#22c55e; }
+    a { color:#4ade80; }
+  </style>
+</head>
+<body>
+  <h1>Fix dashboard red ❌</h1>
+  <p>Your WhatsApp is already linked (<span class="ok">WORKING</span>). The red X only means this browser is missing the API key.</p>
+  <h2>Option A — Click in dashboard (easiest)</h2>
+  <ol>
+    <li>Open <a href="http://localhost:3000/dashboard/" target="_blank">http://localhost:3000/dashboard/</a></li>
+    <li>Login: <code>admin</code> / <code>fa4b8941c00be2f26ab55fda</code></li>
+    <li>On the worker row, click the <b>green pencil</b> (edit)</li>
+    <li>Paste API Key: <code>94cf8477d79d2217d482ccf885ec5403</code></li>
+    <li>Click <b>Save</b> — should turn green ✔ and show session WORKING</li>
+  </ol>
+  <h2>Option B — Paste in browser console</h2>
+  <ol>
+    <li>Open the dashboard tab</li>
+    <li>Press <b>F12</b> → <b>Console</b></li>
+    <li>Paste this and press Enter:</li>
+  </ol>
+  <pre>localStorage.setItem('servers', JSON.stringify([{
+  id: 'waha_000000000000000001',
+  name: 'WAHA',
+  connection: { url: 'http://localhost:3000', key: '94cf8477d79d2217d482ccf885ec5403' },
+  connected: false
+}]));
+location.reload();</pre>
+</body>
+</html>

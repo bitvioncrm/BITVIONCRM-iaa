@@ -1,0 +1,29 @@
+{
+  "active_id": "2d095b8e-b",
+  "projects": [
+    {
+      "id": "2d095b8e-b",
+      "name": "Dr. K's Aesthetic Clinic",
+      "workspace_id": "8d5ecf49-2ebc-4500-8b9e-65ae411bcf7b",
+      "auto_sync_crm": true,
+      "auto_sync_wa": true,
+      "created_at": "2026-11-03T23:38:16.929048+00:00",
+      "last_crm_sync_at": "2026-11-06T06:58:10.470630+00:00",
+      "last_wa_sync_at": null,
+      "crm_count": 12366,
+      "wa_count": 0
+    },
+    {
+      "id": "f2dc3141-0",
+      "name": "IAA Kochi",
+      "workspace_id": "a69d457a-3edc-4834-82ec-1ddccf8783fe",
+      "auto_sync_crm": true,
+      "auto_sync_wa": true,
+      "created_at": "2026-11-03T23:38:07.619375+00:00",
+      "last_crm_sync_at": null,
+      "last_wa_sync_at": null,
+      "crm_count": 0,
+      "wa_count": 0
+    }
+  ]
+}

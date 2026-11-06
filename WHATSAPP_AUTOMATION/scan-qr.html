@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Scan WhatsApp QR — WAHA</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0b1220; color: #e8eefc; margin: 0; min-height: 100vh; display: grid; place-items: center; }
+    .card { text-align: center; max-width: 460px; padding: 24px; }
+    h1 { font-size: 1.25rem; margin: 0 0 8px; }
+    p { opacity: 0.85; margin: 0 0 16px; line-height: 1.4; }
+    img { width: 320px; height: 320px; background: #fff; border-radius: 12px; }
+    .status { margin-top: 16px; font-weight: 600; }
+    .ok { color: #22c55e; }
+    .wait { color: #f59e0b; }
+    .err { color: #ef4444; }
+    button { margin-top: 12px; background: #22c55e; color: #04110a; border: 0; border-radius: 8px; padding: 10px 16px; font-weight: 700; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Link your WhatsApp</h1>
+    <p>On phone: WhatsApp → Linked devices → Link a device → scan <b>immediately</b> (QR expires in ~1 min).</p>
+    <img id="qr" alt="QR loading..." />
+    <div id="status" class="status wait">Preparing session…</div>
+    <button id="restart" type="button">Get new QR</button>
+  </div>
+  <script>
+    const API = "http://127.0.0.1:3000";
+    const KEY = "94cf8477d79d2217d482ccf885ec5403";
+    const headers = { "X-Api-Key": KEY, "Content-Type": "application/json" };
+    const statusEl = document.getElementById("status");
+    let busy = false;
+
+    function setStatus(text, cls) {
+      statusEl.className = "status " + cls;
+      statusEl.textContent = text;
+    }
+
+    async function api(path, opts = {}) {
+      const res = await fetch(API + path, { ...opts, headers: { ...headers, ...(opts.headers || {}) } });
+      const text = await res.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+      if (!res.ok) throw new Error((data && data.message) || text || ("HTTP " + res.status));
+      return data;
+    }
+
+    async function ensureSession() {
+      let s;
+      try {
+        s = await api("/api/sessions/default");
+      } catch {
+        await api("/api/sessions", { method: "POST", body: JSON.stringify({ name: "default", start: true }) });
+        return;
+      }
+      if (s.status === "FAILED" || s.status === "STOPPED") {
+        try { await api("/api/sessions/default/stop", { method: "POST", body: "{}" }); } catch (_) {}
+        await api("/api/sessions/default/start", { method: "POST", body: "{}" });
+      } else if (s.status === "SCAN_QR_CODE" || s.status === "WORKING" || s.status === "STARTING") {
+        return;
+      } else {
+        await api("/api/sessions/default/start", { method: "POST", body: "{}" });
+      }
+    }
+
+    async function refreshQr() {
+      const res = await fetch(API + "/api/default/auth/qr?format=image", { headers: { "X-Api-Key": KEY } });
+      if (!res.ok) throw new Error("QR not ready (HTTP " + res.status + ")");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const img = document.getElementById("qr");
+      if (img.dataset.url) URL.revokeObjectURL(img.dataset.url);
+      img.dataset.url = url;
+      img.src = url;
+    }
+
+    async function tick() {
+      if (busy) return;
+      busy = true;
+      try {
+        await ensureSession();
+        const s = await api("/api/sessions/default");
+        if (s.status === "WORKING") {
+          setStatus("Connected! Status: WORKING", "ok");
+          busy = false;
+          return true;
+        }
+        if (s.status === "SCAN_QR_CODE") {
+          await refreshQr();
+          setStatus("SCAN_QR_CODE — scan now on your phone", "wait");
+        } else if (s.status === "STARTING") {
+          setStatus("Starting… wait a few seconds", "wait");
+        } else {
+          setStatus("Status: " + s.status + " — click Get new QR", "err");
+        }
+      } catch (e) {
+        setStatus(String(e.message || e), "err");
+      }
+      busy = false;
+      return false;
+    }
+
+    document.getElementById("restart").onclick = async () => {
+      setStatus("Restarting session…", "wait");
+      try {
+        try { await api("/api/sessions/default/stop", { method: "POST", body: "{}" }); } catch (_) {}
+        await new Promise((r) => setTimeout(r, 1500));
+        try {
+          await api("/api/sessions/default/start", { method: "POST", body: "{}" });
+        } catch {
+          await api("/api/sessions", { method: "POST", body: JSON.stringify({ name: "default", start: true }) });
+        }
+        await tick();
+      } catch (e) {
+        setStatus(String(e.message || e), "err");
+      }
+    };
+
+    (async () => {
+      await tick();
+      setInterval(async () => { await tick(); }, 3000);
+    })();
+  </script>
+</body>
+</html>

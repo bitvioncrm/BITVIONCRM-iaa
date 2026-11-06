@@ -1,0 +1,20 @@
+[
+  {
+    "id": "welcome",
+    "name": "Welcome",
+    "body": "Hi {name}, thank you for contacting Dr. K's Aesthetic Clinic. How can we help you today?",
+    "kind": "bulk"
+  },
+  {
+    "id": "followup",
+    "name": "Follow-up Reminder",
+    "body": "Hi {name}, this is a reminder from Dr. K's Aesthetic Clinic about your follow-up. Reply YES to continue.",
+    "kind": "reminder"
+  },
+  {
+    "id": "offer",
+    "name": "Offer Poster Caption",
+    "body": "Hi {name}, here is an update from Dr. K's Aesthetic Clinic.",
+    "kind": "poster"
+  }
+]

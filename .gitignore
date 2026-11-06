@@ -15,6 +15,13 @@ dist-ssr
 .env.*
 !.env.example
 
+WHATSAPP_AUTOMATION/waha/
+WHATSAPP_AUTOMATION/data/leads.json
+WHATSAPP_AUTOMATION/qr.png
+WHATSAPP_AUTOMATION/qr-fresh.png
+WHATSAPP_AUTOMATION/**/__pycache__/
+WHATSAPP_AUTOMATION/**/*.pyc
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>WhatsApp Automation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css?v=18" />
+</head>
+<body>
+  <div class="app" id="appRoot">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-mark">WA</div>
+        <div>
+          <strong>WhatsApp</strong>
+          <span>Automation</span>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button type="button" class="nav-item active" data-view="bulk"><span class="ico">✦</span> Bulk Messaging</button>
+        <button type="button" class="nav-item" data-view="projects"><span class="ico">◫</span> Projects</button>
+        <button type="button" class="nav-item" data-view="connect"><span class="ico">▣</span> Scan &amp; Connect</button>
+        <button type="button" class="nav-item" data-view="posters"><span class="ico">🖼</span> Bulk Posters</button>
+        <button type="button" class="nav-item" data-view="campaigns"><span class="ico">◎</span> Campaigns</button>
+        <button type="button" class="nav-item" data-view="templates"><span class="ico">▤</span> Templates</button>
+        <button type="button" class="nav-item" data-view="settings"><span class="ico">⚙</span> Settings</button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="wa-card" id="openConnect">
+          <div class="wa-row">
+            <span class="dot" id="waDot"></span>
+            <div>
+              <strong>WhatsApp</strong>
+              <small id="waStatus">Checking…</small>
+            </div>
+          </div>
+          <div class="wa-meta" id="waMeta">Scan to connect your number</div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="shell">
+      <header class="topbar">
+        <button type="button" class="menu-btn" id="btnSidebar" aria-label="Menu">☰</button>
+        <div class="logo-inline">
+          <span class="logo-dot"></span>
+          <span id="topTitle">Bulk Messaging</span>
+        </div>
+
+        <label class="project-select-wrap" title="Active project">
+          <select id="projectSelect" aria-label="Active project"></select>
+        </label>
+
+        <div class="biz-toggle" id="bizToggle" role="tablist">
+          <button type="button" class="biz active" data-biz="">All</button>
+          <button type="button" class="biz" data-biz="clinic">Clinic</button>
+          <button type="button" class="biz" data-biz="institute">Institute</button>
+        </div>
+
+        <div class="top-actions">
+          <button type="button" class="icon-btn" id="btnTheme" title="Toggle dark mode" aria-label="Dark mode">☾</button>
+          <button type="button" class="icon-btn" id="btnSync" title="Sync CRM">⟳</button>
+          <button type="button" class="icon-btn" id="btnConnectTop" title="Scan & Connect">⌁</button>
+        </div>
+      </header>
+
+      <main class="main" id="main">
+        <!-- ========== PROJECTS ========== -->
+        <section class="view" id="view-projects" data-title="Projects">
+          <div class="page-head">
+            <div>
+              <p class="eyebrow">Workspace</p>
+              <h1>Projects</h1>
+              <p class="sub">Add a project, connect CRM workspace + WhatsApp — leads and contacts fetch automatically.</p>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <section class="card">
+              <header class="card-head"><h2>Add project</h2></header>
+              <div class="form-grid">
+                <label>Project name
+                  <input id="projectName" placeholder="e.g. Clinic WhatsApp" />
+                </label>
+                <label>CRM workspace
+                  <select id="projectWorkspace">
+                    <option value="">All workspaces</option>
+                  </select>
+                </label>
+                <label class="check-row"><input type="checkbox" id="projectAutoCrm" checked /> Auto-fetch CRM leads on connect</label>
+                <label class="check-row"><input type="checkbox" id="projectAutoWa" checked /> Auto-fetch WhatsApp contacts on connect</label>
+              </div>
+              <div class="actions" style="margin-top:14px">
+                <button type="button" class="btn primary" id="btnCreateProject">Create &amp; Sync</button>
+              </div>
+              <p class="hint">Creating activates the project and immediately syncs CRM + WhatsApp (if connected).</p>
+            </section>
+
+            <section class="card">
+              <header class="card-head">
+                <h2>Your projects</h2>
+                <button type="button" class="btn ghost" id="btnReloadProjects">Refresh</button>
+              </header>
+              <div class="project-list" id="projectList"></div>
+            </section>
+          </div>
+        </section>
+
+        <!-- ========== BULK MESSAGING ========== -->
+        <section class="view active" id="view-bulk" data-title="Bulk Messaging">
+          <div class="page-head">
+            <div>
+              <p class="eyebrow">CRM · WhatsApp Automation</p>
+              <h1>Bulk Messaging</h1>
+              <p class="sub">Filter CRM leads &amp; WhatsApp contacts, compose once, send with anti-block pacing.</p>
+            </div>
+            <button type="button" class="btn primary" data-goto="connect">Scan &amp; Connect</button>
+          </div>
+
+          <section class="kpis" id="kpis">
+            <article class="kpi"><span>Total Leads</span><strong id="kpiLeads">0</strong></article>
+            <article class="kpi"><span>CRM Leads</span><strong id="kpiCrm">0</strong></article>
+            <article class="kpi"><span>Excel Stage</span><strong id="kpiExcel">0</strong></article>
+            <article class="kpi"><span>WA Contacts</span><strong id="kpiWa">0</strong></article>
+            <article class="kpi"><span>Messages Sent</span><strong id="kpiSent">0</strong></article>
+            <article class="kpi"><span>Active / Scheduled</span><strong id="kpiActive">0</strong><em id="kpiScheduled">0 scheduled</em></article>
+          </section>
+
+          <div class="grid-2">
+            <section class="card">
+              <header class="card-head">
+                <h2>Select Recipients</h2>
+                <div class="tabs" id="recipientTabs">
+                  <button type="button" class="tab active" data-source="all">All</button>
+                  <button type="button" class="tab" data-source="crm">CRM Leads</button>
+                  <button type="button" class="tab" data-source="whatsapp">WA Contacts</button>
+                  <button type="button" class="tab" data-source="excel">Excel</button>
+                </div>
+              </header>
+
+              <div class="form-grid">
+                <label class="field">
+                  <span>Workspace</span>
+                  <select id="workspaceSelect"><option value="">All workspaces</option></select>
+                </label>
+                <label class="field">
+                  <span>Search</span>
+                  <input id="search" type="search" placeholder="Name or phone" />
+                </label>
+              </div>
+
+              <div class="field">
+                <span>Lead Stage</span>
+                <div class="chips" id="stageChips"></div>
+              </div>
+
+              <div class="form-grid three">
+                <label class="field">
+                  <span>Date From</span>
+                  <input type="date" id="dateFrom" />
+                </label>
+                <label class="field">
+                  <span>Date To</span>
+                  <input type="date" id="dateTo" />
+                </label>
+                <label class="field check">
+                  <span>Reminders only</span>
+                  <label class="switch"><input type="checkbox" id="reminderOnly" /><i></i></label>
+                </label>
+              </div>
+
+              <div class="import-bar">
+                <label class="btn ghost">
+                  Import Excel / CSV
+                  <input type="file" id="excelFile" accept=".xlsx,.xlsm,.csv" hidden />
+                </label>
+                <button type="button" class="btn ghost" id="btnSyncContacts">Sync WA Contacts</button>
+                <button type="button" class="btn ghost" id="btnRefresh">Refresh</button>
+              </div>
+
+              <div class="recipient-summary">
+                <div>
+                  <strong id="matchCount">0</strong>
+                  <span>Recipients Selected</span>
+                </div>
+                <div class="mini-stats" id="statusBreakdown"></div>
+              </div>
+
+              <details class="crud-box">
+                <summary>Add / manage lead (CRUD)</summary>
+                <div class="form-grid">
+                  <label class="field"><span>Name</span><input id="leadName" placeholder="Full name" /></label>
+                  <label class="field"><span>Phone</span><input id="leadPhone" placeholder="9198…" /></label>
+                </div>
+                <div class="form-grid">
+                  <label class="field">
+                    <span>Stage</span>
+                    <select id="leadStatus"></select>
+                  </label>
+                  <label class="field"><span>Notes</span><input id="leadNotes" placeholder="Optional" /></label>
+                </div>
+                <div class="actions">
+                  <button type="button" class="btn ghost" id="btnClearLead">Clear</button>
+                  <button type="button" class="btn primary" id="btnSaveLead">Save Lead</button>
+                </div>
+                <input type="hidden" id="leadEditId" value="" />
+              </details>
+
+              <div class="lead-preview" id="leadList"></div>
+            </section>
+
+            <section class="compose-col">
+              <div class="card">
+                <header class="card-head">
+                  <h2>Compose Campaign</h2>
+                  <div class="tabs" id="kindTabs">
+                    <button type="button" class="tab active" data-kind="bulk">Text</button>
+                    <button type="button" class="tab" data-kind="poster">Poster</button>
+                    <button type="button" class="tab" data-kind="reminder">Reminder</button>
+                    <button type="button" class="tab" data-kind="template">Template</button>
+                  </div>
+                </header>
+
+                <label class="field">
+                  <span>Send from</span>
+                  <select id="sendFrom" aria-label="Sending WhatsApp number"></select>
+                </label>
+
+                <label class="field">
+                  <span>Campaign name</span>
+                  <input id="campaignName" value="CRM broadcast" />
+                </label>
+
+                <div class="toolbar">
+                  <button type="button" data-fmt="*">B</button>
+                  <button type="button" data-fmt="_">I</button>
+                  <button type="button" data-fmt="~">S</button>
+                  <button type="button" id="btnEmoji">☺</button>
+                  <select id="varInsert">
+                    <option value="">Insert Variable</option>
+                    <option value="{name}">{name}</option>
+                    <option value="{first_name}">{first_name}</option>
+                    <option value="{phone}">{phone}</option>
+                    <option value="{status}">{status}</option>
+                  </select>
+                </div>
+
+                <textarea id="message" rows="6" placeholder="Hi {name}, …">Hi {name}, this is a follow-up from our team. Reply YES to continue.</textarea>
+
+                <div class="poster-row" id="posterRow">
+                  <select id="posterSelect" aria-label="Poster sent with the message"></select>
+                  <label class="btn ghost tiny">Upload<input type="file" id="posterFile" accept="image/*" hidden /></label>
+                  <img id="posterPreview" alt="" />
+                </div>
+
+                <div class="templates" id="templates"></div>
+
+                <div class="schedule-row">
+                  <label class="field">
+                    <span>Schedule (optional)</span>
+                    <input type="datetime-local" id="scheduleAt" />
+                  </label>
+                  <div class="anti-pill" id="antiPill">Safe send · paced</div>
+                </div>
+
+                <div class="actions">
+                  <button type="button" class="btn ghost" id="btnSaveTpl">Save Template</button>
+                  <button type="button" class="btn ghost" id="dryRun">Preview</button>
+                  <button type="button" class="btn ghost" id="btnSchedule">Schedule</button>
+                  <button type="button" class="btn primary" id="sendBtn">Send Now</button>
+                </div>
+              </div>
+
+              <div class="card preview-card">
+                <header class="card-head"><h2>Message Preview</h2></header>
+                <div class="phone">
+                  <div class="phone-notch"></div>
+                  <div class="phone-head">
+                    <div class="ph-avatar">WA</div>
+                    <div>
+                      <strong id="previewBiz">WhatsApp Business <span class="verified">✓</span></strong>
+                      <small id="previewPhone">Not connected</small>
+                    </div>
+                  </div>
+                  <div class="phone-body">
+                    <div class="wa-bubble" id="previewBubble">
+                      Hi there…
+                      <span class="ticks">✓✓ 10:24</span>
+                    </div>
+                    <img class="wa-poster hidden" id="previewPoster" alt="" />
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <!-- ========== SCAN & CONNECT ========== -->
+        <section class="view" id="view-connect" data-title="Scan & Connect">
+          <div class="page-head">
+            <div>
+              <p class="eyebrow">WhatsApp session</p>
+              <h1>Scan &amp; Connect</h1>
+              <p class="sub">Link every WhatsApp number you use. Each number has its own QR. Sending uses the one marked Active.</p>
+            </div>
+          </div>
+
+          <section class="card account-panel">
+            <header class="card-head"><h2>WhatsApp numbers</h2></header>
+            <div class="project-list" id="accountList"></div>
+            <div class="account-add">
+              <input id="accountLabel" placeholder="Name this number, e.g. Clinic or Institute" />
+              <button type="button" class="btn primary" id="btnAddAccount">Add WhatsApp</button>
+            </div>
+            <p class="hint">Add a number, scan its QR, then add the next. All connected numbers stay linked.</p>
+          </section>
+
+          <div class="grid-2">
+            <section class="card connect-page">
+              <div class="qr-wrap large">
+                <img id="qrImage" alt="QR code" class="hidden" />
+                <div class="qr-placeholder" id="qrPlaceholder">Loading QR…</div>
+              </div>
+              <div class="connect-meta">
+                <span class="dot" id="qrDot"></span>
+                <span id="qrStatusText">Starting…</span>
+              </div>
+              <p class="hint" style="text-align:center">Keep this page open — connection detects within ~0.5s after scan. QR refreshes every 25s.</p>
+              <div class="actions center">
+                <button type="button" class="btn ghost" id="btnRefreshQr">Refresh QR</button>
+                <button type="button" class="btn ghost" id="btnLogoutWa">Disconnect</button>
+                <button type="button" class="btn primary" id="btnStartSession">Restart Session</button>
+              </div>
+              <ol class="steps">
+                <li>Open WhatsApp on your phone</li>
+                <li>Go to <strong>Linked devices</strong> → <strong>Link a device</strong></li>
+                <li>Scan the QR below <strong>before it refreshes</strong></li>
+                <li>Wait until status shows <strong>Connected</strong></li>
+              </ol>
+            </section>
+
+            <section class="card">
+              <header class="card-head"><h2>Connection status</h2></header>
+              <div class="settings-list" id="connectInfo">
+                <div class="setting-row"><span>Session</span><strong id="infoSession">—</strong></div>
+                <div class="setting-row"><span>Status</span><strong id="infoStatus">—</strong></div>
+                <div class="setting-row"><span>Phone</span><strong id="infoPhone">—</strong></div>
+                <div class="setting-row"><span>Push name</span><strong id="infoName">—</strong></div>
+                <div class="setting-row"><span>CRM</span><strong id="infoCrm">—</strong></div>
+              </div>
+              <div class="actions" style="margin-top:16px">
+                <button type="button" class="btn ghost" id="btnSyncContactsPage">Sync WA Contacts</button>
+                <button type="button" class="btn primary" data-goto="bulk">Go to Bulk Messaging</button>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <!-- ========== BULK POSTERS ========== -->
+        <section class="view" id="view-posters" data-title="Bulk Posters">
+          <div class="page-head">
+            <div>
+              <p class="eyebrow">Media campaigns</p>
+              <h1>Bulk Posters</h1>
+              <p class="sub">Upload poster images, pick recipients, send image + caption campaigns.</p>
+            </div>
+            <label class="btn primary">
+              Upload Poster
+              <input type="file" id="posterFilePage" accept="image/*" hidden />
+            </label>
+          </div>
+
+          <div class="grid-2">
+            <section class="card">
+              <header class="card-head"><h2>Poster library</h2></header>
+              <div class="poster-grid" id="posterGrid"></div>
+            </section>
+            <section class="card">
+              <header class="card-head"><h2>Send poster campaign</h2></header>
+              <label class="field">
+                <span>Selected poster</span>
+                <select id="posterSelectPage"><option value="">Select poster</option></select>
+              </label>
+              <label class="field">
+                <span>Campaign name</span>
+                <input id="posterCampaignName" value="Poster blast" />
+              </label>
+              <label class="field">
+                <span>Caption (use {name})</span>
+                <textarea id="posterCaption" rows="4">Hi {name}, check out this update!</textarea>
+              </label>
+              <p class="hint">Uses the same recipient filters as Bulk Messaging (<span id="posterRecipientCount">0</span> selected).</p>
+              <div class="actions">
+                <button type="button" class="btn ghost" id="posterDryRun">Preview</button>
+                <button type="button" class="btn primary" id="posterSend">Send Poster Campaign</button>
+              </div>
+              <div class="phone" style="margin-top:16px">
+                <div class="phone-notch"></div>
+                <div class="phone-head">
+                  <div class="ph-avatar">WA</div>
+                  <div><strong>Poster preview</strong><small>WhatsApp</small></div>
+                </div>
+                <div class="phone-body">
+                  <img class="wa-poster" id="posterPagePreview" alt="" style="display:none" />
+                  <div class="wa-bubble" id="posterCaptionPreview">Caption preview…</div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <!-- ========== CAMPAIGNS ========== -->
+        <section class="view" id="view-campaigns" data-title="Campaigns">
+          <div class="page-head">
+            <div>
+              <p class="eyebrow">History &amp; control</p>
+              <h1>Campaigns</h1>
+              <p class="sub">Track running, paused, completed and scheduled campaigns. Cancel or resume anytime.</p>
+            </div>
+            <button type="button" class="btn ghost" id="btnReloadCampaigns">Refresh</button>
+          </div>
+
+          <section class="kpis" id="kpisCampaigns">
+            <article class="kpi"><span>Total campaigns</span><strong id="campTotal">0</strong></article>
+            <article class="kpi"><span>Running / Active</span><strong id="campActive">0</strong></article>
+            <article class="kpi"><span>Completed</span><strong id="campDone">0</strong></article>
+            <article class="kpi"><span>Failed messages</span><strong id="campFailed">0</strong></article>
+          </section>
+
+          <section class="card table-card">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Campaign</th>
+                    <th>Type</th>
+                    <th>Recipients</th>
+                    <th>Sent</th>
+                    <th>Delivered</th>
+                    <th>Failed</th>
+                    <th>Date</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="campaignsBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <!-- ========== TEMPLATES ========== -->
+        <section class="view" id="view-templates" data-title="Templates">
+          <div class="page-head">
+            <div>
+              <p class="eyebrow">Message library</p>
+              <h1>Templates</h1>
+              <p class="sub">Create reusable messages with {name}, {phone}, {status} variables.</p>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <section class="card">
+              <header class="card-head"><h2>Create template</h2></header>
+              <label class="field">
+                <span>Name</span>
+                <input id="tplName" placeholder="Welcome message" />
+              </label>
+              <label class="field">
+                <span>Kind</span>
+                <select id="tplKind">
+                  <option value="bulk">Text / Bulk</option>
+                  <option value="reminder">Reminder</option>
+                  <option value="poster">Poster caption</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Body</span>
+                <textarea id="tplBody" rows="6" placeholder="Hi {name}, …"></textarea>
+              </label>
+              <div class="actions">
+                <button type="button" class="btn primary" id="btnCreateTpl">Save Template</button>
+              </div>
+            </section>
+            <section class="card">
+              <header class="card-head"><h2>Saved templates</h2></header>
+              <div class="tpl-list" id="tplList"></div>
+            </section>
+          </div>
+        </section>
+
+        <!-- ========== SETTINGS ========== -->
+        <section class="view" id="view-settings" data-title="Settings">
+          <div class="page-head">
+            <div>
+              <p class="eyebrow">System</p>
+              <h1>Settings</h1>
+              <p class="sub">Theme, anti-block pacing, CRM sync and WhatsApp session controls.</p>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <section class="card">
+              <header class="card-head"><h2>Appearance</h2></header>
+              <div class="setting-row">
+                <span>Dark mode</span>
+                <label class="switch"><input type="checkbox" id="settingDark" /><i></i></label>
+              </div>
+              <div class="setting-row">
+                <span>Embed mode (CRM iframe)</span>
+                <strong id="settingEmbed">No</strong>
+              </div>
+            </section>
+
+            <section class="card">
+              <header class="card-head"><h2>Anti-block pacing</h2></header>
+              <div class="settings-list" id="settingsAnti">
+                <div class="setting-row"><span>Delay range</span><strong id="setDelay">—</strong></div>
+                <div class="setting-row"><span>Batch size</span><strong id="setBatch">—</strong></div>
+                <div class="setting-row"><span>Daily cap</span><strong id="setDaily">—</strong></div>
+                <div class="setting-row"><span>Hourly cap</span><strong id="setHourly">—</strong></div>
+                <div class="setting-row"><span>Business hours</span><strong id="setHours">—</strong></div>
+                <div class="setting-row"><span>Sent today</span><strong id="setSentToday">—</strong></div>
+              </div>
+            </section>
+
+            <section class="card">
+              <header class="card-head"><h2>CRM &amp; data</h2></header>
+              <div class="actions">
+                <button type="button" class="btn ghost" id="btnSettingsSyncCrm">Sync CRM leads</button>
+                <button type="button" class="btn ghost" id="btnSettingsSyncContacts">Sync WA contacts</button>
+                <button type="button" class="btn ghost" id="btnSettingsRefresh">Refresh stats</button>
+              </div>
+              <div class="settings-list" style="margin-top:14px">
+                <div class="setting-row"><span>CRM</span><strong id="setCrm">—</strong></div>
+                <div class="setting-row"><span>Local leads</span><strong id="setLeads">—</strong></div>
+                <div class="setting-row"><span>WhatsApp</span><strong id="setWa">—</strong></div>
+              </div>
+            </section>
+
+            <section class="card">
+              <header class="card-head"><h2>WhatsApp session</h2></header>
+              <div class="actions">
+                <button type="button" class="btn primary" data-goto="connect">Open Scan &amp; Connect</button>
+                <button type="button" class="btn ghost" id="btnSettingsLogout">Disconnect</button>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div class="toast hidden" id="toast"></div>
+  <div class="drawer-backdrop hidden" id="backdrop"></div>
+  <script src="/static/app.js?v=22"></script>
+</body>
+</html>
