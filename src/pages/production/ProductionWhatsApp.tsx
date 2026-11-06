@@ -47,12 +47,13 @@ export function ProductionWhatsApp() {
   const write = canWriteWhatsApp(role);
   const admin = canOperateWhatsApp(role);
   const deskMode = whatsAppDesk(role);
-  const [mode, setMode] = useState<"automation" | "inbox">(admin ? "automation" : "inbox");
+  const [mode, setMode] = useState<"automation" | "clicks" | "inbox">(admin ? "automation" : "inbox");
   const [campaignText, setCampaignText] = useState("Hi, this is a message from Dr. K's Aesthetic Clinic.");
   const [recipientTotal, setRecipientTotal] = useState(0);
   const [bulkSent, setBulkSent] = useState(0);
   const [bulkFailed, setBulkFailed] = useState(0);
   const [line, setLine] = useState<ChannelStatus | null>(null);
+  const [clickTotal, setClickTotal] = useState(0);
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
   const [deskId, setDeskId] = useState("");
   const [search, setSearch] = useState("");
@@ -95,10 +96,10 @@ export function ProductionWhatsApp() {
   }, [admin, desk, deskId, visibleDesks]);
 
   useEffect(() => {
-    if (mode !== "inbox") return;
+    if (mode === "automation") return;
     const workspaceId = !admin || deskId !== "all" ? desk?.id ?? "" : "";
     if (!admin && !desk) return;
-    void listWhatsAppChats(workspaceId, search, admin ? "all" : "clicks", page)
+    void listWhatsAppChats(workspaceId, search, mode === "clicks" || !admin ? "clicks" : "all", page)
       .then((result) => {
         setChats(result.chats);
         setChatTotal(result.total);
@@ -145,6 +146,9 @@ export function ProductionWhatsApp() {
       .then((result) => setRecipientTotal(result.total))
       .catch((reason: unknown) => setNotice(reason instanceof Error ? reason.message : "Could not count leads"));
     void listWhatsAppPosters(desk.id).then(setPosters).catch(() => setPosters([]));
+    void listWhatsAppChats(desk.id, "", "clicks", 1)
+      .then((result) => setClickTotal(result.total))
+      .catch(() => setClickTotal(0));
     void listWorkspaceChannels()
       .then((rows) => setLine(rows.find((row) => row.workspaceId === desk.id && row.channel === "whatsapp") ?? null))
       .catch(() => setLine(null));
@@ -239,17 +243,42 @@ export function ProductionWhatsApp() {
     })();
   };
 
-  if (admin && mode === "automation") {
+  if (admin && mode !== "inbox") {
     const poster = posters.find((item) => item.id === posterId);
+    const navItem = (active: boolean) =>
+      cn("rounded-xl px-3 py-2 text-left text-sm font-medium", active ? "bg-[#d9fdd3] text-[#008069]" : "text-[#111b21] hover:bg-[#f0f2f5]");
     return (
-      <div className="-mx-3 -mt-4 mb-[-6rem] flex h-[calc(100dvh-4.25rem)] flex-col bg-white sm:-mx-6 lg:-mx-8 lg:mb-0">
-        <header className="flex flex-wrap items-center gap-2 border-b border-[#e9edef] bg-[#f0f2f5] px-4 py-2.5">
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-[#111b21]">WhatsApp</p>
-            <p className="text-xs text-[#667781]">Live site · sends from {fromLine}</p>
+      <div className="-mx-3 -mt-4 mb-[-6rem] flex h-[calc(100dvh-4.25rem)] bg-[#f4f6f8] sm:-mx-6 lg:-mx-8 lg:mb-0">
+        <aside className="hidden w-60 shrink-0 flex-col border-r border-[#e9edef] bg-white p-4 md:flex">
+          <p className="text-sm font-semibold text-[#111b21]">WhatsApp</p>
+          <p className="text-xs text-[#667781]">Automation</p>
+          <nav className="mt-4 flex flex-col gap-1">
+            <button type="button" className={navItem(mode === "automation")} onClick={() => setMode("automation")}>
+              Bulk messaging
+            </button>
+            <button type="button" className={navItem(mode === "clicks")} onClick={() => setMode("clicks")}>
+              Click leads
+            </button>
+            <button type="button" className={navItem(false)} onClick={() => setMode("inbox")}>
+              Inbox
+            </button>
+          </nav>
+          <div className="mt-auto rounded-2xl border border-[#e9edef] p-3">
+            <p className="text-sm font-medium text-[#111b21]">{lineBlocked ? "Needs a token" : "Connected"}</p>
+            <p className="text-xs text-[#667781]">{fromLine}</p>
           </div>
-          <button type="button" className={chip(true)} onClick={() => setMode("automation")}>
-            Campaigns
+        </aside>
+        <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex flex-wrap items-center gap-2 border-b border-[#e9edef] bg-white px-4 py-2.5">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-[#111b21]">{mode === "clicks" ? "Click leads" : "Bulk messaging"}</p>
+            <p className="text-xs text-[#667781]">Sends from {fromLine}</p>
+          </div>
+          <button type="button" className={chip(mode === "automation")} onClick={() => setMode("automation")}>
+            Bulk
+          </button>
+          <button type="button" className={chip(mode === "clicks")} onClick={() => setMode("clicks")}>
+            Click leads
           </button>
           {write ? (
             <button type="button" className={chip(false)} onClick={() => setMode("inbox")}>
@@ -272,9 +301,38 @@ export function ProductionWhatsApp() {
           ) : null}
         </header>
         {notice ? <p className="bg-[#d9fdd3] px-4 py-2 text-center text-xs text-[#111b21]">{notice}</p> : null}
-        <div className="min-h-0 flex-1 overflow-y-auto bg-[#f0f2f5] px-4 py-6">
+        {mode === "clicks" ? (
+          <div className="min-h-0 flex-1 overflow-y-auto bg-white">
+            {chats.map((chat) => (
+              <button
+                key={chat.id}
+                type="button"
+                onClick={() => {
+                  setActiveId(chat.id);
+                  setMode("inbox");
+                }}
+                className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-[#f5f6f6]"
+              >
+                <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[#dfe5e7] text-sm font-medium text-[#54656f]">
+                  {initials(chat.fullName)}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[15px] text-[#111b21]">{chat.fullName}</span>
+                  <span className="block truncate text-sm text-[#667781]">{chat.preview || chat.phone}</span>
+                </span>
+              </button>
+            ))}
+            {chats.length === 0 ? <p className="px-4 py-8 text-sm text-[#667781]">No WhatsApp click leads on this desk yet. A new lead appears when someone messages {fromLine}.</p> : null}
+          </div>
+        ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6">
+          <div className="mx-auto grid max-w-5xl gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl bg-white p-4 shadow-sm"><p className="text-xs text-[#667781]">CRM leads</p><p className="text-2xl font-semibold">{recipientTotal.toLocaleString("en-IN")}</p></div>
+            <div className="rounded-2xl bg-white p-4 shadow-sm"><p className="text-xs text-[#667781]">Click leads</p><p className="text-2xl font-semibold">{clickTotal.toLocaleString("en-IN")}</p></div>
+            <div className="rounded-2xl bg-white p-4 shadow-sm"><p className="text-xs text-[#667781]">Sending number</p><p className="text-lg font-semibold">{fromLine}</p></div>
+          </div>
           <form
-            className="mx-auto flex max-w-xl flex-col gap-4 rounded-2xl bg-white p-5 shadow-sm"
+            className="mx-auto mt-4 flex max-w-5xl flex-col gap-4 rounded-2xl bg-white p-5 shadow-sm"
             onSubmit={(event) => {
               event.preventDefault();
               sendCampaign();
@@ -289,8 +347,8 @@ export function ProductionWhatsApp() {
             {lineBlocked ? (
               <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
                 {lineMessage}{" "}
-                <Link to="/settings" className="font-medium underline">
-                  Open Settings
+                <Link to="/meta" className="font-medium underline">
+                  Open Meta leads
                 </Link>
               </p>
             ) : null}
@@ -345,6 +403,8 @@ export function ProductionWhatsApp() {
             </button>
           </form>
         </div>
+        )}
+        </div>
       </div>
     );
   }
@@ -361,9 +421,14 @@ export function ProductionWhatsApp() {
             </div>
             <div className="flex gap-2">
               {admin ? (
-                <button type="button" className={chip(false)} onClick={() => setMode("automation")}>
-                  Campaigns
-                </button>
+                <>
+                  <button type="button" className={chip(false)} onClick={() => setMode("automation")}>
+                    Bulk
+                  </button>
+                  <button type="button" className={chip(false)} onClick={() => setMode("clicks")}>
+                    Click leads
+                  </button>
+                </>
               ) : null}
               <span className="rounded-full bg-[#25D366] px-2 py-1 text-[11px] font-semibold text-white">
                 {chatTotal.toLocaleString("en-IN")}
