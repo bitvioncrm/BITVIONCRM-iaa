@@ -76,11 +76,13 @@ export default async (request: Request) => {
       failed += 1;
       providerFailed += 1;
       if (!detail) {
-        const errorBody = (await graph.json()) as { error?: { message?: string } };
+        const errorBody = (await graph.json()) as { error?: { code?: number; message?: string } };
         const raw = (errorBody.error?.message || "WhatsApp rejected the message").replace(/access_token=[^&\s]+/g, "").slice(0, 160);
-        detail = /session has expired/i.test(raw)
-          ? "The WhatsApp token expired. In Meta, generate a token that does not expire and paste it under Settings, WhatsApp, on the clinic number +91 95624 29928."
+        const expired = errorBody.error?.code === 190 || /session has expired|authentication error/i.test(raw);
+        detail = expired
+          ? "The WhatsApp token for +91 95624 29928 has expired. In Settings, open WhatsApp and paste a token that does not expire."
           : raw;
+        if (expired) break;
       }
       if (sent === 0 && providerFailed >= 3) break;
       continue;

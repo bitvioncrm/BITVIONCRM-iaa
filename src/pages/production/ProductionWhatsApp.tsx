@@ -1,8 +1,10 @@
 import { format } from "date-fns";
 import { Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { canOperateWhatsApp, canWriteWhatsApp, whatsAppDesk } from "@/lib/production-access";
+import { listWorkspaceChannels, type ChannelStatus } from "@/services/channel-settings";
 import { listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
 import {
   countWhatsAppRecipients,
@@ -50,6 +52,7 @@ export function ProductionWhatsApp() {
   const [recipientTotal, setRecipientTotal] = useState(0);
   const [bulkSent, setBulkSent] = useState(0);
   const [bulkFailed, setBulkFailed] = useState(0);
+  const [line, setLine] = useState<ChannelStatus | null>(null);
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
   const [deskId, setDeskId] = useState("");
   const [search, setSearch] = useState("");
@@ -142,6 +145,9 @@ export function ProductionWhatsApp() {
       .then((result) => setRecipientTotal(result.total))
       .catch((reason: unknown) => setNotice(reason instanceof Error ? reason.message : "Could not count leads"));
     void listWhatsAppPosters(desk.id).then(setPosters).catch(() => setPosters([]));
+    void listWorkspaceChannels()
+      .then((rows) => setLine(rows.find((row) => row.workspaceId === desk.id && row.channel === "whatsapp") ?? null))
+      .catch(() => setLine(null));
   }, [desk, mode]);
 
   const sendingNumber =
@@ -187,8 +193,11 @@ export function ProductionWhatsApp() {
       .finally(() => setBusy(""));
   };
 
+  const lineBlocked = line?.status === "error" || line?.accessTokenSet === false;
+  const lineMessage = line?.detail || "The WhatsApp token for +91 95624 29928 has expired. In Settings, open WhatsApp and paste a token that does not expire.";
+
   const sendCampaign = () => {
-    if (!desk) return;
+    if (!desk || lineBlocked) return;
     const poster = posters.find((item) => item.id === posterId);
     const text = campaignText.trim();
     if (!text && !poster?.url) {
@@ -277,6 +286,14 @@ export function ProductionWhatsApp() {
                 {recipientTotal.toLocaleString("en-IN")} CRM leads on {desk?.name || "this desk"}. This runs on the live site.
               </p>
             </div>
+            {lineBlocked ? (
+              <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
+                {lineMessage}{" "}
+                <Link to="/settings" className="font-medium underline">
+                  Open Settings
+                </Link>
+              </p>
+            ) : null}
             <label className="block text-sm text-[#111b21]">
               Message
               <textarea
@@ -319,7 +336,7 @@ export function ProductionWhatsApp() {
             ) : null}
             <button
               type="submit"
-              disabled={busy === "bulk" || busy === "poster" || recipientTotal < 1}
+              disabled={busy === "bulk" || busy === "poster" || recipientTotal < 1 || lineBlocked}
               className="h-11 rounded-full bg-[#00a884] text-sm font-medium text-white disabled:opacity-60"
             >
               {busy === "bulk"
