@@ -3,13 +3,15 @@ import { Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { canOperateWhatsApp, canWriteWhatsApp, whatsAppDesk } from "@/lib/production-access";
-import { supabase } from "@/lib/supabase";
 import { listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
 import {
+  countWhatsAppRecipients,
   listWhatsAppChats,
   listWhatsAppNumbers,
   listWhatsAppPosters,
   listWhatsAppThread,
+  saveWhatsAppPoster,
+  sendWhatsAppBulk,
   sendWhatsAppMessage,
   type WhatsAppBubble,
   type WhatsAppChat,
@@ -17,8 +19,6 @@ import {
   type WhatsAppPoster,
 } from "@/services/whatsapp-desk";
 import { cn } from "@/lib/utils";
-
-const AUTOMATION_URL = (import.meta.env.VITE_WHATSAPP_AUTOMATION_URL as string | undefined)?.replace(/\/$/, "") || "http://127.0.0.1:5178";
 
 function initials(name: string) {
   return name
@@ -46,7 +46,10 @@ export function ProductionWhatsApp() {
   const admin = canOperateWhatsApp(role);
   const deskMode = whatsAppDesk(role);
   const [mode, setMode] = useState<"automation" | "inbox">(admin ? "automation" : "inbox");
-  const [adminToken, setAdminToken] = useState("");
+  const [campaignText, setCampaignText] = useState("Hi, this is a message from Dr. K's Aesthetic Clinic.");
+  const [recipientTotal, setRecipientTotal] = useState(0);
+  const [bulkSent, setBulkSent] = useState(0);
+  const [bulkFailed, setBulkFailed] = useState(0);
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
   const [deskId, setDeskId] = useState("");
   const [search, setSearch] = useState("");
@@ -72,14 +75,6 @@ export function ProductionWhatsApp() {
 
   useEffect(() => {
     setMode(admin ? "automation" : "inbox");
-  }, [admin]);
-
-  useEffect(() => {
-    if (!admin || !supabase) {
-      setAdminToken("");
-      return;
-    }
-    void supabase.auth.getSession().then(({ data }) => setAdminToken(data.session?.access_token ?? ""));
   }, [admin]);
 
   useEffect(() => {
@@ -141,6 +136,14 @@ export function ProductionWhatsApp() {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [thread]);
 
+  useEffect(() => {
+    if (mode !== "automation" || !desk) return;
+    void countWhatsAppRecipients(desk.id, { from: "", to: "", name: "" })
+      .then((result) => setRecipientTotal(result.total))
+      .catch((reason: unknown) => setNotice(reason instanceof Error ? reason.message : "Could not count leads"));
+    void listWhatsAppPosters(desk.id).then(setPosters).catch(() => setPosters([]));
+  }, [desk, mode]);
+
   const sendingNumber =
     numbers.find((item) => item.displayPhone.replace(/\D/g, "").endsWith("9562429928")) ??
     numbers.find((item) => item.workspaceType === "clinic");
@@ -170,13 +173,71 @@ export function ProductionWhatsApp() {
   const chip = (on: boolean) =>
     cn("rounded-full px-3 py-1 text-xs font-medium", on ? "bg-[#d9fdd3] text-[#008069]" : "bg-[#f0f2f5] text-[#54656f]");
 
+  const savePoster = (file: File | undefined) => {
+    if (!file || !desk) return;
+    setBusy("poster");
+    void saveWhatsAppPoster(desk, file)
+      .then(() => listWhatsAppPosters(desk.id))
+      .then((next) => {
+        setPosters(next);
+        if (next[0]) setPosterId(next[0].id);
+        setNotice("Poster saved on the live site.");
+      })
+      .catch((reason: unknown) => setNotice(reason instanceof Error ? reason.message : "Could not save the poster"))
+      .finally(() => setBusy(""));
+  };
+
+  const sendCampaign = () => {
+    if (!desk) return;
+    const poster = posters.find((item) => item.id === posterId);
+    const text = campaignText.trim();
+    if (!text && !poster?.url) {
+      setNotice("Add a message or a poster.");
+      return;
+    }
+    const together = poster?.url ? "this message and poster" : "this message";
+    const approved = window.confirm(`Send ${together} to ${recipientTotal.toLocaleString("en-IN")} CRM leads from ${fromLine}?`);
+    if (!approved) return;
+    setBusy("bulk");
+    setBulkSent(0);
+    setBulkFailed(0);
+    void (async () => {
+      let offset = 0;
+      let sent = 0;
+      let failed = 0;
+      try {
+        for (let guard = 0; guard < 2000; guard += 1) {
+          const batch = await sendWhatsAppBulk({
+            text,
+            imageUrl: poster?.url || undefined,
+            workspaceId: desk.id,
+            offset,
+          });
+          sent += batch.sent;
+          failed += batch.failed;
+          setBulkSent(sent);
+          setBulkFailed(failed);
+          if (batch.total) setRecipientTotal(batch.total);
+          if (batch.done || batch.next <= offset) break;
+          offset = batch.next;
+        }
+        setNotice(`Sent ${sent.toLocaleString("en-IN")} from ${fromLine}. Failed ${failed.toLocaleString("en-IN")}.`);
+      } catch (reason: unknown) {
+        setNotice(reason instanceof Error ? reason.message : "Could not send");
+      } finally {
+        setBusy("");
+      }
+    })();
+  };
+
   if (admin && mode === "automation") {
+    const poster = posters.find((item) => item.id === posterId);
     return (
       <div className="-mx-3 -mt-4 mb-[-6rem] flex h-[calc(100dvh-4.25rem)] flex-col bg-white sm:-mx-6 lg:-mx-8 lg:mb-0">
         <header className="flex flex-wrap items-center gap-2 border-b border-[#e9edef] bg-[#f0f2f5] px-4 py-2.5">
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-[#111b21]">WhatsApp Automation</p>
-            <p className="text-xs text-[#667781]">Scan &amp; connect · CRM leads · WA contacts · anti-block bulk send</p>
+            <p className="text-sm font-semibold text-[#111b21]">WhatsApp</p>
+            <p className="text-xs text-[#667781]">Live site · sends from {fromLine}</p>
           </div>
           <button type="button" className={chip(true)} onClick={() => setMode("automation")}>
             Campaigns
@@ -200,22 +261,73 @@ export function ProductionWhatsApp() {
               ))}
             </select>
           ) : null}
-          <a
-            href={`${AUTOMATION_URL}/${adminToken ? `#t=${encodeURIComponent(adminToken)}` : ""}`}
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-full bg-white px-3 py-1 text-xs font-medium text-[#075E54] shadow-sm"
-          >
-            Open full screen
-          </a>
         </header>
-        <iframe
-          title="WhatsApp Automation"
-          key={`${AUTOMATION_URL}:${desk?.id || "all"}`}
-          src={`${AUTOMATION_URL}/?embed=1${desk?.id ? `&workspace_id=${encodeURIComponent(desk.id)}` : ""}${adminToken ? `#t=${encodeURIComponent(adminToken)}` : ""}`}
-          className="min-h-0 w-full flex-1 border-0 bg-white"
-          allow="clipboard-read; clipboard-write"
-        />
+        {notice ? <p className="bg-[#d9fdd3] px-4 py-2 text-center text-xs text-[#111b21]">{notice}</p> : null}
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[#f0f2f5] px-4 py-6">
+          <form
+            className="mx-auto flex max-w-xl flex-col gap-4 rounded-2xl bg-white p-5 shadow-sm"
+            onSubmit={(event) => {
+              event.preventDefault();
+              sendCampaign();
+            }}
+          >
+            <div>
+              <p className="text-lg font-semibold text-[#111b21]">Send message and poster</p>
+              <p className="mt-1 text-sm text-[#667781]">
+                {recipientTotal.toLocaleString("en-IN")} CRM leads on {desk?.name || "this desk"}. This runs on the live site.
+              </p>
+            </div>
+            <label className="block text-sm text-[#111b21]">
+              Message
+              <textarea
+                value={campaignText}
+                onChange={(event) => setCampaignText(event.target.value)}
+                rows={5}
+                className="mt-1 w-full rounded-xl border border-[#e9edef] px-3 py-2 text-sm outline-none"
+              />
+            </label>
+            <label className="block text-sm text-[#111b21]">
+              Poster sent with the message
+              <select
+                value={posterId}
+                onChange={(event) => setPosterId(event.target.value)}
+                aria-label="Poster sent with the message"
+                className="mt-1 h-10 w-full rounded-xl border border-[#e9edef] bg-white px-3 text-sm"
+              >
+                <option value="">No poster — text only</option>
+                {posters.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.filename}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm text-[#008069]">
+              Upload poster
+              <input
+                type="file"
+                accept="image/*"
+                className="mt-1 block w-full text-xs text-[#54656f]"
+                onChange={(event) => savePoster(event.target.files?.[0])}
+              />
+            </label>
+            {poster?.url ? <img src={poster.url} alt="" className="max-h-48 rounded-xl object-contain" /> : null}
+            {busy === "bulk" ? (
+              <p className="text-sm text-[#111b21]">
+                Sent {bulkSent.toLocaleString("en-IN")} · failed {bulkFailed.toLocaleString("en-IN")} · {recipientTotal.toLocaleString("en-IN")} leads
+              </p>
+            ) : null}
+            <button
+              type="submit"
+              disabled={busy === "bulk" || busy === "poster" || recipientTotal < 1}
+              className="h-11 rounded-full bg-[#00a884] text-sm font-medium text-white disabled:opacity-60"
+            >
+              {busy === "bulk"
+                ? "Sending…"
+                : `Send message${poster?.url ? " + poster" : ""} to ${recipientTotal.toLocaleString("en-IN")} leads`}
+            </button>
+          </form>
+        </div>
       </div>
     );
   }

@@ -15,8 +15,6 @@ function roleKey(value: { key: string } | { key: string }[] | null) {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BATCH = 20;
-const CLINIC_ROLES = ["clinic_telecaller", "clinic_bde"];
-const INSTITUTE_ROLES = ["institute_telecaller", "institute_bde", "institute_user"];
 
 export default async (request: Request) => {
   if (request.method !== "POST") return json(405, { status: "method_not_allowed" });
@@ -43,10 +41,7 @@ export default async (request: Request) => {
   if ((!text && !imageUrl) || text.length > 1000) return json(400, { status: "invalid", detail: "Add a message or a poster." });
   const offset = Math.max(0, Number(body.offset ?? 0));
   const workspaceId = body.workspaceId && UUID.test(body.workspaceId) ? body.workspaceId : "";
-  if (!admin) {
-    const onDesk = roles.some((row) => row.workspace_id === workspaceId && [...CLINIC_ROLES, ...INSTITUTE_ROLES].includes(roleKey(row.roles)));
-    if (!workspaceId || !onDesk) return json(403, { status: "forbidden", detail: "Bulk send from your own desk." });
-  }
+  if (!admin) return json(403, { status: "forbidden", detail: "Bulk messaging is limited to Admin." });
 
   const secret = sendingLine(await loadChannelSecrets(supabaseUrl, serviceKey, "whatsapp"));
   if (!secret?.access_token || !secret.phone_number_id) return json(503, { status: "configuration_required", detail: "Save a WhatsApp access token for +91 95624 29928." });
