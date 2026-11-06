@@ -30,7 +30,8 @@ async function requireAdmin(request: Request) {
   const roles = (await roleResponse.json()) as Array<{ roles: { key: string } | { key: string }[] | null }>;
   const admin = roles.some((row) => ["admin", "super_admin"].includes(roleKey(row.roles)));
   if (!admin) return { error: json(403, { status: "forbidden" }) };
-  const line = sendingLine(await loadChannelSecrets(supabaseUrl, serviceKey, "whatsapp"));
+  const workspaceId = new URL(request.url).searchParams.get("workspaceId") ?? "";
+  const line = sendingLine(await loadChannelSecrets(supabaseUrl, serviceKey, "whatsapp"), workspaceId);
   if (!line?.access_token || !line.phone_number_id) return { error: json(503, { status: "configuration_required", detail: "Save the WhatsApp token first." }) };
   return { line };
 }

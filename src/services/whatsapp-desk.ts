@@ -217,21 +217,23 @@ async function profileToken() {
   return session.data.session?.access_token ?? "";
 }
 
-export async function loadWhatsAppProfile() {
+export async function loadWhatsAppProfile(workspaceId = "") {
   const token = await profileToken();
   if (!token) return { name: "", phone: "", pictureUrl: "" };
-  const response = await fetch("/.netlify/functions/whatsapp-profile", { headers: { authorization: `Bearer ${token}` } });
+  const query = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
+  const response = await fetch(`/.netlify/functions/whatsapp-profile${query}`, { headers: { authorization: `Bearer ${token}` } });
   const body = (await response.json().catch(() => ({}))) as { name?: string; phone?: string; pictureUrl?: string; detail?: string };
   if (!response.ok && body.detail) throw new Error(body.detail);
   return { name: body.name ?? "", phone: body.phone ?? "", pictureUrl: body.pictureUrl ?? "" };
 }
 
-export async function saveWhatsAppProfilePicture(file: File) {
+export async function saveWhatsAppProfilePicture(file: File, workspaceId = "") {
   const token = await profileToken();
   if (!token) throw new Error("Sign in again before updating the profile photo.");
   const body = new FormData();
   body.set("file", file);
-  const response = await fetch("/.netlify/functions/whatsapp-profile", { method: "POST", headers: { authorization: `Bearer ${token}` }, body });
+  const query = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
+  const response = await fetch(`/.netlify/functions/whatsapp-profile${query}`, { method: "POST", headers: { authorization: `Bearer ${token}` }, body });
   const payload = (await response.json().catch(() => ({}))) as { name?: string; phone?: string; pictureUrl?: string; detail?: string; status?: string };
   if (!response.ok) throw new Error(payload.detail || payload.status || "Could not update the WhatsApp photo.");
   return { name: payload.name ?? "", phone: payload.phone ?? "", pictureUrl: payload.pictureUrl ?? "" };

@@ -60,10 +60,11 @@ export default async (request: Request) => {
   const onDesk = roles.some((row) => row.workspace_id === lead.workspace_id && (desk === "clinic" ? CLINIC_ROLES : INSTITUTE_ROLES).includes(roleKey(row.roles)));
   if (!isAdmin && !onDesk) return json(403, { status: "forbidden" });
 
-  const line = sendingLine(await loadChannelSecrets(supabaseUrl, serviceKey, "whatsapp"));
+  const line = sendingLine(await loadChannelSecrets(supabaseUrl, serviceKey, "whatsapp"), lead.workspace_id);
+  const fromPhone = line?.display_phone || "this desk";
   const phoneId = line?.phone_number_id || "";
   const accessToken = line?.access_token || "";
-  if (!phoneId || !accessToken) return json(503, { status: "configuration_required", detail: "Save a WhatsApp access token for +91 95624 29928." });
+  if (!phoneId || !accessToken) return json(503, { status: "configuration_required", detail: `Save a WhatsApp access token for ${fromPhone}.` });
 
   const payload = template
     ? { messaging_product: "whatsapp", to: phone, type: "template", template: { name: template, language: { code: "en" } } }
@@ -79,7 +80,7 @@ export default async (request: Request) => {
     const errorBody = (await sent.json().catch(() => ({}))) as { error?: { message?: string } };
     const raw = (errorBody.error?.message || "WhatsApp rejected the message.").replace(/access_token=[^&\s]+/g, "").slice(0, 180);
     const detail = /session has expired/i.test(raw)
-      ? "The WhatsApp token expired. In Meta, generate a token that does not expire and paste it under Settings, WhatsApp, on the clinic number +91 95624 29928."
+      ? `The WhatsApp token for ${fromPhone} expired. In Meta, generate a token that does not expire and paste it under Settings, WhatsApp.`
       : raw;
     return json(502, { status: "provider_rejected", detail });
   }

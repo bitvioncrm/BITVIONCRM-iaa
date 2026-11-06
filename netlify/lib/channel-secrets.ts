@@ -28,7 +28,11 @@ export async function loadChannelSecrets(supabaseUrl: string, serviceKey: string
   return Array.isArray(rows) ? rows : [];
 }
 
-export function sendingLine(rows: ChannelSecret[]) {
+export function sendingLine(rows: ChannelSecret[], workspaceId = "") {
+  if (workspaceId) {
+    const own = rows.find((row) => row.workspace_id === workspaceId);
+    if (own) return own;
+  }
   const ready = rows.filter((row) => row.access_token && row.phone_number_id);
   const clinic = ready.find((row) => row.display_phone.replace(/\D/g, "").endsWith("9562429928") || row.phone_number_id === "1347562095115257");
   return clinic ?? ready[0];

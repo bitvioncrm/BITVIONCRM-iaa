@@ -49,8 +49,9 @@ export default async (request: Request) => {
   const workspaceId = body.workspaceId && UUID.test(body.workspaceId) ? body.workspaceId : "";
   if (!admin) return json(403, { status: "forbidden", detail: "Bulk messaging is limited to Admin." });
 
-  const secret = sendingLine(await loadChannelSecrets(supabaseUrl, serviceKey, "whatsapp"));
-  if (!secret?.access_token || !secret.phone_number_id) return json(503, { status: "configuration_required", detail: "Save a WhatsApp access token for +91 95624 29928." });
+  const secret = sendingLine(await loadChannelSecrets(supabaseUrl, serviceKey, "whatsapp"), workspaceId);
+  const fromPhone = secret?.display_phone || "this desk";
+  if (!secret?.access_token || !secret.phone_number_id) return json(503, { status: "configuration_required", detail: `Save a WhatsApp access token for ${fromPhone}.` });
 
   const headers = { apikey: serviceKey, authorization: `Bearer ${serviceKey}` };
   const dayFilter = workspaceId ? `&workspace_id=eq.${workspaceId}` : "";
@@ -105,7 +106,7 @@ export default async (request: Request) => {
         const raw = (errorBody.error?.message || "WhatsApp rejected the message").replace(/access_token=[^&\s]+/g, "").slice(0, 160);
         const expired = errorBody.error?.code === 190 || /session has expired|authentication error/i.test(raw);
         detail = expired
-          ? "The WhatsApp token for +91 95624 29928 has expired. In Settings, open WhatsApp and paste a token that does not expire."
+          ? `The WhatsApp token for ${fromPhone} has expired. In Settings, open WhatsApp and paste a token that does not expire.`
           : raw;
         if (expired) break;
       }

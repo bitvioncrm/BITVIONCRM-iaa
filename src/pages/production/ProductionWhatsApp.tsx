@@ -178,18 +178,25 @@ export function ProductionWhatsApp() {
         setBalance(result.balance);
       })
       .catch(() => undefined);
-    void loadWhatsAppProfile()
+    void loadWhatsAppProfile(desk.id)
       .then((profile) => setPictureUrl(profile.pictureUrl))
       .catch(() => setPictureUrl(""));
   }, [desk, mode]);
 
-  const sendingNumber = numbers.find((item) => item.workspaceId === desk?.id) ?? numbers.find((item) => item.workspaceType === "clinic");
+  const sendingNumber = numbers.find((item) => item.workspaceId === desk?.id);
   const savedPhone = line?.displayPhone || sendingNumber?.displayPhone || "";
   const fromLine = phoneDraft.trim() || savedPhone || "WhatsApp";
 
   useEffect(() => {
     setPhoneReady("");
-  }, [desk?.id]);
+    setCampaignId("");
+    setCampaignCursor(0);
+    setPosterId("");
+    setPictureUrl("");
+    const institute = desk?.workspaceType === "institute";
+    setCampaignName(institute ? "Institute offer" : "Clinic offer");
+    setCampaignText(institute ? "Hi {name}, this is a message from IAA Kochi." : "Hi {name}, this is a message from Dr. K's Aesthetic Clinic.");
+  }, [desk?.id, desk?.workspaceType]);
 
   useEffect(() => {
     if (savedPhone && savedPhone !== phoneReady) {
@@ -222,7 +229,7 @@ export function ProductionWhatsApp() {
     const local = URL.createObjectURL(file);
     setPictureUrl(local);
     setBusy("photo");
-    void saveWhatsAppProfilePicture(file)
+    void saveWhatsAppProfilePicture(file, desk?.id ?? "")
       .then((profile) => {
         if (profile.pictureUrl) setPictureUrl(profile.pictureUrl);
         setNotice("WhatsApp profile photo updated for this sending number.");
@@ -282,8 +289,8 @@ export function ProductionWhatsApp() {
       .finally(() => setBusy(""));
   };
 
-  const lineBlocked = line?.status === "error" || line?.accessTokenSet === false;
-  const lineMessage = line?.detail || "The WhatsApp token for +91 95624 29928 has expired. In Settings, open WhatsApp and paste a token that does not expire.";
+  const lineBlocked = line?.status === "error" || line?.accessTokenSet !== true;
+  const lineMessage = line?.detail || `Save the WhatsApp token for ${fromLine} before sending.`;
 
   const refreshCampaigns = () => {
     if (!desk) return Promise.resolve();
@@ -325,10 +332,16 @@ export function ProductionWhatsApp() {
     setMode("automation");
   };
 
+  const deskLabel = desk?.workspaceType === "institute" ? "Institute" : "Clinic";
+  const defaultCampaignName = desk?.workspaceType === "institute" ? "Institute offer" : "Clinic offer";
+  const defaultCampaignText = desk?.workspaceType === "institute"
+    ? "Hi {name}, this is a message from IAA Kochi."
+    : "Hi {name}, this is a message from Dr. K's Aesthetic Clinic.";
+
   const startCampaign = () => {
     setCampaignId("");
-    setCampaignName("Clinic offer");
-    setCampaignText("Hi {name}, this is a message from Dr. K's Aesthetic Clinic.");
+    setCampaignName(defaultCampaignName);
+    setCampaignText(defaultCampaignText);
     setPosterId("");
     setCampaignCursor(0);
   };
@@ -558,7 +571,7 @@ export function ProductionWhatsApp() {
                     </label>
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-semibold tracking-wide text-[#667781] uppercase">Sending number and WhatsApp DP</p>
-                      <p className="mt-1 text-sm text-[#667781]">This is the clinic line saved for sending. The photo is the profile picture customers see on WhatsApp.</p>
+                      <p className="mt-1 text-sm text-[#667781]">This is the {deskLabel.toLowerCase()} line saved for sending. The photo is the profile picture customers see on WhatsApp. Click leads are assigned only. A message goes out when you press Send.</p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <input
                           value={phoneDraft}
