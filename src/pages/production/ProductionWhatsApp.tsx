@@ -245,165 +245,195 @@ export function ProductionWhatsApp() {
 
   if (admin && mode !== "inbox") {
     const poster = posters.find((item) => item.id === posterId);
+    const preview = campaignText.replaceAll("{name}", "Asha").replaceAll("{phone}", "9198…");
     const navItem = (active: boolean) =>
-      cn("rounded-xl px-3 py-2 text-left text-sm font-medium", active ? "bg-[#d9fdd3] text-[#008069]" : "text-[#111b21] hover:bg-[#f0f2f5]");
+      cn(
+        "flex items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm",
+        active ? "bg-[#25d36622] text-white shadow-[inset_3px_0_0_#25d366]" : "text-[#d1d7db] hover:bg-white/10",
+      );
     return (
-      <div className="-mx-3 -mt-4 mb-[-6rem] flex h-[calc(100dvh-4.25rem)] bg-[#f4f6f8] sm:-mx-6 lg:-mx-8 lg:mb-0">
-        <aside className="hidden w-60 shrink-0 flex-col border-r border-[#e9edef] bg-white p-4 md:flex">
-          <p className="text-sm font-semibold text-[#111b21]">WhatsApp</p>
-          <p className="text-xs text-[#667781]">Automation</p>
-          <nav className="mt-4 flex flex-col gap-1">
-            <button type="button" className={navItem(mode === "automation")} onClick={() => setMode("automation")}>
-              Bulk messaging
-            </button>
-            <button type="button" className={navItem(mode === "clicks")} onClick={() => setMode("clicks")}>
-              Click leads
-            </button>
-            <button type="button" className={navItem(false)} onClick={() => setMode("inbox")}>
-              Inbox
-            </button>
+      <div className="-mx-3 -mt-4 mb-[-6rem] flex h-[calc(100dvh-4.25rem)] overflow-hidden bg-[#f4f6f8] sm:-mx-6 lg:-mx-8 lg:mb-0">
+        <aside className="hidden w-[240px] shrink-0 flex-col bg-[#111b21] px-3 py-4 text-[#e9edef] md:flex">
+          <div className="flex items-center gap-3 px-2 pb-4">
+            <span className="grid size-10 place-items-center rounded-xl bg-[#25D366] text-sm font-bold text-white">WA</span>
+            <span>
+              <span className="block text-sm font-semibold">WhatsApp</span>
+              <span className="block text-xs text-[#8696a0]">Automation</span>
+            </span>
+          </div>
+          <nav className="flex flex-col gap-1">
+            <button type="button" className={navItem(mode === "automation")} onClick={() => setMode("automation")}>Bulk messaging</button>
+            <button type="button" className={navItem(mode === "clicks")} onClick={() => setMode("clicks")}>Click leads</button>
+            <button type="button" className={navItem(false)} onClick={() => setMode("inbox")}>Inbox</button>
           </nav>
-          <div className="mt-auto rounded-2xl border border-[#e9edef] p-3">
-            <p className="text-sm font-medium text-[#111b21]">{lineBlocked ? "Needs a token" : "Connected"}</p>
-            <p className="text-xs text-[#667781]">{fromLine}</p>
+          <div className="mt-auto rounded-2xl border border-white/10 bg-white/10 p-3">
+            <div className="flex items-center gap-2">
+              <span className={cn("size-2.5 rounded-full", lineBlocked ? "bg-red-400" : "bg-[#25D366]")} />
+              <span>
+                <span className="block text-sm font-medium">{lineBlocked ? "Token needed" : "Connected"}</span>
+                <span className="block text-xs text-[#8696a0]">{fromLine}</span>
+              </span>
+            </div>
           </div>
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex flex-wrap items-center gap-2 border-b border-[#e9edef] bg-white px-4 py-2.5">
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-[#111b21]">{mode === "clicks" ? "Click leads" : "Bulk messaging"}</p>
-            <p className="text-xs text-[#667781]">Sends from {fromLine}</p>
-          </div>
-          <button type="button" className={chip(mode === "automation")} onClick={() => setMode("automation")}>
-            Bulk
-          </button>
-          <button type="button" className={chip(mode === "clicks")} onClick={() => setMode("clicks")}>
-            Click leads
-          </button>
-          {write ? (
-            <button type="button" className={chip(false)} onClick={() => setMode("inbox")}>
-              Inbox
-            </button>
-          ) : null}
-          {visibleDesks.length > 1 ? (
-            <select
-              aria-label="Workspace"
-              value={desk?.id || ""}
-              onChange={(event) => setDeskId(event.target.value)}
-              className="h-8 rounded-full border border-[#e9edef] bg-white px-3 text-xs text-[#111b21]"
-            >
-              {visibleDesks.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.workspaceType === "institute" ? "Institute" : "Clinic"} · {item.name}
-                </option>
-              ))}
-            </select>
-          ) : null}
-        </header>
-        {notice ? <p className="bg-[#d9fdd3] px-4 py-2 text-center text-xs text-[#111b21]">{notice}</p> : null}
-        {mode === "clicks" ? (
-          <div className="min-h-0 flex-1 overflow-y-auto bg-white">
-            {chats.map((chat) => (
-              <button
-                key={chat.id}
-                type="button"
-                onClick={() => {
-                  setActiveId(chat.id);
-                  setMode("inbox");
-                }}
-                className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-[#f5f6f6]"
-              >
-                <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[#dfe5e7] text-sm font-medium text-[#54656f]">
-                  {initials(chat.fullName)}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[15px] text-[#111b21]">{chat.fullName}</span>
-                  <span className="block truncate text-sm text-[#667781]">{chat.preview || chat.phone}</span>
-                </span>
-              </button>
-            ))}
-            {chats.length === 0 ? <p className="px-4 py-8 text-sm text-[#667781]">No WhatsApp click leads on this desk yet. A new lead appears when someone messages {fromLine}.</p> : null}
-          </div>
-        ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6">
-          <div className="mx-auto grid max-w-5xl gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl bg-white p-4 shadow-sm"><p className="text-xs text-[#667781]">CRM leads</p><p className="text-2xl font-semibold">{recipientTotal.toLocaleString("en-IN")}</p></div>
-            <div className="rounded-2xl bg-white p-4 shadow-sm"><p className="text-xs text-[#667781]">Click leads</p><p className="text-2xl font-semibold">{clickTotal.toLocaleString("en-IN")}</p></div>
-            <div className="rounded-2xl bg-white p-4 shadow-sm"><p className="text-xs text-[#667781]">Sending number</p><p className="text-lg font-semibold">{fromLine}</p></div>
-          </div>
-          <form
-            className="mx-auto mt-4 flex max-w-5xl flex-col gap-4 rounded-2xl bg-white p-5 shadow-sm"
-            onSubmit={(event) => {
-              event.preventDefault();
-              sendCampaign();
-            }}
-          >
-            <div>
-              <p className="text-lg font-semibold text-[#111b21]">Send message and poster</p>
-              <p className="mt-1 text-sm text-[#667781]">
-                {recipientTotal.toLocaleString("en-IN")} CRM leads on {desk?.name || "this desk"}. This runs on the live site.
-              </p>
+          <header className="flex flex-wrap items-center gap-3 border-b border-[#e9edef] bg-white px-4 py-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className={cn("size-3 rounded-full", lineBlocked ? "bg-red-400" : "bg-[#25D366] shadow-[0_0_0_4px_#25d36633]")} />
+              <p className="truncate text-sm font-semibold text-[#111b21]">{mode === "clicks" ? "Click leads" : "Bulk messaging"}</p>
             </div>
-            {lineBlocked ? (
-              <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
-                {lineMessage}{" "}
-                <Link to="/meta" className="font-medium underline">
-                  Open Meta leads
-                </Link>
-              </p>
-            ) : null}
-            <label className="block text-sm text-[#111b21]">
-              Message
-              <textarea
-                value={campaignText}
-                onChange={(event) => setCampaignText(event.target.value)}
-                rows={5}
-                className="mt-1 w-full rounded-xl border border-[#e9edef] px-3 py-2 text-sm outline-none"
-              />
-            </label>
-            <label className="block text-sm text-[#111b21]">
-              Poster sent with the message
-              <select
-                value={posterId}
-                onChange={(event) => setPosterId(event.target.value)}
-                aria-label="Poster sent with the message"
-                className="mt-1 h-10 w-full rounded-xl border border-[#e9edef] bg-white px-3 text-sm"
-              >
-                <option value="">No poster — text only</option>
-                {posters.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.filename}
-                  </option>
+            <div className="flex rounded-full border border-[#e9edef] bg-[#f4f6f8] p-1">
+              {visibleDesks.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setDeskId(item.id)}
+                  className={cn("rounded-full px-3 py-1 text-xs font-semibold", item.id === desk?.id ? "bg-white text-[#111b21] shadow-sm" : "text-[#667781]")}
+                >
+                  {item.workspaceType === "institute" ? "Institute" : "Clinic"}
+                </button>
+              ))}
+            </div>
+            <div className="ml-auto flex gap-1 md:hidden">
+              <button type="button" className={chip(mode === "automation")} onClick={() => setMode("automation")}>Bulk</button>
+              <button type="button" className={chip(mode === "clicks")} onClick={() => setMode("clicks")}>Clicks</button>
+              <button type="button" className={chip(false)} onClick={() => setMode("inbox")}>Inbox</button>
+            </div>
+          </header>
+          {notice ? <p className="bg-[#d9fdd3] px-4 py-2 text-center text-xs text-[#111b21]">{notice}</p> : null}
+          {mode === "clicks" ? (
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              <div className="mx-auto max-w-3xl overflow-hidden rounded-2xl bg-white shadow-sm">
+                <div className="border-b border-[#e9edef] px-4 py-3">
+                  <p className="text-sm font-semibold text-[#111b21]">{clickTotal.toLocaleString("en-IN")} click leads</p>
+                  <p className="text-xs text-[#667781]">People who message {fromLine} from an ad or a chat.</p>
+                </div>
+                <label className="block px-4 py-3">
+                  <span className="flex items-center gap-3 rounded-lg bg-[#f0f2f5] px-3 py-2 text-sm text-[#54656f]">
+                    <Search className="size-4" />
+                    <input
+                      value={search}
+                      onChange={(event) => {
+                        setSearch(event.target.value);
+                        setPage(1);
+                      }}
+                      placeholder="Name or phone"
+                      className="w-full bg-transparent text-[#111b21] outline-none"
+                    />
+                  </span>
+                </label>
+                {chats.map((chat) => (
+                  <button
+                    key={chat.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveId(chat.id);
+                      setMode("inbox");
+                    }}
+                    className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-[#f5f6f6]"
+                  >
+                    <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[#dfe5e7] text-sm font-medium text-[#54656f]">
+                      {initials(chat.fullName)}
+                    </span>
+                    <span className="min-w-0 flex-1 border-b border-[#e9edef] pb-3">
+                      <span className="flex items-baseline justify-between gap-2">
+                        <span className="truncate text-[15px] text-[#111b21]">{chat.fullName}</span>
+                        <span className="shrink-0 text-xs text-[#667781]">{format(new Date(chat.createdAt), "dd/MM/yyyy")}</span>
+                      </span>
+                      <span className="block truncate text-sm text-[#667781]">{chat.preview || chat.phone}</span>
+                    </span>
+                  </button>
                 ))}
-              </select>
-            </label>
-            <label className="text-sm text-[#008069]">
-              Upload poster
-              <input
-                type="file"
-                accept="image/*"
-                className="mt-1 block w-full text-xs text-[#54656f]"
-                onChange={(event) => savePoster(event.target.files?.[0])}
-              />
-            </label>
-            {poster?.url ? <img src={poster.url} alt="" className="max-h-48 rounded-xl object-contain" /> : null}
-            {busy === "bulk" ? (
-              <p className="text-sm text-[#111b21]">
-                Sent {bulkSent.toLocaleString("en-IN")} · failed {bulkFailed.toLocaleString("en-IN")} · {recipientTotal.toLocaleString("en-IN")} leads
-              </p>
-            ) : null}
-            <button
-              type="submit"
-              disabled={busy === "bulk" || busy === "poster" || recipientTotal < 1 || lineBlocked}
-              className="h-11 rounded-full bg-[#00a884] text-sm font-medium text-white disabled:opacity-60"
-            >
-              {busy === "bulk"
-                ? "Sending…"
-                : `Send message${poster?.url ? " + poster" : ""} to ${recipientTotal.toLocaleString("en-IN")} leads`}
-            </button>
-          </form>
-        </div>
-        )}
+                {chats.length === 0 ? <p className="px-4 py-10 text-center text-sm text-[#667781]">No click leads yet. A lead appears here when someone messages {fromLine}.</p> : null}
+              </div>
+            </div>
+          ) : (
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
+              <div className="mx-auto flex max-w-6xl flex-col gap-4">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    ["CRM leads", recipientTotal.toLocaleString("en-IN")],
+                    ["Click leads", clickTotal.toLocaleString("en-IN")],
+                    ["Sending from", fromLine],
+                    ["This send", busy === "bulk" ? `${bulkSent.toLocaleString("en-IN")} sent` : "Ready"],
+                  ].map(([label, value]) => (
+                    <article key={label} className="rounded-2xl bg-white px-4 py-3 shadow-sm">
+                      <p className="text-xs text-[#667781]">{label}</p>
+                      <p className="mt-1 truncate text-xl font-semibold text-[#111b21]">{value}</p>
+                    </article>
+                  ))}
+                </div>
+                <form
+                  className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    sendCampaign();
+                  }}
+                >
+                  <section className="rounded-2xl bg-white p-5 shadow-sm">
+                    <p className="text-xs font-semibold tracking-wide text-[#667781] uppercase">Compose</p>
+                    <h2 className="mt-1 text-lg font-semibold text-[#111b21]">Message and poster</h2>
+                    <p className="mt-1 text-sm text-[#667781]">{desk?.name || "This desk"} · {recipientTotal.toLocaleString("en-IN")} CRM leads</p>
+                    {lineBlocked ? (
+                      <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
+                        {lineMessage}{" "}
+                        <Link to="/meta" className="font-medium underline">Open Meta leads</Link>
+                      </p>
+                    ) : null}
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {QUICK_REPLIES.map((reply) => (
+                        <button key={reply.label} type="button" className="rounded-full bg-[#f0f2f5] px-3 py-1 text-xs font-medium text-[#008069]" onClick={() => setCampaignText(reply.text)}>
+                          {reply.label}
+                        </button>
+                      ))}
+                      <button type="button" className="rounded-full bg-[#f0f2f5] px-3 py-1 text-xs font-medium text-[#54656f]" onClick={() => setCampaignText((value) => `${value}{name}`)}>
+                        {"{name}"}
+                      </button>
+                    </div>
+                    <textarea
+                      value={campaignText}
+                      onChange={(event) => setCampaignText(event.target.value)}
+                      rows={6}
+                      aria-label="Message"
+                      className="mt-3 w-full rounded-2xl border border-[#e9edef] px-3 py-3 text-sm outline-none"
+                    />
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <select
+                        value={posterId}
+                        onChange={(event) => setPosterId(event.target.value)}
+                        aria-label="Poster sent with the message"
+                        className="h-10 min-w-0 flex-1 rounded-xl border border-[#e9edef] bg-white px-3 text-sm"
+                      >
+                        <option value="">No poster — text only</option>
+                        {posters.map((item) => (
+                          <option key={item.id} value={item.id}>{item.filename}</option>
+                        ))}
+                      </select>
+                      <label className="inline-flex h-10 cursor-pointer items-center rounded-xl bg-[#f0f2f5] px-3 text-xs font-medium text-[#111b21]">
+                        Upload
+                        <input type="file" accept="image/*" className="hidden" onChange={(event) => savePoster(event.target.files?.[0])} />
+                      </label>
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={busy === "bulk" || busy === "poster" || recipientTotal < 1 || lineBlocked}
+                      className="mt-4 h-11 w-full rounded-full bg-[#00a884] text-sm font-semibold text-white disabled:opacity-60"
+                    >
+                      {busy === "bulk" ? `Sending ${bulkSent.toLocaleString("en-IN")} · failed ${bulkFailed.toLocaleString("en-IN")}` : `Send message${poster?.url ? " + poster" : ""} to ${recipientTotal.toLocaleString("en-IN")} leads`}
+                    </button>
+                  </section>
+                  <section className="rounded-2xl bg-[#0b141a] p-5 text-white shadow-sm">
+                    <p className="text-xs text-[#8696a0]">Preview · {fromLine}</p>
+                    <div className="mt-4 max-w-sm rounded-lg rounded-tl-none bg-[#005c4b] px-3 py-2 text-sm leading-snug text-white">
+                      {poster?.url ? <img src={poster.url} alt="" className="mb-2 max-h-40 w-full rounded-md object-cover" /> : null}
+                      <p className="whitespace-pre-wrap">{preview || "Your message appears here."}</p>
+                      <p className="mt-1 text-right text-[11px] text-white/70">now</p>
+                    </div>
+                  </section>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
