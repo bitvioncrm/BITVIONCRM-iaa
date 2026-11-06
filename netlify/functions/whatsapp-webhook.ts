@@ -82,8 +82,20 @@ async function createLead(supabaseUrl: string, serviceKey: string, desk: Channel
     }),
   });
   if (!response.ok) return "";
-  const rows = (await response.json()) as Array<{ id?: string }>;
+  const rows = (await response.json()) as Array<{ id?: string; assigned_to?: string | null }>;
   const leadId = rows[0]?.id ?? "";
+  if (leadId && rows[0]?.assigned_to) {
+    await fetch(`${supabaseUrl}/rest/v1/lead_assignments`, {
+      method: "POST",
+      headers: serviceHeaders(serviceKey),
+      body: JSON.stringify({
+        organization_id: desk.organization_id,
+        workspace_id: desk.workspace_id,
+        lead_id: leadId,
+        assigned_to: rows[0].assigned_to,
+      }),
+    });
+  }
   if (leadId) {
     await fetch(`${supabaseUrl}/rest/v1/lead_status_history`, {
       method: "POST",

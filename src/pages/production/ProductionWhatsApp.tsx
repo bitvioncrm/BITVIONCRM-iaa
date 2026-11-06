@@ -8,13 +8,22 @@ import { listWorkspaceChannels, type ChannelStatus } from "@/services/channel-se
 import { listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
 import {
   countWhatsAppRecipients,
+  countWhatsAppSentToday,
+  listWhatsAppCampaigns,
   listWhatsAppChats,
   listWhatsAppNumbers,
   listWhatsAppPosters,
   listWhatsAppThread,
+  loadWhatsAppProfile,
+  removeWhatsAppCampaign,
+  removeWhatsAppPoster,
+  saveWhatsAppNumber,
+  saveWhatsAppProfilePicture,
+  saveWhatsAppCampaign,
   saveWhatsAppPoster,
   sendWhatsAppBulk,
   sendWhatsAppMessage,
+  type WhatsAppCampaign,
   type WhatsAppBubble,
   type WhatsAppChat,
   type WhatsAppNumber,
@@ -48,7 +57,16 @@ export function ProductionWhatsApp() {
   const admin = canOperateWhatsApp(role);
   const deskMode = whatsAppDesk(role);
   const [mode, setMode] = useState<"automation" | "clicks" | "inbox">(admin ? "automation" : "inbox");
-  const [campaignText, setCampaignText] = useState("Hi, this is a message from Dr. K's Aesthetic Clinic.");
+  const [campaignId, setCampaignId] = useState("");
+  const [campaignCursor, setCampaignCursor] = useState(0);
+  const [campaignName, setCampaignName] = useState("Clinic offer");
+  const [campaigns, setCampaigns] = useState<WhatsAppCampaign[]>([]);
+  const [sentToday, setSentToday] = useState(0);
+  const [balance, setBalance] = useState(250);
+  const [pictureUrl, setPictureUrl] = useState("");
+  const [phoneDraft, setPhoneDraft] = useState("");
+  const [phoneReady, setPhoneReady] = useState("");
+  const [campaignText, setCampaignText] = useState("Hi {name}, this is a message from Dr. K's Aesthetic Clinic.");
   const [recipientTotal, setRecipientTotal] = useState(0);
   const [bulkSent, setBulkSent] = useState(0);
   const [bulkFailed, setBulkFailed] = useState(0);
@@ -141,23 +159,90 @@ export function ProductionWhatsApp() {
   }, [thread]);
 
   useEffect(() => {
-    if (mode !== "automation" || !desk) return;
+    if (!desk || (mode !== "automation" && mode !== "inbox")) return;
+    void listWhatsAppPosters(desk.id).then(setPosters).catch(() => setPosters([]));
+    if (mode !== "automation") return;
     void countWhatsAppRecipients(desk.id, { from: "", to: "", name: "" })
       .then((result) => setRecipientTotal(result.total))
       .catch((reason: unknown) => setNotice(reason instanceof Error ? reason.message : "Could not count leads"));
-    void listWhatsAppPosters(desk.id).then(setPosters).catch(() => setPosters([]));
     void listWhatsAppChats(desk.id, "", "clicks", 1)
       .then((result) => setClickTotal(result.total))
       .catch(() => setClickTotal(0));
     void listWorkspaceChannels()
       .then((rows) => setLine(rows.find((row) => row.workspaceId === desk.id && row.channel === "whatsapp") ?? null))
       .catch(() => setLine(null));
+    void listWhatsAppCampaigns(desk.id).then(setCampaigns).catch(() => setCampaigns([]));
+    void countWhatsAppSentToday(desk.id)
+      .then((result) => {
+        setSentToday(result.sent);
+        setBalance(result.balance);
+      })
+      .catch(() => undefined);
+    void loadWhatsAppProfile()
+      .then((profile) => setPictureUrl(profile.pictureUrl))
+      .catch(() => setPictureUrl(""));
   }, [desk, mode]);
 
-  const sendingNumber =
-    numbers.find((item) => item.displayPhone.replace(/\D/g, "").endsWith("9562429928")) ??
-    numbers.find((item) => item.workspaceType === "clinic");
-  const fromLine = sendingNumber?.displayPhone || "WhatsApp";
+  const sendingNumber = numbers.find((item) => item.workspaceId === desk?.id) ?? numbers.find((item) => item.workspaceType === "clinic");
+  const savedPhone = line?.displayPhone || sendingNumber?.displayPhone || "";
+  const fromLine = phoneDraft.trim() || savedPhone || "WhatsApp";
+
+  useEffect(() => {
+    setPhoneReady("");
+  }, [desk?.id]);
+
+  useEffect(() => {
+    if (savedPhone && savedPhone !== phoneReady) {
+      setPhoneDraft(savedPhone);
+      setPhoneReady(savedPhone);
+    }
+  }, [savedPhone, phoneReady]);
+
+  const saveNumber = () => {
+    if (!desk) return;
+    const phone = phoneDraft.trim();
+    if (phone.replace(/\D/g, "").length < 10) {
+      setNotice("Enter the full WhatsApp number, including 91.");
+      return;
+    }
+    setBusy("phone");
+    void saveWhatsAppNumber(desk.id, phone)
+      .then(() => listWhatsAppNumbers())
+      .then((rows) => {
+        setNumbers(rows);
+        setPhoneReady(phone);
+        setNotice("Sending number saved. Campaigns and posters leave from this line.");
+      })
+      .catch((reason: unknown) => setNotice(reason instanceof Error ? reason.message : "Could not save the number"))
+      .finally(() => setBusy(""));
+  };
+
+  const saveProfilePhoto = (file: File | undefined) => {
+    if (!file) return;
+    const local = URL.createObjectURL(file);
+    setPictureUrl(local);
+    setBusy("photo");
+    void saveWhatsAppProfilePicture(file)
+      .then((profile) => {
+        if (profile.pictureUrl) setPictureUrl(profile.pictureUrl);
+        setNotice("WhatsApp profile photo updated for this sending number.");
+      })
+      .catch((reason: unknown) => setNotice(reason instanceof Error ? reason.message : "Could not update the profile photo"))
+      .finally(() => setBusy(""));
+  };
+
+  const deletePoster = (id: string) => {
+    setBusy("poster");
+    void removeWhatsAppPoster(id)
+      .then(() => (desk ? listWhatsAppPosters(desk.id) : []))
+      .then((next) => {
+        setPosters(next);
+        if (posterId === id) setPosterId("");
+        setNotice("Poster removed.");
+      })
+      .catch((reason: unknown) => setNotice(reason instanceof Error ? reason.message : "Could not remove the poster"))
+      .finally(() => setBusy(""));
+  };
 
   const sendDirect = () => {
     if (!active?.phone) return;
@@ -200,6 +285,75 @@ export function ProductionWhatsApp() {
   const lineBlocked = line?.status === "error" || line?.accessTokenSet === false;
   const lineMessage = line?.detail || "The WhatsApp token for +91 95624 29928 has expired. In Settings, open WhatsApp and paste a token that does not expire.";
 
+  const refreshCampaigns = () => {
+    if (!desk) return Promise.resolve();
+    return Promise.all([
+      listWhatsAppCampaigns(desk.id).then(setCampaigns),
+      countWhatsAppSentToday(desk.id).then((result) => {
+        setSentToday(result.sent);
+        setBalance(result.balance);
+      }),
+    ]).then(() => undefined);
+  };
+
+  const writeCampaign = (status: WhatsAppCampaign["status"], sent: number, failed: number, total: number, cursor: number, id = campaignId) => {
+    if (!desk) return Promise.resolve("");
+    return saveWhatsAppCampaign({
+      id: id || undefined,
+      organizationId: desk.organizationId,
+      workspaceId: desk.id,
+      name: campaignName,
+      body: campaignText,
+      posterId,
+      status,
+      sent,
+      failed,
+      total,
+      cursor,
+    }).then((saved) => {
+      setCampaignId(saved);
+      return refreshCampaigns().then(() => saved);
+    });
+  };
+
+  const openCampaign = (item: WhatsAppCampaign) => {
+    setCampaignId(item.id);
+    setCampaignName(item.name);
+    setCampaignText(item.body);
+    setPosterId(item.posterId);
+    setCampaignCursor(item.cursor);
+    setMode("automation");
+  };
+
+  const startCampaign = () => {
+    setCampaignId("");
+    setCampaignName("Clinic offer");
+    setCampaignText("Hi {name}, this is a message from Dr. K's Aesthetic Clinic.");
+    setPosterId("");
+    setCampaignCursor(0);
+  };
+
+  const saveDraft = () => {
+    if (!desk) return;
+    setBusy("save");
+    const current = campaigns.find((item) => item.id === campaignId);
+    void writeCampaign(current?.status ?? "draft", current?.sent ?? 0, current?.failed ?? 0, current?.total || recipientTotal, current?.cursor ?? campaignCursor)
+      .then(() => setNotice("Campaign saved."))
+      .catch((reason: unknown) => setNotice(reason instanceof Error ? reason.message : "Could not save"))
+      .finally(() => setBusy(""));
+  };
+
+  const deleteCampaign = (id: string) => {
+    if (!window.confirm("Delete this campaign?")) return;
+    void removeWhatsAppCampaign(id)
+      .then(() => {
+        if (campaignId === id) startCampaign();
+        return refreshCampaigns();
+      })
+      .then(() => setNotice("Campaign deleted."))
+      .catch((reason: unknown) => setNotice(reason instanceof Error ? reason.message : "Could not delete"));
+  };
+
   const sendCampaign = () => {
     if (!desk || lineBlocked) return;
     const poster = posters.find((item) => item.id === posterId);
@@ -208,18 +362,27 @@ export function ProductionWhatsApp() {
       setNotice("Add a message or a poster.");
       return;
     }
+    const waiting = Math.max(0, recipientTotal - campaignCursor);
+    const today = Math.min(balance, waiting);
+    if (today < 1) {
+      setNotice(balance < 1 ? "Today's 250-message balance is used. Nothing sends until you press Send again tomorrow." : "This campaign has already reached every lead.");
+      return;
+    }
     const together = poster?.url ? "this message and poster" : "this message";
-    const approved = window.confirm(`Send ${together} to ${recipientTotal.toLocaleString("en-IN")} CRM leads from ${fromLine}?`);
+    const approved = window.confirm(`Send ${together} to the next ${today.toLocaleString("en-IN")} leads now from ${fromLine}? Nothing is sent automatically. ${waiting.toLocaleString("en-IN")} leads stay unsent until you press Send again.`);
     if (!approved) return;
     setBusy("bulk");
     setBulkSent(0);
     setBulkFailed(0);
     void (async () => {
-      let offset = 0;
+      let offset = campaignCursor;
       let sent = 0;
       let failed = 0;
+      let capped = false;
+      const current = campaigns.find((item) => item.id === campaignId);
       try {
-        for (let guard = 0; guard < 2000; guard += 1) {
+        const savedId = await writeCampaign("running", current?.sent ?? 0, current?.failed ?? 0, recipientTotal, offset);
+        for (let guard = 0; guard < 40; guard += 1) {
           const batch = await sendWhatsAppBulk({
             text,
             imageUrl: poster?.url || undefined,
@@ -231,10 +394,19 @@ export function ProductionWhatsApp() {
           setBulkSent(sent);
           setBulkFailed(failed);
           if (batch.total) setRecipientTotal(batch.total);
-          if (batch.done || batch.next <= offset) break;
+          const previous = offset;
           offset = batch.next;
+          setCampaignCursor(offset);
+          capped = batch.capped;
+          if (batch.capped || batch.done || offset <= previous) break;
         }
-        setNotice(`Sent ${sent.toLocaleString("en-IN")} from ${fromLine}. Failed ${failed.toLocaleString("en-IN")}.`);
+        const finished = offset >= recipientTotal;
+        await writeCampaign(finished ? "completed" : "running", (current?.sent ?? 0) + sent, (current?.failed ?? 0) + failed, recipientTotal, offset, savedId);
+        setNotice(
+          capped
+            ? `Sent ${sent.toLocaleString("en-IN")} today from ${fromLine}. The rest stay unsent until you press Send again.`
+            : `Sent ${sent.toLocaleString("en-IN")} from ${fromLine}. Failed ${failed.toLocaleString("en-IN")}.`,
+        );
       } catch (reason: unknown) {
         setNotice(reason instanceof Error ? reason.message : "Could not send");
       } finally {
@@ -243,8 +415,10 @@ export function ProductionWhatsApp() {
     })();
   };
 
+  const selectedPoster = posters.find((item) => item.id === posterId);
+
   if (admin && mode !== "inbox") {
-    const poster = posters.find((item) => item.id === posterId);
+    const poster = selectedPoster;
     const preview = campaignText.replaceAll("{name}", "Asha").replaceAll("{phone}", "9198…");
     const navItem = (active: boolean) =>
       cn(
@@ -255,10 +429,14 @@ export function ProductionWhatsApp() {
       <div className="-mx-3 -mt-4 mb-[-6rem] flex h-[calc(100dvh-4.25rem)] overflow-hidden bg-[#f4f6f8] sm:-mx-6 lg:-mx-8 lg:mb-0">
         <aside className="hidden w-[240px] shrink-0 flex-col bg-[#111b21] px-3 py-4 text-[#e9edef] md:flex">
           <div className="flex items-center gap-3 px-2 pb-4">
-            <span className="grid size-10 place-items-center rounded-xl bg-[#25D366] text-sm font-bold text-white">WA</span>
-            <span>
-              <span className="block text-sm font-semibold">WhatsApp</span>
-              <span className="block text-xs text-[#8696a0]">Automation</span>
+            {pictureUrl ? (
+              <img src={pictureUrl} alt="" className="size-12 rounded-full object-cover ring-2 ring-[#25D366]" onError={() => setPictureUrl("")} />
+            ) : (
+              <span className="grid size-12 place-items-center rounded-full bg-[#25D366] text-sm font-bold text-white">WA</span>
+            )}
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold">{fromLine}</span>
+              <span className="block text-xs text-[#8696a0]">{lineBlocked ? "Token needed" : "Sending number"}</span>
             </span>
           </div>
           <nav className="flex flex-col gap-1">
@@ -306,7 +484,7 @@ export function ProductionWhatsApp() {
               <div className="mx-auto max-w-3xl overflow-hidden rounded-2xl bg-white shadow-sm">
                 <div className="border-b border-[#e9edef] px-4 py-3">
                   <p className="text-sm font-semibold text-[#111b21]">{clickTotal.toLocaleString("en-IN")} click leads</p>
-                  <p className="text-xs text-[#667781]">People who message {fromLine} from an ad or a chat.</p>
+                  <p className="text-xs text-[#667781]">A WhatsApp click is added to CRM leads and assigned. No message is sent until you send a bulk campaign.</p>
                 </div>
                 <label className="block px-4 py-3">
                   <span className="flex items-center gap-3 rounded-lg bg-[#f0f2f5] px-3 py-2 text-sm text-[#54656f]">
@@ -350,19 +528,56 @@ export function ProductionWhatsApp() {
           ) : (
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
               <div className="mx-auto flex max-w-6xl flex-col gap-4">
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  {[
-                    ["CRM leads", recipientTotal.toLocaleString("en-IN")],
-                    ["Click leads", clickTotal.toLocaleString("en-IN")],
-                    ["Sending from", fromLine],
-                    ["This send", busy === "bulk" ? `${bulkSent.toLocaleString("en-IN")} sent` : "Ready"],
-                  ].map(([label, value]) => (
-                    <article key={label} className="rounded-2xl bg-white px-4 py-3 shadow-sm">
-                      <p className="text-xs text-[#667781]">{label}</p>
-                      <p className="mt-1 truncate text-xl font-semibold text-[#111b21]">{value}</p>
-                    </article>
-                  ))}
+                <div className="grid gap-3 lg:grid-cols-3">
+                  <article className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#07362c] via-[#0f6e56] to-[#1fa87a] p-5 text-white shadow-[0_18px_40px_rgba(15,110,86,0.28)]">
+                    <span className="absolute -right-6 -top-8 size-28 rounded-full bg-white/10" />
+                    <p className="text-[11px] font-semibold tracking-[0.18em] text-white/70 uppercase">Campaigns running</p>
+                    <p className="mt-3 text-4xl font-semibold tabular-nums">{campaigns.filter((item) => item.status === "running").length}</p>
+                    <p className="mt-2 text-xs text-white/80">{campaigns.length} saved · sends only when you press Send</p>
+                  </article>
+                  <article className="relative overflow-hidden rounded-3xl bg-[#111b21] p-5 text-white shadow-[0_18px_40px_rgba(17,27,33,0.22)]">
+                    <span className="absolute -right-8 bottom-0 size-24 rounded-full bg-[#25D366]/20" />
+                    <p className="text-[11px] font-semibold tracking-[0.18em] text-[#8696a0] uppercase">Leads sent</p>
+                    <p className="mt-3 text-4xl font-semibold tabular-nums text-[#d9fdd3]">{sentToday.toLocaleString("en-IN")}</p>
+                    <p className="mt-2 text-xs text-[#8696a0]">{busy === "bulk" ? `${bulkSent.toLocaleString("en-IN")} in this send` : "Messages delivered today"}</p>
+                  </article>
+                  <article className="relative overflow-hidden rounded-3xl border border-[#e7d7b1] bg-gradient-to-br from-[#fffaf0] to-[#f3e6c8] p-5 text-[#3d2e12] shadow-[0_18px_40px_rgba(184,146,62,0.16)]">
+                    <p className="text-[11px] font-semibold tracking-[0.18em] text-[#8a6a32] uppercase">Balance today</p>
+                    <p className="mt-3 text-4xl font-semibold tabular-nums">{balance.toLocaleString("en-IN")}</p>
+                    <p className="mt-2 text-xs text-[#8a6a32]">of 250 · nothing goes out until the next bulk send</p>
+                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#ead9b0]">
+                      <div className="h-full rounded-full bg-[#b8923e]" style={{ width: `${Math.min(100, (balance / 250) * 100)}%` }} />
+                    </div>
+                  </article>
                 </div>
+                <section className="rounded-3xl bg-white p-5 shadow-sm">
+                  <div className="flex flex-wrap items-center gap-4">
+                    <label className="relative grid size-20 shrink-0 cursor-pointer place-items-center overflow-hidden rounded-full bg-[#111b21] text-xs font-semibold text-white ring-2 ring-[#25D366]">
+                      {pictureUrl ? <img src={pictureUrl} alt="" className="size-full object-cover" onError={() => setPictureUrl("")} /> : "DP"}
+                      <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event) => saveProfilePhoto(event.target.files?.[0])} />
+                    </label>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold tracking-wide text-[#667781] uppercase">Sending number and WhatsApp DP</p>
+                      <p className="mt-1 text-sm text-[#667781]">This is the clinic line saved for sending. The photo is the profile picture customers see on WhatsApp.</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <input
+                          value={phoneDraft}
+                          onChange={(event) => setPhoneDraft(event.target.value)}
+                          aria-label="Sending WhatsApp number"
+                          placeholder="+91 95624 29928"
+                          className="h-10 min-w-[220px] flex-1 rounded-xl border border-[#e9edef] px-3 text-sm outline-none"
+                        />
+                        <button type="button" disabled={busy === "phone"} onClick={saveNumber} className="h-10 rounded-full bg-[#111b21] px-4 text-sm font-semibold text-white disabled:opacity-60">
+                          Save number
+                        </button>
+                        <label className="inline-flex h-10 cursor-pointer items-center rounded-full bg-[#f0f2f5] px-4 text-sm font-medium text-[#111b21]">
+                          {busy === "photo" ? "Updating photo…" : "Set WhatsApp DP"}
+                          <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event) => saveProfilePhoto(event.target.files?.[0])} />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </section>
                 <form
                   className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]"
                   onSubmit={(event) => {
@@ -371,9 +586,18 @@ export function ProductionWhatsApp() {
                   }}
                 >
                   <section className="rounded-2xl bg-white p-5 shadow-sm">
-                    <p className="text-xs font-semibold tracking-wide text-[#667781] uppercase">Compose</p>
-                    <h2 className="mt-1 text-lg font-semibold text-[#111b21]">Message and poster</h2>
-                    <p className="mt-1 text-sm text-[#667781]">{desk?.name || "This desk"} · {recipientTotal.toLocaleString("en-IN")} CRM leads</p>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold tracking-wide text-[#667781] uppercase">Campaign</p>
+                        <h2 className="mt-1 text-lg font-semibold text-[#111b21]">{campaignId ? "Edit campaign" : "New campaign"}</h2>
+                      </div>
+                      <button type="button" className="rounded-full bg-[#f0f2f5] px-3 py-1 text-xs font-medium text-[#111b21]" onClick={startCampaign}>New</button>
+                    </div>
+                    <label className="mt-4 block text-xs font-medium text-[#667781]">
+                      Name
+                      <input value={campaignName} onChange={(event) => setCampaignName(event.target.value)} className="mt-1 h-10 w-full rounded-xl border border-[#e9edef] px-3 text-sm text-[#111b21] outline-none" />
+                    </label>
+                    <p className="mt-2 text-sm text-[#667781]">{fromLine} · next {Math.min(balance, Math.max(recipientTotal - campaignCursor, 0)).toLocaleString("en-IN")} of {Math.max(recipientTotal - campaignCursor, 0).toLocaleString("en-IN")} waiting</p>
                     {lineBlocked ? (
                       <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
                         {lineMessage}{" "}
@@ -397,33 +621,53 @@ export function ProductionWhatsApp() {
                       aria-label="Message"
                       className="mt-3 w-full rounded-2xl border border-[#e9edef] px-3 py-3 text-sm outline-none"
                     />
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <select
-                        value={posterId}
-                        onChange={(event) => setPosterId(event.target.value)}
-                        aria-label="Poster sent with the message"
-                        className="h-10 min-w-0 flex-1 rounded-xl border border-[#e9edef] bg-white px-3 text-sm"
-                      >
-                        <option value="">No poster — text only</option>
+                    <div className="mt-4">
+                      <p className="text-xs font-medium text-[#667781]">Poster sent with this message</p>
+                      <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                        <button
+                          type="button"
+                          onClick={() => setPosterId("")}
+                          className={cn("grid h-24 w-20 shrink-0 place-items-center rounded-2xl border text-center text-[11px] font-medium", posterId ? "border-[#e9edef] text-[#667781]" : "border-[#00a884] bg-[#f3faf7] text-[#008069]")}
+                        >
+                          Text only
+                        </button>
                         {posters.map((item) => (
-                          <option key={item.id} value={item.id}>{item.filename}</option>
+                          <div key={item.id} className={cn("relative h-24 w-20 shrink-0 overflow-hidden rounded-2xl border", item.id === posterId ? "border-[#00a884] ring-2 ring-[#00a884]" : "border-[#e9edef]")}>
+                            <button type="button" className="size-full" onClick={() => setPosterId(item.id)} aria-label={`Send ${item.filename}`}>
+                              {item.url ? <img src={item.url} alt="" className="size-full object-cover" /> : <span className="grid size-full place-items-center px-1 text-[10px]">{item.filename}</span>}
+                            </button>
+                            <button type="button" className="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 text-[10px] text-white" onClick={() => deletePoster(item.id)} aria-label={`Remove ${item.filename}`}>
+                              ×
+                            </button>
+                          </div>
                         ))}
-                      </select>
-                      <label className="inline-flex h-10 cursor-pointer items-center rounded-xl bg-[#f0f2f5] px-3 text-xs font-medium text-[#111b21]">
-                        Upload
-                        <input type="file" accept="image/*" className="hidden" onChange={(event) => savePoster(event.target.files?.[0])} />
-                      </label>
+                        <label className="grid h-24 w-20 shrink-0 cursor-pointer place-items-center rounded-2xl border border-dashed border-[#00a884] text-center text-[11px] font-medium text-[#008069]">
+                          {busy === "poster" ? "Saving…" : "Add poster"}
+                          <input type="file" accept="image/*" className="hidden" onChange={(event) => savePoster(event.target.files?.[0])} />
+                        </label>
+                      </div>
                     </div>
-                    <button
-                      type="submit"
-                      disabled={busy === "bulk" || busy === "poster" || recipientTotal < 1 || lineBlocked}
-                      className="mt-4 h-11 w-full rounded-full bg-[#00a884] text-sm font-semibold text-white disabled:opacity-60"
-                    >
-                      {busy === "bulk" ? `Sending ${bulkSent.toLocaleString("en-IN")} · failed ${bulkFailed.toLocaleString("en-IN")}` : `Send message${poster?.url ? " + poster" : ""} to ${recipientTotal.toLocaleString("en-IN")} leads`}
-                    </button>
+                    <div className="mt-4 flex gap-2">
+                      <button type="button" disabled={busy === "save" || busy === "bulk"} onClick={saveDraft} className="h-11 rounded-full border border-[#e9edef] px-4 text-sm font-semibold text-[#111b21] disabled:opacity-60">
+                        Save
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={busy === "bulk" || busy === "poster" || lineBlocked || Math.min(balance, Math.max(recipientTotal - campaignCursor, 0)) < 1}
+                        className="h-11 flex-1 rounded-full bg-[#00a884] text-sm font-semibold text-white disabled:opacity-60"
+                      >
+                        {busy === "bulk"
+                          ? `Sending ${bulkSent.toLocaleString("en-IN")} · failed ${bulkFailed.toLocaleString("en-IN")}`
+                          : `Send${poster?.url ? " + poster" : ""} to ${Math.min(balance, Math.max(recipientTotal - campaignCursor, 0)).toLocaleString("en-IN")} today`}
+                      </button>
+                    </div>
                   </section>
                   <section className="rounded-2xl bg-[#0b141a] p-5 text-white shadow-sm">
                     <p className="text-xs text-[#8696a0]">Preview · {fromLine}</p>
+                    <div className="mt-4 flex items-center gap-2">
+                      {pictureUrl ? <img src={pictureUrl} alt="" className="size-9 rounded-full object-cover" /> : <span className="grid size-9 place-items-center rounded-full bg-[#25D366] text-xs font-bold">WA</span>}
+                      <span className="text-sm text-[#e9edef]">{fromLine}</span>
+                    </div>
                     <div className="mt-4 max-w-sm rounded-lg rounded-tl-none bg-[#005c4b] px-3 py-2 text-sm leading-snug text-white">
                       {poster?.url ? <img src={poster.url} alt="" className="mb-2 max-h-40 w-full rounded-md object-cover" /> : null}
                       <p className="whitespace-pre-wrap">{preview || "Your message appears here."}</p>
@@ -431,6 +675,22 @@ export function ProductionWhatsApp() {
                     </div>
                   </section>
                 </form>
+                <section className="rounded-3xl bg-white p-5 shadow-sm">
+                  <p className="text-xs font-semibold tracking-wide text-[#667781] uppercase">Saved campaigns</p>
+                  <div className="mt-3 flex flex-col gap-2">
+                    {campaigns.map((item) => (
+                      <div key={item.id} className={cn("flex flex-wrap items-center gap-3 rounded-2xl border px-3 py-3", item.id === campaignId ? "border-[#00a884] bg-[#f3faf7]" : "border-[#e9edef]")}>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-[#111b21]">{item.name}</p>
+                          <p className="truncate text-xs text-[#667781]">{item.status} · sent {item.sent.toLocaleString("en-IN")} · waiting {Math.max(item.total - item.cursor, 0).toLocaleString("en-IN")}</p>
+                        </div>
+                        <button type="button" className="rounded-full bg-[#f0f2f5] px-3 py-1 text-xs font-medium" onClick={() => openCampaign(item)}>Edit</button>
+                        <button type="button" className="rounded-full bg-[#fff1f0] px-3 py-1 text-xs font-medium text-[#9b2c2c]" onClick={() => deleteCampaign(item.id)}>Delete</button>
+                      </div>
+                    ))}
+                    {campaigns.length === 0 ? <p className="text-sm text-[#667781]">No campaigns yet. Name one, write the message, add a poster, then save or send today’s balance.</p> : null}
+                  </div>
+                </section>
               </div>
             </div>
           )}
@@ -572,6 +832,13 @@ export function ProductionWhatsApp() {
                     sendDirect();
                   }}
                 >
+                  {selectedPoster?.url ? (
+                    <div className="mb-2 flex items-center gap-2">
+                      <img src={selectedPoster.url} alt="" className="h-14 w-14 rounded-lg object-cover" />
+                      <span className="text-xs text-[#667781]">This poster is sent with the reply.</span>
+                      <button type="button" className="text-xs font-medium text-[#9b2c2c]" onClick={() => setPosterId("")}>Remove</button>
+                    </div>
+                  ) : null}
                   <div className="mb-2 flex gap-2 overflow-x-auto">
                     {QUICK_REPLIES.map((reply) => (
                       <button

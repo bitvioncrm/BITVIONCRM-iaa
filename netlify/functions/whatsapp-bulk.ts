@@ -15,6 +15,12 @@ function roleKey(value: { key: string } | { key: string }[] | null) {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BATCH = 20;
+const DAILY_CAP = 250;
+
+function indiaDayStart() {
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  return new Date(`${day}T00:00:00+05:30`).toISOString();
+}
 
 export default async (request: Request) => {
   if (request.method !== "POST") return json(405, { status: "method_not_allowed" });
@@ -47,10 +53,29 @@ export default async (request: Request) => {
   if (!secret?.access_token || !secret.phone_number_id) return json(503, { status: "configuration_required", detail: "Save a WhatsApp access token for +91 95624 29928." });
 
   const headers = { apikey: serviceKey, authorization: `Bearer ${serviceKey}` };
+  const dayFilter = workspaceId ? `&workspace_id=eq.${workspaceId}` : "";
+  const usedResponse = await fetch(
+    `${supabaseUrl}/rest/v1/messages?select=id&channel=eq.whatsapp&direction=eq.outbound&created_at=gte.${encodeURIComponent(indiaDayStart())}${dayFilter}`,
+    { headers: { ...headers, Prefer: "count=exact", Range: "0-0" } },
+  );
+  const used = Number((usedResponse.headers.get("content-range") ?? "0/0").split("/")[1] || 0);
+  const remaining = Math.max(0, DAILY_CAP - used);
+  if (remaining < 1) {
+    return json(200, {
+      status: "capped",
+      sent: 0,
+      failed: 0,
+      next: offset,
+      total: 0,
+      capped: 1,
+      detail: "Today's 250-message balance is used. This campaign continues tomorrow.",
+    });
+  }
+  const take = Math.min(BATCH, remaining);
   const filter = workspaceId ? `&workspace_id=eq.${workspaceId}` : "";
   const list = await fetch(
     `${supabaseUrl}/rest/v1/leads?select=id,phone,organization_id,workspace_id&deleted_at=is.null&phone=neq.${filter}&order=created_at.desc`,
-    { headers: { ...headers, Range: `${offset}-${offset + BATCH - 1}`, Prefer: "count=exact" } },
+    { headers: { ...headers, Range: `${offset}-${offset + take - 1}`, Prefer: "count=exact" } },
   );
   const total = Number((list.headers.get("content-range") ?? "").split("/")[1] || 0);
   const leads = (await list.json()) as Array<{ id: string; phone: string; organization_id: string; workspace_id: string }>;
@@ -105,5 +130,14 @@ export default async (request: Request) => {
     sent += 1;
   }
   const next = offset + (Array.isArray(leads) ? leads.length : 0);
-  return json(sent === 0 && failed > 0 ? 502 : 200, { status: sent > 0 ? "sent" : "error", sent, failed, next, total, detail });
+  const capped = sent + failed >= remaining && next < total ? 1 : 0;
+  return json(sent === 0 && failed > 0 ? 502 : 200, {
+    status: capped ? "capped" : sent > 0 ? "sent" : "error",
+    sent,
+    failed,
+    next,
+    total,
+    capped,
+    detail: capped ? "Today's balance is used. Continue this campaign tomorrow." : detail,
+  });
 };

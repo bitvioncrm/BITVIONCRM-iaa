@@ -166,9 +166,142 @@ export async function sendWhatsAppBulk(input: { text: string; imageUrl?: string;
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: JSON.stringify(input),
   });
-  const body = (await response.json()) as { status?: string; sent?: number; failed?: number; next?: number; total?: number; detail?: string };
+  const body = (await response.json()) as { status?: string; sent?: number; failed?: number; next?: number; total?: number; detail?: string; capped?: number };
   if (!response.ok) throw new Error(body.detail || body.status || "Bulk send failed");
-  return { sent: body.sent ?? 0, failed: body.failed ?? 0, next: body.next ?? input.offset, total: body.total ?? 0, done: (body.next ?? 0) >= (body.total ?? 0) };
+  return {
+    sent: body.sent ?? 0,
+    failed: body.failed ?? 0,
+    next: body.next ?? input.offset,
+    total: body.total ?? 0,
+    done: (body.next ?? 0) >= (body.total ?? 0),
+    capped: body.status === "capped" || body.capped === 1,
+    detail: body.detail ?? "",
+  };
+}
+
+export const WHATSAPP_DAILY_CAP = 250;
+
+export interface WhatsAppCampaign {
+  id: string;
+  workspaceId: string;
+  name: string;
+  body: string;
+  posterId: string;
+  status: "draft" | "running" | "completed";
+  sent: number;
+  failed: number;
+  total: number;
+  cursor: number;
+}
+
+function indiaDayStart() {
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  return new Date(`${day}T00:00:00+05:30`).toISOString();
+}
+
+export async function countWhatsAppSentToday(workspaceId: string) {
+  const { count, error } = await client()
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .eq("workspace_id", workspaceId)
+    .eq("channel", "whatsapp")
+    .eq("direction", "outbound")
+    .gte("created_at", indiaDayStart());
+  if (error) throw new Error(error.message);
+  const sent = count ?? 0;
+  return { sent, balance: Math.max(0, WHATSAPP_DAILY_CAP - sent), cap: WHATSAPP_DAILY_CAP };
+}
+
+async function profileToken() {
+  const session = await client().auth.getSession();
+  return session.data.session?.access_token ?? "";
+}
+
+export async function loadWhatsAppProfile() {
+  const token = await profileToken();
+  if (!token) return { name: "", phone: "", pictureUrl: "" };
+  const response = await fetch("/.netlify/functions/whatsapp-profile", { headers: { authorization: `Bearer ${token}` } });
+  const body = (await response.json().catch(() => ({}))) as { name?: string; phone?: string; pictureUrl?: string; detail?: string };
+  if (!response.ok && body.detail) throw new Error(body.detail);
+  return { name: body.name ?? "", phone: body.phone ?? "", pictureUrl: body.pictureUrl ?? "" };
+}
+
+export async function saveWhatsAppProfilePicture(file: File) {
+  const token = await profileToken();
+  if (!token) throw new Error("Sign in again before updating the profile photo.");
+  const body = new FormData();
+  body.set("file", file);
+  const response = await fetch("/.netlify/functions/whatsapp-profile", { method: "POST", headers: { authorization: `Bearer ${token}` }, body });
+  const payload = (await response.json().catch(() => ({}))) as { name?: string; phone?: string; pictureUrl?: string; detail?: string; status?: string };
+  if (!response.ok) throw new Error(payload.detail || payload.status || "Could not update the WhatsApp photo.");
+  return { name: payload.name ?? "", phone: payload.phone ?? "", pictureUrl: payload.pictureUrl ?? "" };
+}
+
+export async function removeWhatsAppPoster(id: string) {
+  const { error } = await client().from("documents").delete().eq("id", id).eq("entity_type", "whatsapp_poster");
+  if (error) throw new Error(error.message);
+}
+
+export async function listWhatsAppCampaigns(workspaceId: string) {
+  const { data, error } = await client()
+    .from("whatsapp_campaigns")
+    .select("id, workspace_id, name, body, poster_path, status, sent_count, failed_count, total_count, cursor_offset")
+    .eq("workspace_id", workspaceId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .limit(30);
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((row) => ({
+    id: String(row.id),
+    workspaceId: String(row.workspace_id),
+    name: String(row.name ?? ""),
+    body: String(row.body ?? ""),
+    posterId: String(row.poster_path ?? ""),
+    status: (row.status === "running" || row.status === "completed" ? row.status : "draft") as WhatsAppCampaign["status"],
+    sent: Number(row.sent_count ?? 0),
+    failed: Number(row.failed_count ?? 0),
+    total: Number(row.total_count ?? 0),
+    cursor: Number(row.cursor_offset ?? 0),
+  })) satisfies WhatsAppCampaign[];
+}
+
+export async function saveWhatsAppCampaign(input: {
+  id?: string;
+  organizationId: string;
+  workspaceId: string;
+  name: string;
+  body: string;
+  posterId: string;
+  status: WhatsAppCampaign["status"];
+  sent: number;
+  failed: number;
+  total: number;
+  cursor: number;
+}) {
+  const row = {
+    organization_id: input.organizationId,
+    workspace_id: input.workspaceId,
+    name: input.name.trim() || "CRM broadcast",
+    body: input.body,
+    poster_path: input.posterId,
+    status: input.status,
+    sent_count: input.sent,
+    failed_count: input.failed,
+    total_count: input.total,
+    cursor_offset: input.cursor,
+    updated_at: new Date().toISOString(),
+  };
+  const query = input.id
+    ? client().from("whatsapp_campaigns").update(row).eq("id", input.id).select("id").single()
+    : client().from("whatsapp_campaigns").insert(row).select("id").single();
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return String(data.id);
+}
+
+export async function removeWhatsAppCampaign(id: string) {
+  const { error } = await client().from("whatsapp_campaigns").update({ deleted_at: new Date().toISOString() }).eq("id", id);
+  if (error) throw new Error(error.message);
 }
 
 export async function sendWhatsAppMessage(input: { leadId: string; to: string; text: string; bulkSize: number; imageUrl?: string }) {
