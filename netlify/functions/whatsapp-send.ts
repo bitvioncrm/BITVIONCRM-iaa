@@ -38,29 +38,54 @@ export default async (request: Request) => {
   const keys = roles.map((row) => roleKey(row.roles)).filter(Boolean);
   const isAdmin = keys.includes("admin") || keys.includes("super_admin");
 
-  const body = (await request.json()) as { leadId?: string; to?: string; text?: string; template?: string; bulkSize?: number; imageUrl?: string };
+  const body = (await request.json()) as {
+    leadId?: string;
+    to?: string;
+    text?: string;
+    template?: string;
+    bulkSize?: number;
+    imageUrl?: string;
+    workspaceId?: string;
+    test?: boolean;
+  };
   const bulkSize = Number(body.bulkSize ?? 1);
   if (!isAdmin && bulkSize > 50) return json(403, { status: "bulk_admin_only" });
-  if (!body.leadId || !UUID.test(body.leadId) || !body.to) return json(400, { status: "invalid" });
   const text = body.text?.trim() ?? "";
   const template = body.template?.trim() ?? "";
   const imageUrl = body.imageUrl?.trim() ?? "";
-  if ((!text && !template && !imageUrl) || text.length > 1000) return json(400, { status: "invalid" });
+  if ((!text && !template && !imageUrl) || text.length > 1000) return json(400, { status: "invalid", detail: "Add a message or a poster." });
+  if (!body.to) return json(400, { status: "invalid", detail: "Enter a WhatsApp number." });
   const phone = body.to.replace(/\D/g, "");
-  if (phone.length < 10 || phone.length > 15) return json(400, { status: "invalid_phone" });
+  if (phone.length < 10 || phone.length > 15) return json(400, { status: "invalid_phone", detail: "Enter a valid WhatsApp number." });
 
   const headers = { apikey: serviceKey, authorization: `Bearer ${serviceKey}` };
-  const leadResponse = await fetch(`${supabaseUrl}/rest/v1/leads?id=eq.${body.leadId}&select=id,assigned_to,organization_id,workspace_id`, { headers });
-  const leads = (await leadResponse.json()) as Array<{ id: string; assigned_to: string | null; organization_id: string; workspace_id: string }>;
-  const lead = leads[0];
-  if (!lead) return json(403, { status: "forbidden" });
-  const workspaceResponse = await fetch(`${supabaseUrl}/rest/v1/workspaces?id=eq.${lead.workspace_id}&select=workspace_type`, { headers });
-  const workspaces = (await workspaceResponse.json()) as Array<{ workspace_type: string }>;
-  const desk = workspaces[0]?.workspace_type ?? "";
-  const onDesk = roles.some((row) => row.workspace_id === lead.workspace_id && (desk === "clinic" ? CLINIC_ROLES : INSTITUTE_ROLES).includes(roleKey(row.roles)));
-  if (!isAdmin && !onDesk) return json(403, { status: "forbidden" });
+  let organizationId = "";
+  let workspaceId = body.workspaceId && UUID.test(body.workspaceId) ? body.workspaceId : "";
+  let leadId: string | null = body.leadId && UUID.test(body.leadId) ? body.leadId : null;
 
-  const line = sendingLine(await loadChannelSecrets(supabaseUrl, serviceKey, "whatsapp"), lead.workspace_id);
+  if (body.test) {
+    if (!isAdmin) return json(403, { status: "forbidden", detail: "Only Admin can send a test message." });
+    if (!workspaceId) return json(400, { status: "invalid", detail: "Choose a desk before sending a test." });
+    const workspaceResponse = await fetch(`${supabaseUrl}/rest/v1/workspaces?id=eq.${workspaceId}&select=id,organization_id`, { headers });
+    const workspaces = (await workspaceResponse.json()) as Array<{ id: string; organization_id: string }>;
+    if (!workspaces[0]) return json(400, { status: "invalid", detail: "Desk not found." });
+    organizationId = workspaces[0].organization_id;
+  } else {
+    if (!leadId) return json(400, { status: "invalid", detail: "Choose a chat before sending." });
+    const leadResponse = await fetch(`${supabaseUrl}/rest/v1/leads?id=eq.${leadId}&select=id,assigned_to,organization_id,workspace_id`, { headers });
+    const leads = (await leadResponse.json()) as Array<{ id: string; assigned_to: string | null; organization_id: string; workspace_id: string }>;
+    const lead = leads[0];
+    if (!lead) return json(403, { status: "forbidden" });
+    organizationId = lead.organization_id;
+    workspaceId = lead.workspace_id;
+    const workspaceResponse = await fetch(`${supabaseUrl}/rest/v1/workspaces?id=eq.${lead.workspace_id}&select=workspace_type`, { headers });
+    const workspaces = (await workspaceResponse.json()) as Array<{ workspace_type: string }>;
+    const desk = workspaces[0]?.workspace_type ?? "";
+    const onDesk = roles.some((row) => row.workspace_id === lead.workspace_id && (desk === "clinic" ? CLINIC_ROLES : INSTITUTE_ROLES).includes(roleKey(row.roles)));
+    if (!isAdmin && !onDesk) return json(403, { status: "forbidden" });
+  }
+
+  const line = sendingLine(await loadChannelSecrets(supabaseUrl, serviceKey, "whatsapp"), workspaceId);
   const fromPhone = line?.display_phone || "this desk";
   const phoneId = line?.phone_number_id || "";
   const accessToken = line?.access_token || "";
@@ -89,15 +114,15 @@ export default async (request: Request) => {
     method: "POST",
     headers: { ...headers, "content-type": "application/json", prefer: "return=minimal" },
     body: JSON.stringify({
-      organization_id: lead.organization_id,
-      workspace_id: lead.workspace_id,
-      lead_id: lead.id,
+      organization_id: organizationId,
+      workspace_id: workspaceId,
+      lead_id: leadId,
       channel: "whatsapp",
       direction: "outbound",
-      body: [text, imageUrl ? "Poster attached" : "", template].filter(Boolean).join("\n") || template,
+      body: [body.test ? "Test message" : "", text, imageUrl ? "Poster attached" : "", template].filter(Boolean).join("\n") || template,
       provider_message_id: provider.messages?.[0]?.id ?? "",
       status: "sent",
     }),
   });
-  return json(200, { status: "sent" });
+  return json(200, { status: "sent", detail: body.test ? `Test sent to ${phone} from ${fromPhone}.` : "sent" });
 };

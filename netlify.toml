@@ -6,6 +6,15 @@
 [build.environment]
   NODE_VERSION = "22"
 
+[functions.whatsapp-bulk]
+  timeout = 26
+
+[functions.whatsapp-send]
+  timeout = 26
+
+[functions.whatsapp-profile]
+  timeout = 26
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

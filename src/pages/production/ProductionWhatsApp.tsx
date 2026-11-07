@@ -23,6 +23,7 @@ import {
   saveWhatsAppPoster,
   sendWhatsAppBulk,
   sendWhatsAppMessage,
+  sendWhatsAppTest,
   type WhatsAppCampaign,
   type WhatsAppBubble,
   type WhatsAppChat,
@@ -65,6 +66,7 @@ export function ProductionWhatsApp() {
   const [pictureUrl, setPictureUrl] = useState("");
   const [phoneDraft, setPhoneDraft] = useState("");
   const [phoneReady, setPhoneReady] = useState("");
+  const [testPhone, setTestPhone] = useState("");
   const [campaignText, setCampaignText] = useState("Hi {name}, this is a message from Dr. K's Aesthetic Clinic.");
   const [recipientTotal, setRecipientTotal] = useState(0);
   const [bulkSent, setBulkSent] = useState(0);
@@ -360,6 +362,31 @@ export function ProductionWhatsApp() {
       .catch((reason: unknown) => setNotice(reason instanceof Error ? reason.message : "Could not delete"));
   };
 
+  const sendTest = () => {
+    if (!desk || lineBlocked) return;
+    const poster = posters.find((item) => item.id === posterId);
+    const text = campaignText.trim();
+    const to = testPhone.trim();
+    if (!to) {
+      setNotice("Enter a WhatsApp number for the test message.");
+      return;
+    }
+    if (!text && !poster?.url) {
+      setNotice("Add a message or a poster before the test.");
+      return;
+    }
+    setBusy("test");
+    void sendWhatsAppTest({
+      workspaceId: desk.id,
+      to,
+      text: text.replaceAll("{name}", "Test").replaceAll("{phone}", to),
+      imageUrl: poster?.url || undefined,
+    })
+      .then((status) => setNotice(status === "sent" || /test sent/i.test(status) ? status : status))
+      .catch((reason: unknown) => setNotice(reason instanceof Error ? reason.message : "Could not send the test"))
+      .finally(() => setBusy(""));
+  };
+
   const sendCampaign = () => {
     if (!desk || lineBlocked) return;
     const poster = posters.find((item) => item.id === posterId);
@@ -385,30 +412,40 @@ export function ProductionWhatsApp() {
       let failed = 0;
       let total = recipientTotal;
       const current = campaigns.find((item) => item.id === campaignId);
+      let savedId = campaignId;
       try {
-        const savedId = await writeCampaign("running", current?.sent ?? 0, current?.failed ?? 0, total, offset);
+        savedId = await writeCampaign("running", current?.sent ?? 0, current?.failed ?? 0, total, offset);
         for (let guard = 0; guard < 5000; guard += 1) {
-          const batch = await sendWhatsAppBulk({
-            text,
-            imageUrl: poster?.url || undefined,
-            workspaceId: desk.id,
-            offset,
-          });
-          sent += batch.sent;
-          failed += batch.failed;
-          setBulkSent(sent);
-          setBulkFailed(failed);
-          if (batch.total) {
-            total = batch.total;
-            setRecipientTotal(batch.total);
+          try {
+            const batch = await sendWhatsAppBulk({
+              text,
+              imageUrl: poster?.url || undefined,
+              workspaceId: desk.id,
+              offset,
+            });
+            sent += batch.sent;
+            failed += batch.failed;
+            setBulkSent(sent);
+            setBulkFailed(failed);
+            if (batch.total) {
+              total = batch.total;
+              setRecipientTotal(batch.total);
+            }
+            const previous = offset;
+            offset = batch.next;
+            setCampaignCursor(offset);
+            await writeCampaign(offset >= total ? "completed" : "running", (current?.sent ?? 0) + sent, (current?.failed ?? 0) + failed, total, offset, savedId);
+            if (batch.done || offset <= previous) break;
+          } catch (reason: unknown) {
+            const message = reason instanceof Error ? reason.message : "Could not send";
+            await writeCampaign("running", (current?.sent ?? 0) + sent, (current?.failed ?? 0) + failed, total, offset, savedId);
+            if (/timed out|live server/i.test(message) && offset > campaignCursor) {
+              setNotice(`${message} Sent ${sent.toLocaleString("en-IN")} so far. Press Send again to continue.`);
+              return;
+            }
+            throw reason;
           }
-          const previous = offset;
-          offset = batch.next;
-          setCampaignCursor(offset);
-          if (batch.done || offset <= previous) break;
         }
-        const finished = offset >= total;
-        await writeCampaign(finished ? "completed" : "running", (current?.sent ?? 0) + sent, (current?.failed ?? 0) + failed, total, offset, savedId);
         setNotice(`Sent ${sent.toLocaleString("en-IN")} from ${fromLine}. Failed ${failed.toLocaleString("en-IN")}.`);
       } catch (reason: unknown) {
         setNotice(reason instanceof Error ? reason.message : "Could not send");
@@ -579,6 +616,27 @@ export function ProductionWhatsApp() {
                         </label>
                       </div>
                     </div>
+                  </div>
+                </section>
+                <section className="rounded-3xl border border-[#d9fdd3] bg-[#f7fff9] p-5 shadow-sm">
+                  <p className="text-xs font-semibold tracking-wide text-[#008069] uppercase">Message test</p>
+                  <p className="mt-1 text-sm text-[#667781]">Send the current message and poster to one WhatsApp number before the full bulk send.</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <input
+                      value={testPhone}
+                      onChange={(event) => setTestPhone(event.target.value)}
+                      aria-label="Test WhatsApp number"
+                      placeholder="+91 9xxxxxxxxx"
+                      className="h-10 min-w-[220px] flex-1 rounded-xl border border-[#e9edef] bg-white px-3 text-sm outline-none"
+                    />
+                    <button
+                      type="button"
+                      disabled={busy === "test" || busy === "bulk" || lineBlocked}
+                      onClick={sendTest}
+                      className="h-10 rounded-full bg-[#00a884] px-4 text-sm font-semibold text-white disabled:opacity-60"
+                    >
+                      {busy === "test" ? "Sending test…" : "Send test message"}
+                    </button>
                   </div>
                 </section>
                 <form

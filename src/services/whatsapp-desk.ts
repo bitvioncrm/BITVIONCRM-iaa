@@ -157,6 +157,18 @@ export async function saveWhatsAppNumber(workspaceId: string, displayPhone: stri
   if (error) throw new Error(error.message);
 }
 
+async function readFunctionJson(response: Response) {
+  const raw = await response.text();
+  try {
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    if (/<!doctype html|<html/i.test(raw)) {
+      throw new Error("WhatsApp send timed out on the live server. Try Send again — it continues from the last lead.");
+    }
+    throw new Error(raw.slice(0, 160) || "WhatsApp send failed.");
+  }
+}
+
 export async function sendWhatsAppBulk(input: { text: string; imageUrl?: string; workspaceId?: string; offset: number }) {
   const session = await client().auth.getSession();
   const token = session.data.session?.access_token;
@@ -166,16 +178,18 @@ export async function sendWhatsAppBulk(input: { text: string; imageUrl?: string;
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: JSON.stringify(input),
   });
-  const body = (await response.json()) as { status?: string; sent?: number; failed?: number; next?: number; total?: number; detail?: string; capped?: number };
-  if (!response.ok) throw new Error(body.detail || body.status || "Bulk send failed");
+  const body = await readFunctionJson(response);
+  if (!response.ok) throw new Error(String(body.detail || body.status || "Bulk send failed"));
+  const next = Number(body.next ?? input.offset);
+  const total = Number(body.total ?? 0);
   return {
-    sent: body.sent ?? 0,
-    failed: body.failed ?? 0,
-    next: body.next ?? input.offset,
-    total: body.total ?? 0,
-    done: (body.next ?? 0) >= (body.total ?? 0),
-    capped: body.status === "capped" || body.capped === 1,
-    detail: body.detail ?? "",
+    sent: Number(body.sent ?? 0),
+    failed: Number(body.failed ?? 0),
+    next,
+    total,
+    done: next >= total,
+    capped: body.status === "capped" || Number(body.capped ?? 0) === 1,
+    detail: String(body.detail ?? ""),
   };
 }
 
@@ -306,7 +320,15 @@ export async function removeWhatsAppCampaign(id: string) {
   if (error) throw new Error(error.message);
 }
 
-export async function sendWhatsAppMessage(input: { leadId: string; to: string; text: string; bulkSize: number; imageUrl?: string }) {
+export async function sendWhatsAppMessage(input: {
+  leadId?: string;
+  to: string;
+  text: string;
+  bulkSize: number;
+  imageUrl?: string;
+  workspaceId?: string;
+  test?: boolean;
+}) {
   const session = await client().auth.getSession();
   const token = session.data.session?.access_token;
   if (!token) throw new Error("Sign in again before sending.");
@@ -315,7 +337,19 @@ export async function sendWhatsAppMessage(input: { leadId: string; to: string; t
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: JSON.stringify(input),
   });
-  const body = (await response.json()) as { status?: string; detail?: string };
-  if (body.detail && body.status !== "sent") return body.detail;
-  return body.status ?? "request_failed";
+  const body = await readFunctionJson(response);
+  if (!response.ok) return String(body.detail || body.status || "Could not send");
+  if (body.detail && body.status !== "sent") return String(body.detail);
+  return String(body.detail || body.status || "sent");
+}
+
+export async function sendWhatsAppTest(input: { workspaceId: string; to: string; text: string; imageUrl?: string }) {
+  return sendWhatsAppMessage({
+    to: input.to,
+    text: input.text,
+    bulkSize: 1,
+    imageUrl: input.imageUrl,
+    workspaceId: input.workspaceId,
+    test: true,
+  });
 }
