@@ -377,8 +377,7 @@ export async function sendWhatsAppMessage(input: {
     body: JSON.stringify(input),
   });
   const body = await readFunctionJson(response);
-  if (!response.ok) return String(body.detail || body.status || "Could not send");
-  if (body.detail && body.status !== "sent") return String(body.detail);
+  if (!response.ok) throw new Error(String(body.detail || body.status || "Could not send"));
   return String(body.detail || body.status || "sent");
 }
 

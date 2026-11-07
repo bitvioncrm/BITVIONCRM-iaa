@@ -31,7 +31,11 @@ type WebhookValue = {
   metadata?: { phone_number_id?: string };
   contacts?: Array<{ wa_id?: string; profile?: { name?: string } }>;
   messages?: InboundMessage[];
-  statuses?: Array<{ id?: string; status?: string }>;
+  statuses?: Array<{
+    id?: string;
+    status?: string;
+    errors?: Array<{ code?: number; title?: string; message?: string; error_data?: { details?: string } }>;
+  }>;
 };
 
 async function findLeadId(supabaseUrl: string, serviceKey: string, workspaceId: string, from: string) {
@@ -184,10 +188,17 @@ export default async (request: Request) => {
     const phoneNumberId = value.metadata?.phone_number_id ?? "";
     for (const status of value.statuses ?? []) {
       if (!status.id) continue;
+      const err = status.errors?.[0];
+      const providerError = err
+        ? [err.code ? `#${err.code}` : "", err.title || err.message || "", err.error_data?.details || ""].filter(Boolean).join(" ").slice(0, 240)
+        : "";
       await fetch(`${supabaseUrl}/rest/v1/messages?provider_message_id=eq.${encodeURIComponent(status.id)}`, {
         method: "PATCH",
         headers: serviceHeaders(serviceKey),
-        body: JSON.stringify({ status: status.status ?? "" }),
+        body: JSON.stringify({
+          status: status.status ?? "",
+          ...(providerError ? { provider_error: providerError } : status.status === "failed" ? { provider_error: "Delivery failed" } : {}),
+        }),
       });
     }
     for (const message of value.messages ?? []) {

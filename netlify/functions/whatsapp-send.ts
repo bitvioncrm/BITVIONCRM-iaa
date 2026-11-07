@@ -1,4 +1,13 @@
 import { loadChannelSecrets, sendingLine } from "../lib/channel-secrets.ts";
+import {
+  deliveryFailureMessage,
+  listApprovedTemplates,
+  pickOutboundTemplate,
+  sanitizeTemplateVar,
+  sendWhatsAppGraph,
+  waitForDelivery,
+  whatsappTo,
+} from "../lib/whatsapp-outbound.ts";
 
 function required(name: string) {
   return process.env[name]?.trim() || "";
@@ -55,8 +64,8 @@ export default async (request: Request) => {
   const imageUrl = body.imageUrl?.trim() ?? "";
   if ((!text && !template && !imageUrl) || text.length > 1000) return json(400, { status: "invalid", detail: "Add a message or a poster." });
   if (!body.to) return json(400, { status: "invalid", detail: "Enter a WhatsApp number." });
-  const phone = body.to.replace(/\D/g, "");
-  if (phone.length < 10 || phone.length > 15) return json(400, { status: "invalid_phone", detail: "Enter a valid WhatsApp number." });
+  const phone = whatsappTo(body.to);
+  if (phone.length < 11 || phone.length > 15) return json(400, { status: "invalid_phone", detail: "Enter a valid WhatsApp number." });
 
   const headers = { apikey: serviceKey, authorization: `Bearer ${serviceKey}` };
   let organizationId = "";
@@ -89,27 +98,40 @@ export default async (request: Request) => {
   const fromPhone = line?.display_phone || "this desk";
   const phoneId = line?.phone_number_id || "";
   const accessToken = line?.access_token || "";
+  const wabaId = line?.waba_id || "";
   if (!phoneId || !accessToken) return json(503, { status: "configuration_required", detail: `Save a WhatsApp access token for ${fromPhone}.` });
 
-  const payload = template
-    ? { messaging_product: "whatsapp", to: phone, type: "template", template: { name: template, language: { code: "en" } } }
-    : imageUrl
-      ? { messaging_product: "whatsapp", to: phone, type: "image", image: { link: imageUrl, caption: text } }
-      : { messaging_product: "whatsapp", to: phone, type: "text", text: { body: text } };
-  const sent = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!sent.ok) {
-    const errorBody = (await sent.json().catch(() => ({}))) as { error?: { message?: string } };
-    const raw = (errorBody.error?.message || "WhatsApp rejected the message.").replace(/access_token=[^&\s]+/g, "").slice(0, 180);
-    const detail = /session has expired/i.test(raw)
-      ? `The WhatsApp token for ${fromPhone} expired. In Meta, generate a token that does not expire and paste it under Settings, WhatsApp.`
-      : raw;
-    return json(502, { status: "provider_rejected", detail });
+  const coldOutreach = Boolean(body.test);
+  let templateName = template;
+  let templateLanguage = "en";
+  let templateParams: string[] | undefined;
+  if (coldOutreach || template) {
+    const approved = await listApprovedTemplates(wabaId, accessToken);
+    const chosen = template ? approved.find((row) => row.name === template) || null : pickOutboundTemplate(approved);
+    if (chosen) {
+      templateName = chosen.name;
+      templateLanguage = chosen.language || "en";
+      templateParams = chosen.name === "crm_desk_notice" || chosen.name === "crm_campaign_update"
+        ? [sanitizeTemplateVar("there"), sanitizeTemplateVar(text || "Update from Dr. K Aesthetic Clinic.")]
+        : [sanitizeTemplateVar(text || "Update from Dr. K Aesthetic Clinic.")];
+    } else if (coldOutreach && !template) {
+      // Prefer free-form only when no template exists yet; delivery wait will surface the real result.
+      templateName = "";
+    }
   }
-  const provider = (await sent.json()) as { messages?: Array<{ id: string }> };
+
+  const graph = await sendWhatsAppGraph({
+    phoneNumberId: phoneId,
+    token: accessToken,
+    to: phone,
+    text,
+    imageUrl: templateName ? undefined : imageUrl,
+    templateName: templateName || undefined,
+    templateLanguage,
+    templateParams,
+  });
+  if (!graph.ok) return json(502, { status: "provider_rejected", detail: graph.detail });
+
   await fetch(`${supabaseUrl}/rest/v1/messages`, {
     method: "POST",
     headers: { ...headers, "content-type": "application/json", prefer: "return=minimal" },
@@ -119,10 +141,26 @@ export default async (request: Request) => {
       lead_id: leadId,
       channel: "whatsapp",
       direction: "outbound",
-      body: [body.test ? "Test message" : "", text, imageUrl ? "Poster attached" : "", template].filter(Boolean).join("\n") || template,
-      provider_message_id: provider.messages?.[0]?.id ?? "",
+      body: [body.test ? "Test message" : "", text, imageUrl && !templateName ? "Poster attached" : "", templateName ? `Template: ${templateName}` : ""].filter(Boolean).join("\n") || templateName,
+      provider_message_id: graph.providerMessageId,
       status: "sent",
     }),
   });
-  return json(200, { status: "sent", detail: body.test ? `Test sent to ${phone} from ${fromPhone}.` : "sent" });
+
+  if (body.test) {
+    const delivery = await waitForDelivery(supabaseUrl, serviceKey, graph.providerMessageId, 12000);
+    const failed = deliveryFailureMessage(delivery.status, delivery.error, graph.to);
+    if (failed) return json(502, { status: "delivery_failed", detail: failed });
+    if (delivery.status === "delivered" || delivery.status === "read") {
+      return json(200, { status: "sent", detail: `Test delivered to ${graph.to} from ${fromPhone}.` });
+    }
+    return json(200, {
+      status: "sent",
+      detail: templateName
+        ? `Test submitted to ${graph.to} via template ${templateName}. Delivery not confirmed yet — check the phone.`
+        : `Test submitted to ${graph.to} from ${fromPhone}. If it does not arrive, WhatsApp needs an approved template outside the 24-hour window.`,
+    });
+  }
+
+  return json(200, { status: "sent", detail: "sent" });
 };

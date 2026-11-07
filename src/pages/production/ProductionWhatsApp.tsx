@@ -271,8 +271,9 @@ export function ProductionWhatsApp() {
       imageUrl: poster?.url,
     })
       .then((status) => {
-        setNotice(status === "sent" ? `Sent from ${fromLine}.` : status);
-        if (status === "sent") setDraft("");
+        const ok = status === "sent" || /delivered|submitted/i.test(status);
+        setNotice(ok ? `Sent from ${fromLine}.` : status);
+        if (ok) setDraft("");
         return listWhatsAppThread(active.id);
       })
       .then(setThread)
@@ -407,9 +408,9 @@ export function ProductionWhatsApp() {
       imageUrl: poster?.url || undefined,
     })
       .then((status) => {
-        const ok = status === "sent" || /test sent/i.test(status);
+        const ok = status === "sent" || /test (sent|delivered|submitted)/i.test(status);
         setTestReady(ok);
-        setNotice(ok ? `Test sent to ${to}. You can start the full send.` : status);
+        setNotice(ok ? `${status} Full send is unlocked.` : status);
       })
       .catch((reason: unknown) => {
         setTestReady(false);

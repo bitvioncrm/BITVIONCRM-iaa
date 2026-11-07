@@ -1,4 +1,11 @@
 import { loadChannelSecrets, sendingLine } from "../lib/channel-secrets.ts";
+import {
+  listApprovedTemplates,
+  pickOutboundTemplate,
+  sanitizeTemplateVar,
+  sendWhatsAppGraph,
+  whatsappTo,
+} from "../lib/whatsapp-outbound.ts";
 
 function required(name: string) {
   return process.env[name]?.trim() || "";
@@ -59,6 +66,22 @@ export default async (request: Request) => {
       return json(503, { status: "configuration_required", detail: `Save a WhatsApp access token for ${fromPhone}.` });
     }
 
+    const approved = await listApprovedTemplates(secret.waba_id, secret.access_token);
+    const chosen = pickOutboundTemplate(approved);
+    if (!chosen) {
+      return json(503, {
+        status: "configuration_required",
+        detail:
+          "No approved WhatsApp template yet. Meta only delivers cold outreach via templates. Templates crm_campaign_update / crm_desk_notice are pending approval in Meta Business Suite.",
+        sent: 0,
+        failed: 0,
+        next: offset,
+        total: 0,
+        capped: 0,
+        results: [],
+      });
+    }
+
     const headers = { apikey: serviceKey, authorization: `Bearer ${serviceKey}` };
     const filter = workspaceId ? `&workspace_id=eq.${workspaceId}` : "";
     const list = await fetch(
@@ -78,10 +101,10 @@ export default async (request: Request) => {
     const persist: Array<Record<string, string>> = [];
 
     for (const lead of Array.isArray(leads) ? leads : []) {
-      const phone = String(lead.phone || "").replace(/\D/g, "");
+      const phone = whatsappTo(lead.phone || "");
       const name = String(lead.full_name || "").trim() || "Lead";
       const displayPhone = String(lead.phone || phone || "");
-      if (phone.length < 10 || phone.length > 15) {
+      if (phone.length < 11 || phone.length > 15) {
         failed += 1;
         results.push({ leadId: lead.id, phone: displayPhone, name, status: "skipped", detail: "Invalid phone number" });
         if (campaignId) {
@@ -98,25 +121,29 @@ export default async (request: Request) => {
         }
         continue;
       }
-      const payload = imageUrl
-        ? { messaging_product: "whatsapp", to: phone, type: "image", image: { link: imageUrl, caption: text } }
-        : { messaging_product: "whatsapp", to: phone, type: "text", text: { body: text } };
-      const graph = await fetch(`https://graph.facebook.com/v21.0/${secret.phone_number_id}/messages`, {
-        method: "POST",
-        headers: { authorization: `Bearer ${secret.access_token}`, "content-type": "application/json" },
-        body: JSON.stringify(payload),
+
+      const personalized = text.replaceAll("{name}", name).replaceAll("{phone}", displayPhone);
+      const params =
+        chosen.name === "crm_desk_notice" || chosen.name === "crm_campaign_update"
+          ? [sanitizeTemplateVar(name), sanitizeTemplateVar(personalized || "Update from Dr. K Aesthetic Clinic.")]
+          : [sanitizeTemplateVar(personalized || "Update from Dr. K Aesthetic Clinic.")];
+
+      const graph = await sendWhatsAppGraph({
+        phoneNumberId: secret.phone_number_id,
+        token: secret.access_token,
+        to: phone,
+        text: personalized,
+        templateName: chosen.name,
+        templateLanguage: chosen.language || "en",
+        templateParams: params,
       });
+
       if (!graph.ok) {
         failed += 1;
         providerFailed += 1;
-        const errorBody = (await graph.json().catch(() => ({}))) as { error?: { code?: number; message?: string } };
-        const raw = (errorBody.error?.message || "WhatsApp rejected the message").replace(/access_token=[^&\s]+/g, "").slice(0, 160);
-        const expired = errorBody.error?.code === 190 || /session has expired|authentication error/i.test(raw);
-        if (!detail) {
-          detail = expired
-            ? `The WhatsApp token for ${fromPhone} has expired. In Settings, open WhatsApp and paste a token that does not expire.`
-            : raw;
-        }
+        const raw = graph.detail;
+        const expired = graph.code === 190 || /token for .* expired|session has expired|authentication error/i.test(raw);
+        if (!detail) detail = raw;
         results.push({ leadId: lead.id, phone: displayPhone, name, status: "failed", detail: raw });
         if (campaignId) {
           persist.push({
@@ -134,7 +161,7 @@ export default async (request: Request) => {
         if (sent === 0 && providerFailed >= 3) break;
         continue;
       }
-      const provider = (await graph.json()) as { messages?: Array<{ id: string }> };
+
       await fetch(`${supabaseUrl}/rest/v1/messages`, {
         method: "POST",
         headers: { ...headers, "content-type": "application/json", prefer: "return=minimal" },
@@ -144,8 +171,8 @@ export default async (request: Request) => {
           lead_id: lead.id,
           channel: "whatsapp",
           direction: "outbound",
-          body: [text, imageUrl ? "Poster attached" : ""].filter(Boolean).join("\n"),
-          provider_message_id: provider.messages?.[0]?.id ?? "",
+          body: [personalized, `Template: ${chosen.name}`, imageUrl ? "Poster saved on campaign (text template used for delivery)" : ""].filter(Boolean).join("\n"),
+          provider_message_id: graph.providerMessageId,
           status: "sent",
         }),
       });
@@ -183,6 +210,7 @@ export default async (request: Request) => {
       capped: 0,
       detail,
       results,
+      template: chosen.name,
     });
   } catch (reason: unknown) {
     const detail = reason instanceof Error ? reason.message.slice(0, 180) : "Bulk send failed.";
