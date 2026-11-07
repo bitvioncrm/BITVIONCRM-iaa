@@ -108,15 +108,20 @@ export default async (request: Request) => {
   if (coldOutreach || template) {
     const approved = await listApprovedTemplates(wabaId, accessToken);
     const chosen = template ? approved.find((row) => row.name === template) || null : pickOutboundTemplate(approved);
+    if (!chosen && coldOutreach) {
+      return json(503, {
+        status: "configuration_required",
+        detail:
+          "WhatsApp will not deliver cold text outside the 24-hour window. Templates crm_desk_notice and crm_campaign_update are still pending Meta approval — open Meta Business Suite → Message templates, wait for Approved, then resend the test to 91… numbers.",
+      });
+    }
     if (chosen) {
       templateName = chosen.name;
       templateLanguage = chosen.language || "en";
-      templateParams = chosen.name === "crm_desk_notice" || chosen.name === "crm_campaign_update"
-        ? [sanitizeTemplateVar("there"), sanitizeTemplateVar(text || "Update from Dr. K Aesthetic Clinic.")]
-        : [sanitizeTemplateVar(text || "Update from Dr. K Aesthetic Clinic.")];
-    } else if (coldOutreach && !template) {
-      // Prefer free-form only when no template exists yet; delivery wait will surface the real result.
-      templateName = "";
+      templateParams =
+        chosen.name === "crm_desk_notice" || chosen.name === "crm_campaign_update"
+          ? [sanitizeTemplateVar("there"), sanitizeTemplateVar(text || "Update from Dr. K Aesthetic Clinic.")]
+          : [sanitizeTemplateVar(text || "Update from Dr. K Aesthetic Clinic.")];
     }
   }
 
