@@ -2,8 +2,9 @@ import { loadChannelSecrets, sendingLine } from "../lib/channel-secrets.ts";
 import {
   listApprovedTemplates,
   pickOutboundTemplate,
-  sanitizeTemplateVar,
   sendWhatsAppGraph,
+  templateBodyParams,
+  templateNeedsImageHeader,
   whatsappTo,
 } from "../lib/whatsapp-outbound.ts";
 
@@ -110,18 +111,14 @@ export default async (request: Request) => {
       }
 
       const personalized = text.replaceAll("{name}", name).replaceAll("{phone}", displayPhone);
-      const params = chosen
-        ? chosen.name === "crm_desk_notice" || chosen.name === "crm_campaign_update"
-          ? [sanitizeTemplateVar(name), sanitizeTemplateVar(personalized || "Update from Dr. K Aesthetic Clinic.")]
-          : [sanitizeTemplateVar(personalized || "Update from Dr. K Aesthetic Clinic.")]
-        : undefined;
+      const params = chosen ? templateBodyParams(chosen.name, name, personalized) : undefined;
 
       const graph = await sendWhatsAppGraph({
         phoneNumberId: secret.phone_number_id,
         token: secret.access_token,
         to: phone,
         text: personalized,
-        imageUrl: chosen ? undefined : imageUrl || undefined,
+        imageUrl: chosen && !templateNeedsImageHeader(chosen.name) ? undefined : imageUrl || undefined,
         templateName: chosen?.name,
         templateLanguage: chosen?.language || "en",
         templateParams: params,

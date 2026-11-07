@@ -16,7 +16,21 @@ export function sanitizeTemplateVar(value: string, fallback = "there") {
 type GraphError = { code?: number; message?: string; error_data?: { details?: string } };
 type TemplateRow = { name: string; language: string; status: string; category?: string };
 
-const PREFERRED = ["crm_campaign_update", "crm_desk_notice"];
+const PREFERRED = ["diwali_membership_2026", "crm_campaign_update", "crm_desk_notice"];
+const IMAGE_HEADER_TEMPLATES = new Set(["diwali_membership_2026"]);
+const TWO_BODY_TEMPLATES = new Set(["crm_desk_notice", "crm_campaign_update"]);
+
+export function templateNeedsImageHeader(name: string) {
+  return IMAGE_HEADER_TEMPLATES.has(name);
+}
+
+export function templateBodyParams(name: string, nameOrGreeting: string, text: string) {
+  if (IMAGE_HEADER_TEMPLATES.has(name)) return [] as string[];
+  if (TWO_BODY_TEMPLATES.has(name)) {
+    return [sanitizeTemplateVar(nameOrGreeting || "there"), sanitizeTemplateVar(text || "Update from Dr. K Aesthetic Clinic.")];
+  }
+  return [sanitizeTemplateVar(text || "Update from Dr. K Aesthetic Clinic.")];
+}
 
 export async function listApprovedTemplates(wabaId: string, token: string) {
   if (!wabaId || !token) return [] as TemplateRow[];
@@ -70,9 +84,20 @@ export async function sendWhatsAppGraph(input: {
 
   let payload: Record<string, unknown>;
   if (input.templateName) {
-    const params = (input.templateParams?.length ? input.templateParams : [sanitizeTemplateVar(input.text || "Update from the clinic desk")]).map((value) =>
-      sanitizeTemplateVar(value),
-    );
+    const params = (input.templateParams ?? []).map((value) => sanitizeTemplateVar(value));
+    const components: Array<Record<string, unknown>> = [];
+    if (templateNeedsImageHeader(input.templateName) && input.imageUrl) {
+      components.push({
+        type: "header",
+        parameters: [{ type: "image", image: { link: input.imageUrl } }],
+      });
+    }
+    if (params.length) {
+      components.push({
+        type: "body",
+        parameters: params.map((text) => ({ type: "text", text })),
+      });
+    }
     payload = {
       messaging_product: "whatsapp",
       to,
@@ -80,12 +105,7 @@ export async function sendWhatsAppGraph(input: {
       template: {
         name: input.templateName,
         language: { code: input.templateLanguage || "en" },
-        components: [
-          {
-            type: "body",
-            parameters: params.map((text) => ({ type: "text", text })),
-          },
-        ],
+        ...(components.length ? { components } : {}),
       },
     };
   } else if (input.imageUrl) {

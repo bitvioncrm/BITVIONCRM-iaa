@@ -180,7 +180,23 @@ export function ProductionWhatsApp() {
     void listWorkspaceChannels()
       .then((rows) => setLine(rows.find((row) => row.workspaceId === desk.id && row.channel === "whatsapp") ?? null))
       .catch(() => setLine(null));
-    void listWhatsAppCampaigns(desk.id).then(setCampaigns).catch(() => setCampaigns([]));
+    void listWhatsAppCampaigns(desk.id)
+      .then((rows) => {
+        setCampaigns(rows);
+        const diwali = rows.find((row) => /diwali membership/i.test(row.name));
+        if (!diwali) return;
+        setCampaignId(diwali.id);
+        setCampaignName(diwali.name);
+        setCampaignText(diwali.body);
+        setPosterId(diwali.posterId);
+        setCampaignCursor(diwali.cursor);
+        setSendPreview(true);
+        setTestPhone((value) => value.trim() || "8137864105");
+        setBulkDone(false);
+        setNoticeTone("ok");
+        setNotice("Diwali Membership Offer is ready. Send the test to 8137864105, then start the full send.");
+      })
+      .catch(() => setCampaigns([]));
     void countWhatsAppSentToday(desk.id)
       .then((result) => setSentToday(result.sent))
       .catch(() => undefined);

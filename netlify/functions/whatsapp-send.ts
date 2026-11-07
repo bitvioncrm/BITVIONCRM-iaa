@@ -3,8 +3,9 @@ import {
   deliveryFailureMessage,
   listApprovedTemplates,
   pickOutboundTemplate,
-  sanitizeTemplateVar,
   sendWhatsAppGraph,
+  templateBodyParams,
+  templateNeedsImageHeader,
   waitForDelivery,
   whatsappTo,
 } from "../lib/whatsapp-outbound.ts";
@@ -113,10 +114,7 @@ export default async (request: Request) => {
     if (chosen) {
       templateName = chosen.name;
       templateLanguage = chosen.language || "en";
-      templateParams =
-        chosen.name === "crm_desk_notice" || chosen.name === "crm_campaign_update"
-          ? [sanitizeTemplateVar("there"), sanitizeTemplateVar(text || "Update from Dr. K Aesthetic Clinic.")]
-          : [sanitizeTemplateVar(text || "Update from Dr. K Aesthetic Clinic.")];
+      templateParams = templateBodyParams(chosen.name, "there", text);
     } else {
       templateName = "";
     }
@@ -127,7 +125,7 @@ export default async (request: Request) => {
     token: accessToken,
     to: phone,
     text,
-    imageUrl: templateName ? undefined : imageUrl,
+    imageUrl: templateName && !templateNeedsImageHeader(templateName) ? undefined : imageUrl || undefined,
     templateName: templateName || undefined,
     templateLanguage,
     templateParams,
