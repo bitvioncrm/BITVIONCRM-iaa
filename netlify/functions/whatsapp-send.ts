@@ -1,6 +1,7 @@
 import { loadChannelSecrets, sendingLine } from "../lib/channel-secrets.ts";
 import {
   deliveryFailureMessage,
+  checkWabaSendHealth,
   listApprovedTemplates,
   pickOutboundTemplate,
   sendWhatsAppGraph,
@@ -101,6 +102,11 @@ export default async (request: Request) => {
   const accessToken = line?.access_token || "";
   const wabaId = line?.waba_id || "";
   if (!phoneId || !accessToken) return json(503, { status: "configuration_required", detail: `Save a WhatsApp access token for ${fromPhone}.` });
+
+  if (body.test || template) {
+    const health = await checkWabaSendHealth(wabaId, accessToken);
+    if (!health.ok) return json(503, { status: "provider_blocked", detail: health.detail });
+  }
 
   const coldOutreach = Boolean(body.test);
   let templateName = template && !/^hello_world$/i.test(template) ? template : "";

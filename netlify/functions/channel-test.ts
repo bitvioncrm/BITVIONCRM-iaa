@@ -1,4 +1,5 @@
 import { loadChannelSecrets } from "../lib/channel-secrets.ts";
+import { checkWabaSendHealth, PAYMENT_BLOCK_DETAIL } from "../lib/whatsapp-outbound.ts";
 
 function required(name: string) {
   return process.env[name]?.trim() || "";
@@ -57,12 +58,26 @@ export default async (request: Request) => {
     headers: { authorization: `Bearer ${secret.access_token}` },
   });
   const payload = (await graph.json()) as { name?: string; display_phone_number?: string; error?: { message?: string } };
-  const ok = graph.ok && !payload.error;
-  const detail = ok
-    ? (channel === "meta"
+  let ok = graph.ok && !payload.error;
+  let detail = ok
+    ? channel === "meta"
       ? `Meta page connected${payload.name ? `: ${payload.name}` : ""}.`
-      : `WhatsApp number connected${payload.display_phone_number ? `: ${payload.display_phone_number}` : ""}.`)
+      : `WhatsApp number connected${payload.display_phone_number ? `: ${payload.display_phone_number}` : ""}.`
     : plain(payload.error?.message || "Meta rejected the credentials.");
+  let status = ok ? "connected" : "error";
+
+  if (ok && channel === "whatsapp" && secret.waba_id) {
+    const health = await checkWabaSendHealth(secret.waba_id, secret.access_token);
+    if (!health.ok) {
+      ok = false;
+      status = "error";
+      detail = health.detail || PAYMENT_BLOCK_DETAIL;
+    } else if (health.limited) {
+      detail = `${detail} ${health.detail}`.trim();
+    } else {
+      detail = `${detail} Campaign sending is allowed.`;
+    }
+  }
 
   await fetch(`${supabaseUrl}/rest/v1/workspace_channel_secrets?workspace_id=eq.${body.workspaceId}&channel=eq.${channel}`, {
     method: "PATCH",
@@ -73,12 +88,12 @@ export default async (request: Request) => {
       prefer: "return=minimal",
     },
     body: JSON.stringify({
-      status: ok ? "connected" : "error",
+      status,
       detail,
       last_checked_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }),
   });
 
-  return json(ok ? 200 : 502, { status: ok ? "connected" : "error", detail });
+  return json(ok ? 200 : 502, { status, detail });
 };

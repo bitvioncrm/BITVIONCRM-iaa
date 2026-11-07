@@ -58,13 +58,67 @@ export function graphErrorDetail(error?: GraphError, fromPhone = "WhatsApp") {
   if (error?.code === 190 || /session has expired|authentication error/i.test(raw)) {
     return `The WhatsApp token for ${fromPhone} expired. In Meta, generate a token that does not expire and paste it under Settings, WhatsApp.`;
   }
+  if (error?.code === 131042 || error?.code === 141006 || /payment method|business eligibility payment/i.test(raw)) {
+    return PAYMENT_BLOCK_DETAIL;
+  }
   if (error?.code === 131047 || /re-engagement|24 hour|customer care window/i.test(raw)) {
-    return "Outside the 24-hour chat window WhatsApp only delivers approved templates. Create/approve a template in Meta, then retry.";
+    return "Outside the 24-hour chat window WhatsApp only delivers approved templates. Fix the Meta payment method first, then wait for diwali_membership_2026 to show Approved.";
   }
   if (error?.code === 131026 || /undeliverable/i.test(raw)) {
     return "WhatsApp could not deliver to that number (undeliverable). Confirm the number is on WhatsApp.";
   }
   return raw;
+}
+
+export const PAYMENT_BLOCK_DETAIL =
+  "Meta has blocked business-initiated WhatsApp sends (error 141006): the WhatsApp payment method is missing or failed. In Meta Business Suite open WhatsApp Manager → Account tools → Payment methods, add a working card for Dr Kukku / +91 95624 29928, then retry. Replies inside 24 hours still work; campaigns and templates do not until billing is fixed.";
+
+export const VERIFY_BLOCK_DETAIL =
+  "Meta limited this WhatsApp account because business verification is incomplete. Finish verification in Meta Business Suite → Business settings → Security centre, then retry campaigns.";
+
+type HealthEntity = {
+  entity_type?: string;
+  can_send_message?: string;
+  errors?: Array<{ error_code?: number; error_description?: string; possible_solution?: string }>;
+};
+
+export async function checkWabaSendHealth(wabaId: string, token: string) {
+  if (!wabaId || !token) {
+    return { ok: false as const, code: 0, detail: "WhatsApp Business Account ID or token is missing." };
+  }
+  const response = await fetch(`https://graph.facebook.com/v21.0/${wabaId}?fields=health_status,business_verification_status,account_review_status`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  const body = (await response.json().catch(() => ({}))) as {
+    business_verification_status?: string;
+    health_status?: { can_send_message?: string; entities?: HealthEntity[] };
+    error?: GraphError;
+  };
+  if (!response.ok) {
+    return { ok: false as const, code: body.error?.code || response.status, detail: graphErrorDetail(body.error) };
+  }
+
+  const entities = body.health_status?.entities ?? [];
+  const blocked = entities.find((entity) => String(entity.can_send_message).toUpperCase() === "BLOCKED");
+  const payment = entities
+    .flatMap((entity) => entity.errors ?? [])
+    .find((error) => error.error_code === 141006 || /payment method/i.test(error.error_description || ""));
+  if (payment || (blocked && /payment/i.test(JSON.stringify(blocked.errors || [])))) {
+    return { ok: false as const, code: 141006, detail: PAYMENT_BLOCK_DETAIL };
+  }
+  if (String(body.health_status?.can_send_message).toUpperCase() === "BLOCKED") {
+    const first = blocked?.errors?.[0];
+    return {
+      ok: false as const,
+      code: first?.error_code || 0,
+      detail: first?.possible_solution || first?.error_description || PAYMENT_BLOCK_DETAIL,
+    };
+  }
+  if (String(body.business_verification_status || "").toLowerCase() === "not_verified") {
+    // Verification limits the account but payment block is the hard stop for campaigns.
+    return { ok: true as const, code: 141010, detail: VERIFY_BLOCK_DETAIL, limited: true as const };
+  }
+  return { ok: true as const, code: 0, detail: "", limited: false as const };
 }
 
 export async function sendWhatsAppGraph(input: {

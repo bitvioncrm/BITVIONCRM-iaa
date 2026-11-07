@@ -316,8 +316,13 @@ export function ProductionWhatsApp() {
       .finally(() => setBusy(""));
   };
 
+  const paymentBlocked = /141006|payment method/i.test(line?.detail || "");
   const lineBlocked = line?.status === "error" || line?.accessTokenSet !== true;
-  const lineMessage = line?.detail || `Save the WhatsApp token for ${fromLine} before sending.`;
+  const lineMessage =
+    line?.detail ||
+    (paymentBlocked
+      ? "Meta blocked campaign sends until a WhatsApp payment method is added."
+      : `Save the WhatsApp token for ${fromLine} before sending.`);
 
   const refreshCampaigns = () => {
     if (!desk) return Promise.resolve();
@@ -711,6 +716,28 @@ export function ProductionWhatsApp() {
                     </div>
                   </article>
                 </div>
+                {paymentBlocked || lineBlocked ? (
+                  <section className="rounded-3xl border border-red-200 bg-[#fff1f0] p-5 shadow-sm">
+                    <p className="text-xs font-semibold tracking-wide text-[#9b2c2c] uppercase">
+                      {paymentBlocked ? "Meta billing block" : "WhatsApp line blocked"}
+                    </p>
+                    <p className="mt-2 text-sm text-[#9b2c2c]">{lineMessage}</p>
+                    <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-[#7f1d1d]">
+                      <li>Open Meta Business Suite → WhatsApp Manager for +91 95624 29928.</li>
+                      <li>Go to Account tools → Payment methods and add a working card (or fix the failed one).</li>
+                      <li>Finish business verification if Meta still shows it incomplete.</li>
+                      <li>Wait for template <span className="font-semibold">diwali_membership_2026</span> to show Approved, then send the test to 8137864105.</li>
+                    </ol>
+                    <a
+                      href="https://business.facebook.com/wa/manage/home/"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-4 inline-flex h-10 items-center rounded-full bg-[#9b2c2c] px-4 text-sm font-semibold text-white"
+                    >
+                      Open WhatsApp Manager
+                    </a>
+                  </section>
+                ) : null}
                 {busy === "bulk" || bulkDone ? (
                   <section className={cn("rounded-3xl p-5 shadow-sm", bulkDone ? "border border-[#d9fdd3] bg-[#f7fff9]" : "border border-[#111b21]/10 bg-white")}>
                     <div className="flex flex-wrap items-center justify-between gap-3">

@@ -1,5 +1,6 @@
 import { loadChannelSecrets, sendingLine } from "../lib/channel-secrets.ts";
 import {
+  checkWabaSendHealth,
   listApprovedTemplates,
   pickOutboundTemplate,
   sendWhatsAppGraph,
@@ -67,8 +68,35 @@ export default async (request: Request) => {
       return json(503, { status: "configuration_required", detail: `Save a WhatsApp access token for ${fromPhone}.` });
     }
 
+    const health = await checkWabaSendHealth(secret.waba_id, secret.access_token);
+    if (!health.ok) {
+      return json(503, {
+        status: "provider_blocked",
+        detail: health.detail,
+        sent: 0,
+        failed: 0,
+        next: offset,
+        total: 0,
+        capped: 0,
+        results: [],
+      });
+    }
+
     const approved = await listApprovedTemplates(secret.waba_id, secret.access_token);
     const chosen = pickOutboundTemplate(approved);
+    if (!chosen) {
+      return json(503, {
+        status: "configuration_required",
+        detail:
+          "No approved WhatsApp campaign template yet. After Meta billing is fixed, wait for diwali_membership_2026 (or crm_campaign_update) to show Approved, then send again.",
+        sent: 0,
+        failed: 0,
+        next: offset,
+        total: 0,
+        capped: 0,
+        results: [],
+      });
+    }
 
     const headers = { apikey: serviceKey, authorization: `Bearer ${serviceKey}` };
     const filter = workspaceId ? `&workspace_id=eq.${workspaceId}` : "";
