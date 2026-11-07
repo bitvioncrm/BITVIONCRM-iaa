@@ -68,19 +68,6 @@ export default async (request: Request) => {
 
     const approved = await listApprovedTemplates(secret.waba_id, secret.access_token);
     const chosen = pickOutboundTemplate(approved);
-    if (!chosen) {
-      return json(503, {
-        status: "configuration_required",
-        detail:
-          "No approved WhatsApp template yet. Meta only delivers cold outreach via templates. Templates crm_campaign_update / crm_desk_notice are pending approval in Meta Business Suite.",
-        sent: 0,
-        failed: 0,
-        next: offset,
-        total: 0,
-        capped: 0,
-        results: [],
-      });
-    }
 
     const headers = { apikey: serviceKey, authorization: `Bearer ${serviceKey}` };
     const filter = workspaceId ? `&workspace_id=eq.${workspaceId}` : "";
@@ -123,18 +110,20 @@ export default async (request: Request) => {
       }
 
       const personalized = text.replaceAll("{name}", name).replaceAll("{phone}", displayPhone);
-      const params =
-        chosen.name === "crm_desk_notice" || chosen.name === "crm_campaign_update"
+      const params = chosen
+        ? chosen.name === "crm_desk_notice" || chosen.name === "crm_campaign_update"
           ? [sanitizeTemplateVar(name), sanitizeTemplateVar(personalized || "Update from Dr. K Aesthetic Clinic.")]
-          : [sanitizeTemplateVar(personalized || "Update from Dr. K Aesthetic Clinic.")];
+          : [sanitizeTemplateVar(personalized || "Update from Dr. K Aesthetic Clinic.")]
+        : undefined;
 
       const graph = await sendWhatsAppGraph({
         phoneNumberId: secret.phone_number_id,
         token: secret.access_token,
         to: phone,
         text: personalized,
-        templateName: chosen.name,
-        templateLanguage: chosen.language || "en",
+        imageUrl: chosen ? undefined : imageUrl || undefined,
+        templateName: chosen?.name,
+        templateLanguage: chosen?.language || "en",
         templateParams: params,
       });
 
@@ -171,23 +160,23 @@ export default async (request: Request) => {
           lead_id: lead.id,
           channel: "whatsapp",
           direction: "outbound",
-          body: [personalized, `Template: ${chosen.name}`, imageUrl ? "Poster saved on campaign (text template used for delivery)" : ""].filter(Boolean).join("\n"),
+          body: [personalized, chosen ? `Template: ${chosen.name}` : "", imageUrl ? "Poster attached" : ""].filter(Boolean).join("\n"),
           provider_message_id: graph.providerMessageId,
           status: "sent",
         }),
       });
       sent += 1;
-      results.push({ leadId: lead.id, phone: displayPhone, name, status: "sent", detail: "" });
+      results.push({ leadId: lead.id, phone: displayPhone || graph.to, name, status: "sent", detail: "Accepted by WhatsApp" });
       if (campaignId) {
         persist.push({
           organization_id: lead.organization_id,
           workspace_id: lead.workspace_id,
           campaign_id: campaignId,
           lead_id: lead.id,
-          phone: displayPhone,
+          phone: displayPhone || graph.to,
           lead_name: name,
           status: "sent",
-          detail: "",
+          detail: "Accepted by WhatsApp",
         });
       }
     }
@@ -208,9 +197,13 @@ export default async (request: Request) => {
       next,
       total,
       capped: 0,
-      detail,
+      detail:
+        detail ||
+        (!chosen && sent > 0
+          ? "Sent as free-form. Numbers outside the 24-hour chat window may not receive it until Meta approves crm_campaign_update / crm_desk_notice."
+          : ""),
       results,
-      template: chosen.name,
+      template: chosen?.name || "",
     });
   } catch (reason: unknown) {
     const detail = reason instanceof Error ? reason.message.slice(0, 180) : "Bulk send failed.";

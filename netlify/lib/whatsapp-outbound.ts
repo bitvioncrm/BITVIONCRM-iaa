@@ -30,11 +30,13 @@ export async function listApprovedTemplates(wabaId: string, token: string) {
 }
 
 export function pickOutboundTemplate(rows: TemplateRow[]) {
+  // Never use Meta sample templates — hello_world only works on public test numbers and 502s on the live line.
+  const usable = rows.filter((row) => !/^hello_world$/i.test(row.name));
   for (const name of PREFERRED) {
-    const hit = rows.find((row) => row.name === name);
+    const hit = usable.find((row) => row.name === name);
     if (hit) return hit;
   }
-  return rows.find((row) => /MARKETING|UTILITY/i.test(row.category || "")) || rows[0] || null;
+  return usable.find((row) => /^crm_/i.test(row.name)) || null;
 }
 
 export function graphErrorDetail(error?: GraphError, fromPhone = "WhatsApp") {

@@ -102,19 +102,14 @@ export default async (request: Request) => {
   if (!phoneId || !accessToken) return json(503, { status: "configuration_required", detail: `Save a WhatsApp access token for ${fromPhone}.` });
 
   const coldOutreach = Boolean(body.test);
-  let templateName = template;
+  let templateName = template && !/^hello_world$/i.test(template) ? template : "";
   let templateLanguage = "en";
   let templateParams: string[] | undefined;
-  if (coldOutreach || template) {
+  if (coldOutreach || templateName) {
     const approved = await listApprovedTemplates(wabaId, accessToken);
-    const chosen = template ? approved.find((row) => row.name === template) || null : pickOutboundTemplate(approved);
-    if (!chosen && coldOutreach) {
-      return json(503, {
-        status: "configuration_required",
-        detail:
-          "WhatsApp will not deliver cold text outside the 24-hour window. Templates crm_desk_notice and crm_campaign_update are still pending Meta approval — open Meta Business Suite → Message templates, wait for Approved, then resend the test to 91… numbers.",
-      });
-    }
+    const chosen = templateName
+      ? approved.find((row) => row.name === templateName && !/^hello_world$/i.test(row.name)) || null
+      : pickOutboundTemplate(approved);
     if (chosen) {
       templateName = chosen.name;
       templateLanguage = chosen.language || "en";
@@ -122,6 +117,8 @@ export default async (request: Request) => {
         chosen.name === "crm_desk_notice" || chosen.name === "crm_campaign_update"
           ? [sanitizeTemplateVar("there"), sanitizeTemplateVar(text || "Update from Dr. K Aesthetic Clinic.")]
           : [sanitizeTemplateVar(text || "Update from Dr. K Aesthetic Clinic.")];
+    } else {
+      templateName = "";
     }
   }
 
@@ -155,7 +152,12 @@ export default async (request: Request) => {
   if (body.test) {
     const delivery = await waitForDelivery(supabaseUrl, serviceKey, graph.providerMessageId, 12000);
     const failed = deliveryFailureMessage(delivery.status, delivery.error, graph.to);
-    if (failed) return json(502, { status: "delivery_failed", detail: failed });
+    if (failed) {
+      const hint = templateName
+        ? failed
+        : `${failed} Tip: if ${graph.to} messaged ${fromPhone} in the last 24 hours it will deliver as free-form; otherwise wait for Meta to approve crm_desk_notice / crm_campaign_update.`;
+      return json(502, { status: "delivery_failed", detail: hint.slice(0, 280) });
+    }
     if (delivery.status === "delivered" || delivery.status === "read") {
       return json(200, { status: "sent", detail: `Test delivered to ${graph.to} from ${fromPhone}.` });
     }
@@ -163,7 +165,7 @@ export default async (request: Request) => {
       status: "sent",
       detail: templateName
         ? `Test submitted to ${graph.to} via template ${templateName}. Delivery not confirmed yet — check the phone.`
-        : `Test submitted to ${graph.to} from ${fromPhone}. If it does not arrive, WhatsApp needs an approved template outside the 24-hour window.`,
+        : `Test submitted to ${graph.to} from ${fromPhone}. Check the phone; cold numbers need an approved template.`,
     });
   }
 

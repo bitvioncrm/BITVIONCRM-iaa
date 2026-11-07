@@ -77,6 +77,8 @@ export function ProductionWhatsApp() {
   const [recipientTotal, setRecipientTotal] = useState(0);
   const [bulkSent, setBulkSent] = useState(0);
   const [bulkFailed, setBulkFailed] = useState(0);
+  const [bulkDone, setBulkDone] = useState(false);
+  const [noticeTone, setNoticeTone] = useState<"ok" | "err">("ok");
   const [line, setLine] = useState<ChannelStatus | null>(null);
   const [clickTotal, setClickTotal] = useState(0);
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
@@ -387,20 +389,27 @@ export function ProductionWhatsApp() {
       .catch(() => setSendLog([]));
   };
 
+  const flash = (message: string, tone: "ok" | "err" = "ok") => {
+    setNoticeTone(tone);
+    setNotice(message);
+  };
+
   const sendTest = () => {
     if (!desk || lineBlocked) return;
     const poster = posters.find((item) => item.id === posterId);
     const text = campaignText.trim();
     const to = testPhone.trim();
     if (!to) {
-      setNotice("Enter a WhatsApp number for the test message.");
+      flash("Enter a WhatsApp number for the test message.", "err");
       return;
     }
     if (!text && !poster?.url) {
-      setNotice("Add a message or a poster before the test.");
+      flash("Add a message or a poster before the test.", "err");
       return;
     }
     setBusy("test");
+    setBulkDone(false);
+    setSendPreview(true);
     void sendWhatsAppTest({
       workspaceId: desk.id,
       to,
@@ -410,11 +419,26 @@ export function ProductionWhatsApp() {
       .then((status) => {
         const ok = status === "sent" || /test (sent|delivered|submitted)/i.test(status);
         setTestReady(ok);
-        setNotice(ok ? `${status} Full send is unlocked.` : status);
+        setSendLog((currentLog) => [
+          {
+            leadId: "test",
+            phone: to,
+            name: "Test number",
+            status: ok ? "sent" : "failed",
+            detail: status,
+          },
+          ...currentLog.filter((row) => row.leadId !== "test"),
+        ].slice(0, 300));
+        flash(ok ? `${status} Full send is unlocked.` : status, ok ? "ok" : "err");
       })
       .catch((reason: unknown) => {
         setTestReady(false);
-        setNotice(reason instanceof Error ? reason.message : "Could not send the test");
+        const message = reason instanceof Error ? reason.message : "Could not send the test";
+        setSendLog((currentLog) => [
+          { leadId: "test", phone: to, name: "Test number", status: "failed", detail: message },
+          ...currentLog.filter((row) => row.leadId !== "test"),
+        ].slice(0, 300));
+        flash(message, "err");
       })
       .finally(() => setBusy(""));
   };
@@ -457,8 +481,9 @@ export function ProductionWhatsApp() {
     const together = poster?.url ? "this message and poster" : "this message";
     const approved = window.confirm(`Test went to ${testPhone.trim()}. Send ${together} to all ${waiting.toLocaleString("en-IN")} waiting leads from ${fromLine}?`);
     if (!approved) return;
-    setSendPreview(false);
+    setSendPreview(true);
     setBusy("bulk");
+    setBulkDone(false);
     setBulkSent(0);
     setBulkFailed(0);
     setSendLog([]);
@@ -486,7 +511,7 @@ export function ProductionWhatsApp() {
             failed += batch.failed;
             setBulkSent(sent);
             setBulkFailed(failed);
-            if (batch.results.length) setSendLog((currentLog) => [...batch.results, ...currentLog].slice(0, 300));
+            if (batch.results.length) setSendLog((currentLog) => [...batch.results, ...currentLog].slice(0, 500));
             if (batch.total) {
               total = batch.total;
               setRecipientTotal(batch.total);
@@ -500,17 +525,21 @@ export function ProductionWhatsApp() {
             const message = reason instanceof Error ? reason.message : "Could not send";
             await writeCampaign("running", (current?.sent ?? 0) + sent, (current?.failed ?? 0) + failed, total, offset, savedId);
             if (/timed out|live server/i.test(message) && offset > campaignCursor) {
-              setNotice(`${message} Sent ${sent.toLocaleString("en-IN")} so far. Press Send again to continue.`);
+              setBulkDone(true);
+              flash(`${message} Sent ${sent.toLocaleString("en-IN")} so far. Press Send again to continue.`, "err");
               loadCampaignSends(savedId, "all");
               return;
             }
             throw reason;
           }
         }
-        setNotice(`Sent ${sent.toLocaleString("en-IN")} from ${fromLine}. Failed ${failed.toLocaleString("en-IN")}.`);
+        setBulkDone(true);
+        setSentToday((value) => value + sent);
+        flash(`Send complete from ${fromLine}: ${sent.toLocaleString("en-IN")} sent, ${failed.toLocaleString("en-IN")} not sent. Numbers are listed below.`, sent > 0 ? "ok" : "err");
         loadCampaignSends(savedId, "all");
       } catch (reason: unknown) {
-        setNotice(reason instanceof Error ? reason.message : "Could not send");
+        setBulkDone(true);
+        flash(reason instanceof Error ? reason.message : "Could not send", "err");
       } finally {
         setBusy("");
       }
@@ -580,7 +609,11 @@ export function ProductionWhatsApp() {
               <button type="button" className={chip(false)} onClick={() => setMode("inbox")}>Inbox</button>
             </div>
           </header>
-          {notice ? <p className="bg-[#d9fdd3] px-4 py-2 text-center text-xs text-[#111b21]">{notice}</p> : null}
+          {notice ? (
+            <p className={cn("px-4 py-2 text-center text-xs", noticeTone === "err" ? "bg-[#fff1f0] text-[#9b2c2c]" : "bg-[#d9fdd3] text-[#111b21]")}>
+              {notice}
+            </p>
+          ) : null}
           {mode === "clicks" ? (
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
               <div className="mx-auto max-w-3xl overflow-hidden rounded-2xl bg-white shadow-sm">
@@ -633,15 +666,25 @@ export function ProductionWhatsApp() {
                 <div className="grid gap-3 lg:grid-cols-3">
                   <article className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#07362c] via-[#0f6e56] to-[#1fa87a] p-5 text-white shadow-[0_18px_40px_rgba(15,110,86,0.28)]">
                     <span className="absolute -right-6 -top-8 size-28 rounded-full bg-white/10" />
-                    <p className="text-[11px] font-semibold tracking-[0.18em] text-white/70 uppercase">Campaigns running</p>
-                    <p className="mt-3 text-4xl font-semibold tabular-nums">{campaigns.filter((item) => item.status === "running").length}</p>
-                    <p className="mt-2 text-xs text-white/80">{campaigns.length} saved · one press sends every waiting lead</p>
+                    <p className="text-[11px] font-semibold tracking-[0.18em] text-white/70 uppercase">
+                      {busy === "bulk" ? "Sending now" : bulkDone ? "Last send" : "Campaigns running"}
+                    </p>
+                    <p className="mt-3 text-4xl font-semibold tabular-nums">
+                      {busy === "bulk" || bulkDone ? bulkSent.toLocaleString("en-IN") : campaigns.filter((item) => item.status === "running").length}
+                    </p>
+                    <p className="mt-2 text-xs text-white/80">
+                      {busy === "bulk"
+                        ? `${bulkFailed.toLocaleString("en-IN")} not sent · live list below`
+                        : bulkDone
+                          ? `Complete · ${bulkFailed.toLocaleString("en-IN")} not sent`
+                          : `${campaigns.length} saved · one press sends every waiting lead`}
+                    </p>
                   </article>
                   <article className="relative overflow-hidden rounded-3xl bg-[#111b21] p-5 text-white shadow-[0_18px_40px_rgba(17,27,33,0.22)]">
                     <span className="absolute -right-8 bottom-0 size-24 rounded-full bg-[#25D366]/20" />
                     <p className="text-[11px] font-semibold tracking-[0.18em] text-[#8696a0] uppercase">Leads sent</p>
-                    <p className="mt-3 text-4xl font-semibold tabular-nums text-[#d9fdd3]">{sentToday.toLocaleString("en-IN")}</p>
-                    <p className="mt-2 text-xs text-[#8696a0]">{busy === "bulk" ? `${bulkSent.toLocaleString("en-IN")} in this send` : "Messages delivered today"}</p>
+                    <p className="mt-3 text-4xl font-semibold tabular-nums text-[#d9fdd3]">{(busy === "bulk" ? sentToday + bulkSent : sentToday).toLocaleString("en-IN")}</p>
+                    <p className="mt-2 text-xs text-[#8696a0]">{busy === "bulk" ? `${bulkSent.toLocaleString("en-IN")} in this send · updating live` : "Messages accepted today"}</p>
                   </article>
                   <article className="relative overflow-hidden rounded-3xl border border-[#e7d7b1] bg-gradient-to-br from-[#fffaf0] to-[#f3e6c8] p-5 text-[#3d2e12] shadow-[0_18px_40px_rgba(184,146,62,0.16)]">
                     <p className="text-[11px] font-semibold tracking-[0.18em] text-[#8a6a32] uppercase">Still waiting</p>
@@ -652,6 +695,30 @@ export function ProductionWhatsApp() {
                     </div>
                   </article>
                 </div>
+                {busy === "bulk" || bulkDone ? (
+                  <section className={cn("rounded-3xl p-5 shadow-sm", bulkDone ? "border border-[#d9fdd3] bg-[#f7fff9]" : "border border-[#111b21]/10 bg-white")}>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold tracking-wide text-[#008069] uppercase">{bulkDone ? "Send complete" : "Live send feed"}</p>
+                        <p className="mt-1 text-sm text-[#111b21]">
+                          {bulkDone
+                            ? `Finished from ${fromLine}: ${bulkSent.toLocaleString("en-IN")} sent, ${bulkFailed.toLocaleString("en-IN")} not sent.`
+                            : `Sending from ${fromLine}… ${bulkSent.toLocaleString("en-IN")} sent · ${bulkFailed.toLocaleString("en-IN")} not sent. Numbers appear below as each one goes out.`}
+                        </p>
+                      </div>
+                      <div className="flex gap-2 text-center">
+                        <span className="rounded-2xl bg-[#d9fdd3] px-3 py-2">
+                          <span className="block text-lg font-semibold tabular-nums text-[#008069]">{bulkSent}</span>
+                          <span className="text-[10px] font-semibold tracking-wide text-[#008069] uppercase">Sent</span>
+                        </span>
+                        <span className="rounded-2xl bg-[#fff1f0] px-3 py-2">
+                          <span className="block text-lg font-semibold tabular-nums text-[#9b2c2c]">{bulkFailed}</span>
+                          <span className="text-[10px] font-semibold tracking-wide text-[#9b2c2c] uppercase">Not sent</span>
+                        </span>
+                      </div>
+                    </div>
+                  </section>
+                ) : null}
                 <section className="rounded-3xl bg-white p-5 shadow-sm">
                   <div className="flex flex-wrap items-center gap-4">
                     <label className="relative grid size-20 shrink-0 cursor-pointer place-items-center overflow-hidden rounded-full bg-[#111b21] text-xs font-semibold text-white ring-2 ring-[#25D366]">
@@ -680,15 +747,19 @@ export function ProductionWhatsApp() {
                     </div>
                   </div>
                 </section>
-                {sendPreview || busy === "bulk" || sendLog.length > 0 ? (
+                {sendPreview || busy === "bulk" || bulkDone || sendLog.length > 0 ? (
                   <section className="rounded-3xl border border-[#d9fdd3] bg-[#f7fff9] p-5 shadow-sm">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <p className="text-xs font-semibold tracking-wide text-[#008069] uppercase">Send preview</p>
+                        <p className="text-xs font-semibold tracking-wide text-[#008069] uppercase">
+                          {busy === "bulk" ? "Sending · live numbers" : bulkDone ? "Send complete · number list" : "Send preview"}
+                        </p>
                         <p className="mt-1 text-sm text-[#667781]">
                           {busy === "bulk"
                             ? `Sending from ${fromLine} · ${bulkSent.toLocaleString("en-IN")} sent · ${bulkFailed.toLocaleString("en-IN")} not sent`
-                            : `Test one number first. Then send to ${Math.max(recipientTotal - campaignCursor, 0).toLocaleString("en-IN")} waiting leads from ${fromLine}.`}
+                            : bulkDone
+                              ? `Complete from ${fromLine}: ${bulkSent.toLocaleString("en-IN")} sent, ${bulkFailed.toLocaleString("en-IN")} not sent.`
+                              : `Test one number first. Then send to ${Math.max(recipientTotal - campaignCursor, 0).toLocaleString("en-IN")} waiting leads from ${fromLine}.`}
                         </p>
                       </div>
                       {sendPreview && busy !== "bulk" ? (
