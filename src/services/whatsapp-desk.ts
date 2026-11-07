@@ -169,7 +169,15 @@ async function readFunctionJson(response: Response) {
   }
 }
 
-export async function sendWhatsAppBulk(input: { text: string; imageUrl?: string; workspaceId?: string; offset: number }) {
+export interface WhatsAppSendResult {
+  leadId: string;
+  phone: string;
+  name: string;
+  status: "sent" | "failed" | "skipped";
+  detail: string;
+}
+
+export async function sendWhatsAppBulk(input: { text: string; imageUrl?: string; workspaceId?: string; offset: number; campaignId?: string }) {
   const session = await client().auth.getSession();
   const token = session.data.session?.access_token;
   if (!token) throw new Error("Sign in again before sending.");
@@ -182,6 +190,15 @@ export async function sendWhatsAppBulk(input: { text: string; imageUrl?: string;
   if (!response.ok) throw new Error(String(body.detail || body.status || "Bulk send failed"));
   const next = Number(body.next ?? input.offset);
   const total = Number(body.total ?? 0);
+  const results = Array.isArray(body.results)
+    ? (body.results as Array<Record<string, unknown>>).map((row) => ({
+        leadId: String(row.leadId ?? ""),
+        phone: String(row.phone ?? ""),
+        name: String(row.name ?? "Lead"),
+        status: (row.status === "sent" || row.status === "skipped" ? row.status : "failed") as WhatsAppSendResult["status"],
+        detail: String(row.detail ?? ""),
+      }))
+    : [];
   return {
     sent: Number(body.sent ?? 0),
     failed: Number(body.failed ?? 0),
@@ -190,7 +207,29 @@ export async function sendWhatsAppBulk(input: { text: string; imageUrl?: string;
     done: next >= total,
     capped: body.status === "capped" || Number(body.capped ?? 0) === 1,
     detail: String(body.detail ?? ""),
+    results,
   };
+}
+
+export async function listWhatsAppCampaignSends(campaignId: string, status: "all" | "sent" | "failed" | "skipped" = "all") {
+  let query = client()
+    .from("whatsapp_campaign_sends")
+    .select("id, lead_id, phone, lead_name, status, detail, created_at")
+    .eq("campaign_id", campaignId)
+    .order("created_at", { ascending: false })
+    .limit(300);
+  if (status !== "all") query = query.eq("status", status);
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((row) => ({
+    id: String(row.id),
+    leadId: String(row.lead_id ?? ""),
+    phone: String(row.phone ?? ""),
+    name: String(row.lead_name ?? "Lead"),
+    status: (row.status === "sent" || row.status === "skipped" ? row.status : "failed") as WhatsAppSendResult["status"],
+    detail: String(row.detail ?? ""),
+    createdAt: String(row.created_at ?? ""),
+  }));
 }
 
 export const WHATSAPP_DAILY_CAP = 250;
