@@ -57,6 +57,7 @@ export default function App() {
           <Route path="/team" element={<TeamPage />} />
           <Route path="/activity" element={<ActivityPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/backups" element={<SettingsPage />} />
           <Route path="/appointments" element={<AppointmentsPage />} />
           <Route path="/bookings" element={<BookingsPage />} />
           <Route path="/clinic" element={<ProductionModule module="clinic" />} />
