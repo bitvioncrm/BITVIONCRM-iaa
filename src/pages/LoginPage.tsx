@@ -51,7 +51,7 @@ export function LoginPage() {
             onSubmit={form.handleSubmit(async (values) => {
               setError("");
               setLoading(true);
-              const message = await login(values.email, values.password);
+              const message = await login(values.email, values.password, values.remember);
               setLoading(false);
               if (message) setError(message);
             })}
@@ -69,7 +69,7 @@ export function LoginPage() {
             <div className="flex items-center justify-between text-sm">
               <label className="flex items-center gap-2 text-[13px]">
                 <input type="checkbox" className="size-3.5 accent-navy" {...form.register("remember")} />
-                Remember me
+                Stay signed in all day
               </label>
               <button type="button" className="text-[13px] text-muted hover:text-ink" onClick={() => setForgot(true)}>
                 Forgot password

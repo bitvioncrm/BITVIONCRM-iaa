@@ -1,0 +1,73 @@
+/** Shared table lists for scheduled Netlify backups. */
+
+export const CLINIC_TABLES = [
+  "leads",
+  "lead_notes",
+  "lead_assignments",
+  "lead_status_history",
+  "followups",
+  "tasks",
+  "messages",
+  "call_time_sessions",
+  "documents",
+  "invoices",
+  "invoice_items",
+  "payments",
+  "refunds",
+  "automation_rules",
+  "automation_runs",
+  "meta_form_mappings",
+  "meta_import_events",
+  "whatsapp_campaigns",
+  "whatsapp_campaign_sends",
+  "workspace_channel_secrets",
+  "patients",
+  "appointments",
+  "consultations",
+  "prescriptions",
+  "patient_procedures",
+  "patient_procedure_items",
+  "inventory_products",
+  "inventory_transactions",
+  "clinic_ledger",
+] as const;
+
+export const INSTITUTE_TABLES = [
+  "leads",
+  "lead_notes",
+  "lead_assignments",
+  "lead_status_history",
+  "followups",
+  "tasks",
+  "messages",
+  "call_time_sessions",
+  "documents",
+  "invoices",
+  "invoice_items",
+  "payments",
+  "refunds",
+  "automation_rules",
+  "automation_runs",
+  "meta_form_mappings",
+  "meta_import_events",
+  "whatsapp_campaigns",
+  "whatsapp_campaign_sends",
+  "workspace_channel_secrets",
+  "students",
+  "admissions",
+  "courses",
+  "batches",
+  "exams",
+  "marks",
+  "certificates",
+] as const;
+
+export function redactSecrets(table: string, rows: Record<string, unknown>[]) {
+  if (table !== "workspace_channel_secrets") return rows;
+  return rows.map((row) => ({
+    ...row,
+    access_token: row.access_token ? "[redacted]" : "",
+    app_secret: row.app_secret ? "[redacted]" : "",
+    verify_token: row.verify_token ? "[redacted]" : "",
+  }));
+}

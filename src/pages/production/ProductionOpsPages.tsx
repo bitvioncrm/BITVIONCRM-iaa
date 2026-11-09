@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { MetaLeadCentre } from "@/pages/production/MetaLeadCentre";
+import { Link } from "react-router-dom";
+import { PremiumBackups } from "@/components/settings/PremiumBackups";
 import { listLeads, listWorkspaces, updateLeadStatus, type ProductionLead, type WorkspaceOption } from "@/services/production-leads";
 import { bookFromLead, createTask, listAudit, listTasks, removeTask, revenueSummary, updateTask } from "@/services/production-ops";
 import { useAuth } from "@/context/AuthContext";
+import { canOperateWhatsApp } from "@/lib/production-access";
 import { STATUS_LABEL, STATUS_ORDER } from "@/data/catalog";
 import type { LeadStatus } from "@/types";
 
@@ -245,5 +247,52 @@ export function ProductionActivity() {
 }
 
 export function ProductionSettings() {
-  return <MetaLeadCentre />;
+  const { productionUser } = useAuth();
+  const admin = canOperateWhatsApp(productionUser?.roleKey ?? "");
+  const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
+  const [error, setError] = useState("");
+  const [tab, setTab] = useState<"backups" | "links">("backups");
+
+  useEffect(() => {
+    void listWorkspaces()
+      .then(setWorkspaces)
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load workspaces"));
+  }, []);
+
+  if (!admin) {
+    return (
+      <div className="rounded-2xl border border-line bg-white px-4 py-10 text-center text-sm text-muted">
+        Admin settings are limited to administrators.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold tracking-[0.18em] text-[#8a6a2f] uppercase">Admin settings</p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight">Control centre</h1>
+          <p className="mt-1 text-sm text-muted">Premium backups, channel links, and Meta tools for Dr. K&apos;s.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => setTab("backups")} className={`min-h-11 rounded-full px-4 text-sm font-medium ${tab === "backups" ? "bg-navy text-white" : "border border-line bg-white"}`}>Premium backups</button>
+          <button type="button" onClick={() => setTab("links")} className={`min-h-11 rounded-full px-4 text-sm font-medium ${tab === "links" ? "bg-navy text-white" : "border border-line bg-white"}`}>Quick links</button>
+        </div>
+      </div>
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
+      {tab === "backups" ? <PremiumBackups workspaces={workspaces} /> : (
+        <div className="grid gap-3 md:grid-cols-2">
+          <Link to="/meta" className="rounded-2xl border border-line bg-white p-5 transition hover:border-[#c6a15b]">
+            <p className="text-sm font-semibold">Meta lead centre</p>
+            <p className="mt-1 text-sm text-muted">Form mappings, pull, and import health.</p>
+          </Link>
+          <Link to="/whatsapp" className="rounded-2xl border border-line bg-white p-5 transition hover:border-[#c6a15b]">
+            <p className="text-sm font-semibold">WhatsApp desk</p>
+            <p className="mt-1 text-sm text-muted">Inbox, bulk messaging, and number setup.</p>
+          </Link>
+        </div>
+      )}
+    </div>
+  );
 }

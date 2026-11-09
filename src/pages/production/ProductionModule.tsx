@@ -125,7 +125,8 @@ function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
             emergencyContact: data.get("emergency") as string,
             notes: data.get("notes") as string,
           });
-          onNotice(`Patient ${code} saved.`);
+          onNotice(`Patient ${code} saved. Same mobile updates the existing card instead of adding another.`);
+          clearDeskCache();
           reload();
         }, onError)}>
           <label className="text-sm sm:col-span-2">Full name<input name="name" required className="mt-1 h-11 w-full rounded-md border border-line px-3" /></label>

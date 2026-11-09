@@ -92,6 +92,10 @@ class AdminWriteMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if request.method in ("GET", "HEAD", "OPTIONS") or not request.url.path.startswith("/api/"):
             return await call_next(request)
+        # Local free WAHA console: allow write APIs from this machine without CRM JWT.
+        client = (request.client.host if request.client else "") or ""
+        if client in {"127.0.0.1", "::1", "localhost"}:
+            return await call_next(request)
         auth = request.headers.get("authorization") or ""
         token = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
         if not token or not await _token_is_admin(token):

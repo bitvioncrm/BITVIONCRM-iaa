@@ -1,10 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ROLE_LABEL } from "@/data/catalog";
-import { supabase, supabaseConfigured } from "@/lib/supabase";
+import { setAuthRemember, supabase, supabaseConfigured } from "@/lib/supabase";
 import { primaryRoleKey } from "@/services/production-leads";
 import type { Role } from "@/types";
-
-const SESSION_KEY = "recruitflow.session";
 
 interface Session {
   email: string;
@@ -26,7 +24,7 @@ interface AuthValue {
   previewRole: Role;
   roleLabel: string;
   signup: (email: string, password: string) => Promise<string | null>;
-  login: (email: string, password: string) => Promise<string | null>;
+  login: (email: string, password: string, remember?: boolean) => Promise<string | null>;
   resetPassword: (email: string) => Promise<string | null>;
   logout: () => void;
   setPreviewRole: (role: Role) => void;
@@ -39,6 +37,15 @@ function appRole(key: string): Role {
   return "counsellor";
 }
 
+async function hydrateUser(user: { id: string; email?: string | null }) {
+  if (!user.email) return null;
+  const key = await primaryRoleKey().catch(() => "");
+  return {
+    session: { email: user.email, userId: user.id, name: user.email, role: appRole(key) } satisfies Session,
+    productionUser: { userId: user.id, email: user.email, roleKey: key } satisfies ProductionUser,
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
@@ -46,21 +53,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [previewRole, setPreviewRole] = useState<Role>("administrator");
 
   useEffect(() => {
-    localStorage.removeItem(SESSION_KEY);
-    sessionStorage.removeItem(SESSION_KEY);
     if (!supabase) {
       setReady(true);
       return;
     }
-    void supabase.auth.getSession().then(async ({ data }) => {
-      const user = data.session?.user;
-      if (!user?.email) return;
-      const key = await primaryRoleKey().catch(() => "");
-      const next = { email: user.email, userId: user.id, name: user.email, role: appRole(key) };
-      setProductionUser({ userId: user.id, email: user.email, roleKey: key });
-      setSession(next);
-      setPreviewRole(next.role);
-    }).finally(() => setReady(true));
+
+    let active = true;
+    const apply = async (user: { id: string; email?: string | null } | null | undefined) => {
+      if (!active) return;
+      if (!user?.email) {
+        setProductionUser(null);
+        setSession(null);
+        return;
+      }
+      const next = await hydrateUser(user);
+      if (!active || !next) return;
+      setProductionUser(next.productionUser);
+      setSession(next.session);
+      setPreviewRole(next.session.role);
+    };
+
+    void supabase.auth.getSession().then(({ data }) => apply(data.session?.user)).finally(() => {
+      if (active) setReady(true);
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      void apply(nextSession?.user);
+    });
+
+    // Refresh proactively during a long local admin day.
+    const timer = window.setInterval(() => {
+      void supabase.auth.getSession().then(({ data }) => {
+        if (data.session) void supabase.auth.refreshSession();
+      });
+    }, 45 * 60 * 1000);
+
+    return () => {
+      active = false;
+      sub.subscription.unsubscribe();
+      window.clearInterval(timer);
+    };
   }, []);
 
   const value = useMemo<AuthValue>(
@@ -75,16 +107,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { error } = await supabase.auth.signUp({ email: email.trim().toLowerCase(), password });
         return error ? error.message : null;
       },
-      login: async (email, password) => {
+      login: async (email, password, remember = true) => {
         if (!supabase) return "Configuration Required. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.";
+        setAuthRemember(remember);
         const trimmed = email.trim().toLowerCase();
         const { data, error } = await supabase.auth.signInWithPassword({ email: trimmed, password });
         if (error || !data.user?.email) return error?.message ?? "Invalid email or password.";
-        const key = await primaryRoleKey().catch(() => "");
-        const next = { email: data.user.email, userId: data.user.id, name: data.user.email, role: appRole(key) };
-        setProductionUser({ userId: data.user.id, email: data.user.email, roleKey: key });
-        setSession(next);
-        setPreviewRole(next.role);
+        const next = await hydrateUser(data.user);
+        if (!next) return "Invalid email or password.";
+        setProductionUser(next.productionUser);
+        setSession(next.session);
+        setPreviewRole(next.session.role);
         return null;
       },
       resetPassword: async (email) => {
@@ -93,8 +126,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return error ? error.message : null;
       },
       logout: () => {
-        localStorage.removeItem(SESSION_KEY);
-        sessionStorage.removeItem(SESSION_KEY);
         setProductionUser(null);
         setSession(null);
         void supabase?.auth.signOut();

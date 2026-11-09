@@ -39,7 +39,7 @@ def to_chat_id(phone: str) -> str:
 async def session_info(session: str | None = None) -> dict:
     """Fast session status."""
     name = _sid(session)
-    async with httpx.AsyncClient(timeout=httpx.Timeout(3.0, connect=1.5)) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=5.0)) as client:
         r = await client.get(
             f"{config.WAHA_BASE_URL}/api/sessions/{name}",
             headers=_headers(),
@@ -182,8 +182,8 @@ async def get_qr(*, session: str | None = None, restart_if_failed: bool = True, 
     if status == "WORKING":
         return {"status": "WORKING", "qr": None, "me": info.get("me")}
 
-    async with httpx.AsyncClient(timeout=8) as client:
-        for _ in range(30):
+    async with httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=5.0)) as client:
+        for _ in range(40):
             if status == "WORKING":
                 return {"status": "WORKING", "qr": None, "me": info.get("me")}
             if status == "FAILED":

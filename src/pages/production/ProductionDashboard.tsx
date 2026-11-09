@@ -15,7 +15,7 @@ import { formatClock } from "@/lib/call-time";
 import { DialLink } from "@/components/calls/DialLink";
 import { phoneTel } from "@/lib/phone";
 import { rangeBounds, type RangeKey } from "@/lib/range";
-import { callDeskReport, countRows, listClinicBills, listDeskMoney, listDeskPatients, listDeskStudents, listFollowUps, clearDeskCache, ensureFollowUpVisit, removeAppointment, removePatient, removeStudent, savePersonPhoto, saveStudentDetails, updateAppointment, updatePatient, type ClinicBill, type DeskMoney, type DeskPatient, type DeskStudent, type StudentDetails } from "@/services/production-ops";
+import { callDeskReport, countRows, listClinicBills, listDeskMoney, listDeskPatients, listDeskStudents, listFollowUps, clearDeskCache, ensureFollowUpVisit, removeAppointment, removeDeskMoney, removePatient, removeStudent, savePersonPhoto, saveStudentDetails, updateAppointment, updatePatient, type ClinicBill, type DeskMoney, type DeskPatient, type DeskStudent, type StudentDetails } from "@/services/production-ops";
 import { listDoctors } from "@/services/production-leads";
 import { inr } from "@/lib/money";
 
@@ -192,6 +192,7 @@ function ReceptionDashboard() {
   const [doctors, setDoctors] = useState<Array<{ userId: string; name: string }>>([]);
   const [cardBusy, setCardBusy] = useState(false);
   const [cardNote, setCardNote] = useState("");
+  const [moneyBusy, setMoneyBusy] = useState("");
   const [patientEdit, setPatientEdit] = useState({ fullName: "", mobile: "", email: "", gender: "other", dateOfBirth: "", place: "", address: "", emergency: "", notes: "" });
   useEffect(() => {
     if (!clinic) return;
@@ -267,14 +268,40 @@ function ReceptionDashboard() {
             {incomeRows.slice(0, 12).map((row) => {
               const person = cards.find((item) => item.id === row.patientId);
               return (
-                <div key={row.id} className="flex items-center justify-between gap-3 text-sm">
+                <div key={`${row.source}-${row.id}`} className="flex items-center justify-between gap-3 text-sm">
                   <span className="min-w-0 truncate">{person?.full_name || "Clinic"} · {row.note || "Payment"}</span>
-                  <span className="shrink-0 font-medium">{inr(row.amount)}</span>
+                  <span className="flex shrink-0 items-center gap-3">
+                    <span className="font-medium">{inr(row.amount)}</span>
+                    <button
+                      type="button"
+                      disabled={moneyBusy === row.id}
+                      className="min-h-11 text-sm font-medium text-danger disabled:opacity-50"
+                      onClick={() => {
+                        if (!window.confirm(`Delete ${inr(row.amount)} income${person?.full_name ? ` for ${person.full_name}` : ""}?`)) return;
+                        setMoneyBusy(row.id);
+                        setRecordError("");
+                        void removeDeskMoney(row)
+                          .then(() => {
+                            setMoney((current) => current.filter((item) => !(item.id === row.id && item.source === row.source)));
+                            setCardNote("Income deleted.");
+                            if (clinic) {
+                              clearDeskCache();
+                              void listClinicBills(clinic.id).then(setBills).catch(() => undefined);
+                            }
+                          })
+                          .catch((reason: unknown) => setRecordError(reason instanceof Error ? reason.message : "Could not delete the income"))
+                          .finally(() => setMoneyBusy(""));
+                      }}
+                    >
+                      {moneyBusy === row.id ? "…" : "Delete"}
+                    </button>
+                  </span>
                 </div>
               );
             })}
           </div>
         )}
+        {recordError && !open ? <p className="mt-2 text-sm text-danger">{recordError}</p> : null}
       </section>
       <div className="flex flex-wrap gap-2"><Tile to="/appointments" label="Appointments" /><Tile to="/clinic" label="Register and appointments" /><Tile to="/billing" label="Billing" /><Tile to="/inventory" label="Stock" /></div>
       <FilterBar filter={filter} customFrom={customFrom} customTo={customTo} onFilter={setFilter} onFrom={setCustomFrom} onTo={setCustomTo} count={shown.length} noun={shownLabel} />
@@ -412,13 +439,28 @@ function ReceptionDashboard() {
                 <label className="text-sm sm:col-span-2">Notes<textarea value={patientEdit.notes} onChange={(event) => setPatientEdit({ ...patientEdit, notes: event.target.value })} className="mt-1 min-h-16 w-full rounded-md border border-line px-3 py-2" /></label>
                 <div className="flex flex-wrap gap-2 sm:col-span-2">
                   <button type="submit" disabled={cardBusy} className="min-h-11 rounded-md bg-navy px-3 text-sm text-white">{cardBusy ? "Saving" : "Save patient"}</button>
-                  <button type="button" className="min-h-11 text-sm font-medium text-danger" onClick={() => {
-                    if (!window.confirm(`Delete ${open.full_name}?`)) return;
-                    void removePatient(open.id).then(() => {
-                      setCards((current) => current.filter((item) => item.id !== open.id));
-                      setOpen(null);
-                    }).catch((reason: unknown) => setRecordError(reason instanceof Error ? reason.message : "Could not delete the patient"));
-                  }}>Delete</button>
+                  <button type="button" disabled={cardBusy} className="min-h-11 text-sm font-medium text-danger disabled:opacity-50" onClick={() => {
+                    if (!window.confirm(`Delete ${open.full_name}? This removes the patient card from Reception.`)) return;
+                    const patientId = open.id;
+                    setCardBusy(true);
+                    setRecordError("");
+                    clearDeskCache();
+                    void removePatient(patientId)
+                      .then(async () => {
+                        if (clinic) {
+                          const rows = await listDeskPatients(clinic.id);
+                          setCards(rows.filter((item) => item.id !== patientId));
+                          void listDeskMoney(clinic.id).then(setMoney).catch(() => undefined);
+                          void listClinicBills(clinic.id).then(setBills).catch(() => undefined);
+                        } else {
+                          setCards((current) => current.filter((item) => item.id !== patientId));
+                        }
+                        setOpen(null);
+                        setCardNote("Patient deleted.");
+                      })
+                      .catch((reason: unknown) => setRecordError(reason instanceof Error ? reason.message : "Could not delete the patient"))
+                      .finally(() => setCardBusy(false));
+                  }}>{cardBusy ? "Deleting…" : "Delete"}</button>
                 </div>
               </form>
               </section>
@@ -438,7 +480,13 @@ function ReceptionDashboard() {
                       if (next) setOpen(next);
                     }).catch(() => undefined);
                   }}
-                  onDeleted={() => setOpen(null)}
+                  onDeleted={() => {
+                    setCards((current) => current.filter((item) => item.id !== open.id));
+                    setMoney((current) => current.filter((item) => item.patientId !== open.id));
+                    setBills((current) => current.filter((item) => item.patientId !== open.id));
+                    setOpen(null);
+                    setCardNote("Patient deleted.");
+                  }}
                   onNotice={setCardNote}
                   onError={setRecordError}
                 />
@@ -492,10 +540,12 @@ function ReceptionDashboard() {
                       </select>
                       <button type="button" className="min-h-11 text-sm font-medium text-danger" onClick={() => {
                         if (!window.confirm("Delete this appointment?")) return;
+                        clearDeskCache();
                         void removeAppointment(item.id).then(() => {
                           const next = { ...open, appointments: open.appointments.filter((row) => row.id !== item.id) };
                           setOpen(next);
                           setCards((current) => current.map((patient) => patient.id === open.id ? next : patient));
+                          setCardNote("Appointment deleted.");
                         }).catch((reason: unknown) => setRecordError(reason instanceof Error ? reason.message : "Could not delete the appointment"));
                       }}>Delete</button>
                     </div>

@@ -298,6 +298,7 @@ export interface DeskMoney {
   note: string;
   at: string;
   patientId: string;
+  source: "ledger" | "payment" | "refund";
 }
 
 export async function listDeskPatients(workspaceId: string) {
@@ -306,7 +307,7 @@ export async function listDeskPatients(workspaceId: string) {
   if (cached) return cached;
   const [patients, appointments, treatments, consultations] = await Promise.all([
     client().from("patients").select("id, patient_code, full_name, mobile, email, gender, date_of_birth, age, place, address, emergency_contact, notes, created_at, photo_path").eq("workspace_id", workspaceId).is("deleted_at", null).order("created_at", { ascending: false }).limit(200),
-    client().from("appointments").select("id, patient_id, doctor_id, starts_at, status, reason").eq("workspace_id", workspaceId).order("starts_at", { ascending: false }).limit(500),
+    client().from("appointments").select("id, patient_id, doctor_id, starts_at, status, reason").eq("workspace_id", workspaceId).not("status", "in", "(cancelled)").order("starts_at", { ascending: false }).limit(500),
     client().from("patient_procedures").select("id, patient_id, performed_on, procedure_1, procedure_2").eq("workspace_id", workspaceId).order("performed_on", { ascending: true }).limit(500),
     client().from("consultations").select("id, patient_id, diagnosis, created_at").eq("workspace_id", workspaceId).order("created_at", { ascending: true }).limit(500),
   ]);
@@ -373,6 +374,7 @@ export async function listDeskMoney(workspaceId: string) {
     note: String(row.note || ""),
     at: String(row.created_at || ""),
     patientId: String(row.patient_id || ""),
+    source: "ledger" as const,
   }));
   const collected: DeskMoney[] = (payments.data ?? []).map((row) => {
     const invoice = row.invoices as { patient_id?: string } | { patient_id?: string }[] | null;
@@ -384,6 +386,7 @@ export async function listDeskMoney(workspaceId: string) {
       note: String(row.method || "Payment"),
       at: String(row.paid_on || ""),
       patientId: String(patientId),
+      source: "payment" as const,
     };
   });
   const returned: DeskMoney[] = (refunds.data ?? []).map((row) => {
@@ -396,9 +399,32 @@ export async function listDeskMoney(workspaceId: string) {
       note: "Refund",
       at: String(row.created_at || ""),
       patientId: String(patientId),
+      source: "refund" as const,
     };
   });
   return [...income, ...collected, ...returned];
+}
+
+export async function removeDeskMoney(row: Pick<DeskMoney, "id" | "source">) {
+  forgetDeskLists();
+  if (row.source === "ledger") {
+    const { error } = await client().from("clinic_ledger").delete().eq("id", row.id);
+    if (error) throw new Error(error.message);
+    return;
+  }
+  if (row.source === "payment") {
+    const { data, error } = await client().from("payments").delete().eq("id", row.id).select("invoice_id").maybeSingle();
+    if (error) throw new Error(error.message);
+    if (data?.invoice_id) await syncInvoiceTotals(String(data.invoice_id));
+    return;
+  }
+  const { data, error } = await client().from("refunds").delete().eq("id", row.id).select("invoice_id").maybeSingle();
+  if (error) throw new Error(error.message);
+  if (data?.invoice_id) {
+    const { error: statusError } = await client().from("invoices").update({ status: "partial", updated_at: new Date().toISOString() }).eq("id", data.invoice_id).eq("status", "refunded");
+    if (statusError) throw new Error(statusError.message);
+    await syncInvoiceTotals(String(data.invoice_id));
+  }
 }
 
 export interface PatientProductLine {
@@ -628,6 +654,37 @@ async function serverCode(fn: "next_patient_code" | "next_student_code", fallbac
 
 export async function createPatient(input: { organizationId: string; workspaceId: string; fullName: string; mobile: string; place: string; email?: string; gender?: string; dateOfBirth?: string | null; address?: string; emergencyContact?: string; notes?: string; leadId?: string | null }) {
   forgetDeskLists();
+  const { phoneKey } = await import("@/lib/lead-normalize");
+  const mobile = input.mobile.trim();
+  const key = phoneKey(mobile);
+  if (key.length >= 10) {
+    const existing = await client()
+      .from("patients")
+      .select("id, patient_code, mobile")
+      .eq("workspace_id", input.workspaceId)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: true })
+      .limit(500);
+    if (existing.error) throw new Error(existing.error.message);
+    const match = (existing.data ?? []).find((row) => phoneKey(String(row.mobile || "")) === key);
+    if (match) {
+      await updatePatient(String(match.id), {
+        fullName: input.fullName,
+        mobile,
+        place: input.place,
+        email: input.email,
+        gender: input.gender,
+        dateOfBirth: input.dateOfBirth,
+        address: input.address,
+        emergencyContact: input.emergencyContact,
+        notes: input.notes,
+      });
+      if (input.leadId) {
+        await client().from("patients").update({ lead_id: input.leadId, updated_at: new Date().toISOString() }).eq("id", match.id).is("deleted_at", null);
+      }
+      return String(match.patient_code || "");
+    }
+  }
   const code = await serverCode("next_patient_code", `DKC-P-${Date.now().toString(36).toUpperCase()}`);
   const dob = input.dateOfBirth || null;
   const age = dob ? Math.max(0, new Date().getFullYear() - new Date(dob).getFullYear()) : null;
@@ -637,7 +694,7 @@ export async function createPatient(input: { organizationId: string; workspaceId
     lead_id: input.leadId || null,
     patient_code: code,
     full_name: input.fullName.trim(),
-    mobile: input.mobile.trim(),
+    mobile,
     email: input.email ?? "",
     gender: input.gender ?? "other",
     date_of_birth: dob,
@@ -691,8 +748,22 @@ export async function removePatientProduct(itemId: string) {
 
 export async function removePatient(id: string) {
   forgetDeskLists();
-  const { error } = await client().from("patients").update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", id).is("deleted_at", null);
-  if (error) throw new Error(error.message);
+  const viaRpc = await client().rpc("soft_delete_patient", { p_id: id });
+  if (!viaRpc.error) {
+    forgetDeskLists();
+    return;
+  }
+  // Fallback if RPC is missing — update then confirm the card is no longer active.
+  const { error } = await client()
+    .from("patients")
+    .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .is("deleted_at", null);
+  if (error) throw new Error(error.message || viaRpc.error.message);
+  const stillThere = await client().from("patients").select("id").eq("id", id).is("deleted_at", null).maybeSingle();
+  if (stillThere.error) throw new Error(stillThere.error.message);
+  if (stillThere.data) throw new Error(viaRpc.error.message || "Could not delete the patient. Try again.");
+  forgetDeskLists();
 }
 
 export async function updateAppointmentStatus(id: string, status: string) {
@@ -710,8 +781,15 @@ export async function removeAppointment(id: string) {
   forgetDeskLists();
   const removed = await client().from("appointments").delete().eq("id", id);
   if (!removed.error) return;
-  const { error } = await client().from("appointments").update({ status: "cancelled", updated_at: new Date().toISOString() }).eq("id", id);
+  // FK may block hard delete — mark cancelled and keep it out of desk lists.
+  const { data, error } = await client()
+    .from("appointments")
+    .update({ status: "cancelled", updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
   if (error) throw new Error(error.message);
+  if (!data) throw new Error("Could not delete the appointment.");
 }
 
 export interface DeskAppointmentRow {

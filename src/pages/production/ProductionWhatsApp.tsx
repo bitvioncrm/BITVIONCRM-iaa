@@ -79,7 +79,10 @@ export function ProductionWhatsApp() {
   const [bulkFailed, setBulkFailed] = useState(0);
   const [bulkDone, setBulkDone] = useState(false);
   const [noticeTone, setNoticeTone] = useState<"ok" | "err">("ok");
+  const [localConsoleOpen, setLocalConsoleOpen] = useState(false);
+  const [localConsoleOk, setLocalConsoleOk] = useState<boolean | null>(null);
   const [line, setLine] = useState<ChannelStatus | null>(null);
+  const localConsoleUrl = "http://127.0.0.1:5178";
   const [clickTotal, setClickTotal] = useState(0);
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
   const [deskId, setDeskId] = useState("");
@@ -107,6 +110,26 @@ export function ProductionWhatsApp() {
   useEffect(() => {
     setMode(admin ? "automation" : "inbox");
   }, [admin]);
+
+  useEffect(() => {
+    if (!admin || mode !== "automation") return;
+    let cancelled = false;
+    const ping = () => {
+      void fetch(`${localConsoleUrl}/api/health`, { method: "GET" })
+        .then((response) => {
+          if (!cancelled) setLocalConsoleOk(response.ok);
+        })
+        .catch(() => {
+          if (!cancelled) setLocalConsoleOk(false);
+        });
+    };
+    ping();
+    const timer = window.setInterval(ping, 8000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [admin, mode, localConsoleUrl]);
 
   useEffect(() => {
     void listWorkspaces()
@@ -716,26 +739,59 @@ export function ProductionWhatsApp() {
                     </div>
                   </article>
                 </div>
+                <section className="rounded-3xl border border-[#25D366]/40 bg-[#f7fff9] p-5 shadow-sm">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold tracking-wide text-[#008069] uppercase">Free local send · WhatsApp Web</p>
+                      <p className="mt-1 text-sm text-[#111b21]">
+                        Meta Cloud billing is blocked for cold campaigns. Clinic and Institute share one line (+91 95624 29928). Scan QR once on this PC, then run Diwali bulk with pacing — no Meta payment or templates.
+                      </p>
+                      <p className="mt-2 text-xs text-[#667781]">
+                        {localConsoleOk === true
+                          ? "Local console is online at 127.0.0.1:5178."
+                          : localConsoleOk === false
+                            ? "Console offline. On this PC run WHATSAPP_AUTOMATION\\start_console.bat and start WAHA (docker compose in WHATSAPP_AUTOMATION\\waha)."
+                            : "Checking local console…"}
+                        {paymentBlocked || lineBlocked ? ` Meta note: ${lineMessage}` : ""}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <a
+                        href={localConsoleUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-10 items-center rounded-full bg-[#00a884] px-4 text-sm font-semibold text-white"
+                      >
+                        Open local console
+                      </a>
+                      <button
+                        type="button"
+                        className="h-10 rounded-full bg-[#111b21] px-4 text-sm font-semibold text-white"
+                        onClick={() => setLocalConsoleOpen((value) => !value)}
+                      >
+                        {localConsoleOpen ? "Hide embed" : "Show embed"}
+                      </button>
+                    </div>
+                  </div>
+                  {localConsoleOpen ? (
+                    <div className="mt-4 overflow-hidden rounded-2xl border border-[#e9edef] bg-white">
+                      {localConsoleOk ? (
+                        <iframe title="Local WhatsApp automation" src={localConsoleUrl} className="h-[70vh] w-full bg-white" />
+                      ) : (
+                        <p className="px-4 py-10 text-center text-sm text-[#667781]">
+                          Start the local console first, then refresh. Path: WHATSAPP_AUTOMATION\start_console.bat
+                        </p>
+                      )}
+                    </div>
+                  ) : null}
+                </section>
                 {paymentBlocked || lineBlocked ? (
-                  <section className="rounded-3xl border border-red-200 bg-[#fff1f0] p-5 shadow-sm">
-                    <p className="text-xs font-semibold tracking-wide text-[#9b2c2c] uppercase">
-                      {paymentBlocked ? "Meta billing block" : "WhatsApp line blocked"}
+                  <section className="rounded-3xl border border-red-200 bg-[#fff1f0] p-4 shadow-sm">
+                    <p className="text-xs font-semibold tracking-wide text-[#9b2c2c] uppercase">Meta Cloud (optional later)</p>
+                    <p className="mt-1 text-sm text-[#9b2c2c]">{lineMessage}</p>
+                    <p className="mt-2 text-xs text-[#7f1d1d]">
+                      Ignore Meta for free bulk. If you later want Cloud API, fix Payment methods in WhatsApp Manager, then templates.
                     </p>
-                    <p className="mt-2 text-sm text-[#9b2c2c]">{lineMessage}</p>
-                    <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-[#7f1d1d]">
-                      <li>Open Meta Business Suite → WhatsApp Manager for +91 95624 29928.</li>
-                      <li>Go to Account tools → Payment methods and add a working card (or fix the failed one).</li>
-                      <li>Finish business verification if Meta still shows it incomplete.</li>
-                      <li>Wait for template <span className="font-semibold">diwali_membership_2026</span> to show Approved, then send the test to 8137864105.</li>
-                    </ol>
-                    <a
-                      href="https://business.facebook.com/wa/manage/home/"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-4 inline-flex h-10 items-center rounded-full bg-[#9b2c2c] px-4 text-sm font-semibold text-white"
-                    >
-                      Open WhatsApp Manager
-                    </a>
                   </section>
                 ) : null}
                 {busy === "bulk" || bulkDone ? (
