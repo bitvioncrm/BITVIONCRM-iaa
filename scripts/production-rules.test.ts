@@ -42,7 +42,7 @@ if (!canSendBulk("clinic_telecaller", WHATSAPP_BULK_ADMIN_LIMIT + 1) || !canSend
 if (canSendBulk("doctor", 1) || canSendBulk("receptionist", WHATSAPP_BULK_ADMIN_LIMIT + 1)) throw new Error("bulk stays with whatsapp roles");
 if (!isClinicDoctor("doctor") || !isClinicDoctor("duty_doctor") || !isClinicDoctor("doctor_bhama") || isClinicDoctor("receptionist")) throw new Error("clinic doctors");
 if (!pathsForRole("doctor_bhama").includes("/clinic") || pathsForRole("doctor_bhama").includes("/billing")) throw new Error("bhama desk");
-if (productionRoleLabel("doctor") !== "Doctor Rimisha" || productionRoleLabel("duty_doctor") !== "Doctor Siji" || productionRoleLabel("doctor_bhama") !== "Doctor Bhama") throw new Error("doctor labels");
+if (productionRoleLabel("doctor") !== "Doctor" || productionRoleLabel("duty_doctor") !== "Doctor" || productionRoleLabel("doctor_bhama") !== "Doctor") throw new Error("doctor labels");
 
 const calls = summarizeCalls([
   { status: "completed", outcome: "connected", duration_seconds: 90 },

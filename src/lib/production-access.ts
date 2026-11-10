@@ -54,9 +54,7 @@ export function deskAssigneeRoles(workspaceType: string) {
 
 export function productionRoleLabel(roleKey: string) {
   if (roleKey === "super_admin" || roleKey === "admin") return "Admin";
-  if (roleKey === "doctor") return "Doctor Rimisha";
-  if (roleKey === "duty_doctor") return "Doctor Siji";
-  if (roleKey === "doctor_bhama") return "Doctor Bhama";
+  if (isClinicDoctor(roleKey)) return "Doctor";
   if (roleKey === "receptionist") return "Receptionist";
   if (roleKey === "clinic_telecaller" || roleKey === "clinic_bde") return "Clinic Telecaller";
   if (roleKey === "institute_telecaller" || roleKey === "institute_bde" || roleKey === "institute_user") return "Institute Telecaller";
