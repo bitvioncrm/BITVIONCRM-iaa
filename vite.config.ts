@@ -13,4 +13,7 @@ export default defineConfig({
       "@": path.resolve(root, "src"),
     },
   },
+  build: {
+    chunkSizeWarningLimit: 2000,
+  },
 });

@@ -1,4 +1,5 @@
 import { elapsedSeconds, emptyCallTotals, formatClock, outcomeFromPhoneReturn, remainingSeconds, sumCompleted, summarizeCalls, type CallOutcome, type CallTotals } from "@/lib/call-time";
+import { phoneKey } from "@/lib/lead-normalize";
 import { balance, invoiceTotal } from "@/lib/money";
 import { isAllowedDocument, optimizeDocument, optimizeImage, sha256 } from "@/lib/files";
 
@@ -654,7 +655,6 @@ async function serverCode(fn: "next_patient_code" | "next_student_code", fallbac
 
 export async function createPatient(input: { organizationId: string; workspaceId: string; fullName: string; mobile: string; place: string; email?: string; gender?: string; dateOfBirth?: string | null; address?: string; emergencyContact?: string; notes?: string; leadId?: string | null }) {
   forgetDeskLists();
-  const { phoneKey } = await import("@/lib/lead-normalize");
   const mobile = input.mobile.trim();
   const key = phoneKey(mobile);
   if (key.length >= 10) {
