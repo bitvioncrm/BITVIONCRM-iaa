@@ -98,12 +98,15 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
   const showInstitute = desk !== "clinic";
   const chartsReady = Boolean(data && !data.chartNote);
 
+  const readyBackups = backups.filter((row) => row.status === "ready").length;
+
   return (
     <div className="space-y-6">
       <header>
         <p className="text-xs font-medium tracking-wide text-accent uppercase">{bounds.label}</p>
         <h1 className="mt-1 text-[26px] font-semibold tracking-tight">{heading}</h1>
       </header>
+      {variant === "full" ? <AdminBackupStrip backups={backups} clinicId={clinic?.id} instituteId={institute?.id} /> : null}
       {variant === "full" ? (
         <section className="rounded-2xl border border-line bg-white p-3 sm:p-4">
           <h2 className="text-sm font-semibold">Payments & overview period</h2>
@@ -123,7 +126,6 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
       ) : null}
       {error ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
       {data?.errors.length ? <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{data.errors[0]}</p> : null}
-      {variant === "full" ? <AdminBackupStrip backups={backups} clinicId={clinic?.id} instituteId={institute?.id} /> : null}
       {!data ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {Array.from({ length: 10 }, (_, index) => <div key={index} className="h-[92px] animate-pulse rounded-lg border border-line bg-white" />)}
@@ -131,6 +133,7 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            {variant === "full" ? <Kpi label="Backups" value={String(readyBackups)} detail="Open premium vault" to="/backups" /> : null}
             <Kpi label="Total leads" value={text(data.leads)} detail="Created in this range" to={leadTo(desk)} />
             <Kpi label="New leads" value={text(data.newLeads)} detail="Still in New" to={leadTo(desk, { status: "new" })} />
             {showClinic ? <Kpi label="Registered patients" value={text(data.patients)} detail={`${text(data.newPatients)} new in this range`} to="/clinic" /> : null}
@@ -364,25 +367,30 @@ function AdminBackupStrip({ backups, clinicId, instituteId }: { backups: Workspa
   const instituteReady = ready.filter((row) => row.workspaceId === instituteId).length;
   const latest = ready[0];
   return (
-    <section className="overflow-hidden rounded-2xl border border-[#eadfca] bg-[linear-gradient(135deg,#0f1c2e_0%,#17324f_55%,#122033_100%)] p-4 text-white shadow-sm sm:p-5">
+    <section className="overflow-hidden rounded-2xl border-2 border-[#c6a15b] bg-[linear-gradient(135deg,#0f1c2e_0%,#17324f_55%,#122033_100%)] p-4 text-white shadow-[0_18px_40px_rgba(15,28,46,0.28)] sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="inline-flex items-center gap-2 text-xs font-semibold tracking-[0.18em] text-[#e7c87a] uppercase">
-            <HardDrive className="size-3.5" /> Admin vault
+            <HardDrive className="size-3.5" /> Admin dashboard · Backups
           </p>
           <h2 className="mt-2 text-xl font-semibold tracking-tight">Premium backups</h2>
           <p className="mt-1 max-w-2xl text-sm text-white/70">
-            Instant, 7-day rolling, and alternate safe copies for clinic and institute. Live processing shows prepare → collect → pack → upload → finish.
+            Run instant, rolling, or alternate safe copies for clinic and institute from here. Open the vault to process and download snapshots.
           </p>
           <div className="mt-3 flex flex-wrap gap-2 text-xs">
             <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/10 px-2.5 py-1"><Zap className="size-3" /> Clinic {clinicReady} saved</span>
             <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/10 px-2.5 py-1"><Shield className="size-3" /> Institute {instituteReady} saved</span>
-            {latest ? <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1">Latest {new Date(latest.createdAt).toLocaleString("en-IN")} · {formatBytes(latest.byteSize)}</span> : null}
+            {latest ? <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1">Latest {new Date(latest.createdAt).toLocaleString("en-IN")} · {formatBytes(latest.byteSize)}</span> : <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1">No copy yet — open vault to create one</span>}
           </div>
         </div>
-        <Link to="/backups" className="inline-flex min-h-11 items-center rounded-full bg-[#e8d5a3] px-4 text-sm font-semibold text-[#0e1420] hover:bg-[#f6e2a8]">
-          Open backups
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link to="/backups" className="inline-flex min-h-11 items-center rounded-full bg-[#e8d5a3] px-4 text-sm font-semibold text-[#0e1420] hover:bg-[#f6e2a8]">
+            Open backups
+          </Link>
+          <Link to="/settings" className="inline-flex min-h-11 items-center rounded-full border border-white/20 bg-white/10 px-4 text-sm font-medium text-white hover:bg-white/15">
+            Settings
+          </Link>
+        </div>
       </div>
     </section>
   );

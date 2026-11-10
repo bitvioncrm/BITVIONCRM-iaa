@@ -53,6 +53,7 @@ export const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
     label: "Overview",
     items: [
       { to: "/", label: "Business Overview", icon: LayoutDashboard, end: true },
+      { to: "/backups", label: "Backups", icon: HardDrive, end: false },
       { to: "/clinic", label: "Clinic", icon: Building2, end: false },
       { to: "/billing", label: "Billing", icon: Receipt, end: false },
       { to: "/institute", label: "Institute", icon: GraduationCap, end: false },
@@ -82,17 +83,12 @@ export const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
   {
     label: "Admin",
     items: [
+      { to: "/backups", label: "Backups", icon: HardDrive, end: false },
       { to: "/reports", label: "Reports & Analytics", icon: BarChart3, end: false },
       { to: "/team", label: "Team & Permissions", icon: UsersRound, end: false },
       { to: "/activity", label: "Activity & Audit", icon: ScrollText, end: false },
       { to: "/settings", label: "Settings", icon: Settings, end: false },
       { to: "/meta", label: "Meta leads", icon: Megaphone, end: false },
-    ],
-  },
-  {
-    label: "Vault",
-    items: [
-      { to: "/backups", label: "Backups", icon: HardDrive, end: false },
     ],
   },
 ];
@@ -122,6 +118,15 @@ export function productionGroups(roleKey: string) {
   })).filter((group) => group.items.length > 0);
 }
 
+function dedupeNav(items: NavItem[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (seen.has(item.to)) return false;
+    seen.add(item.to);
+    return true;
+  });
+}
+
 export function productionNav(roleKey: string) {
-  return productionGroups(roleKey).flatMap((group) => group.items);
+  return dedupeNav(productionGroups(roleKey).flatMap((group) => group.items));
 }

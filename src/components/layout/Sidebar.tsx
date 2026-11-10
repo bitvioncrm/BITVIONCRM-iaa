@@ -17,7 +17,9 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
   const me = state.users.find((user) => user.id === session?.userId);
   const admin = productionUser ? productionUser.roleKey === "super_admin" || productionUser.roleKey === "admin" : isAdmin(me);
   const groups = productionUser ? productionGroups(productionUser.roleKey) : null;
-  const items = groups ? groups.flatMap((group) => group.items) : admin ? NAV_ITEMS : STAFF_NAV;
+  const items = groups
+    ? groups.flatMap((group) => group.items).filter((item, index, all) => all.findIndex((row) => row.to === item.to) === index)
+    : admin ? NAV_ITEMS : STAFF_NAV;
   const [closed, setClosed] = useState<Record<string, boolean>>({});
   const deskLabel = productionUser
     ? productionRoleLabel(productionUser.roleKey)
