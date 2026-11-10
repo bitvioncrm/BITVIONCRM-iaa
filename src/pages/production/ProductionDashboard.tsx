@@ -70,82 +70,195 @@ function AdminDashboard() {
   return <BusinessBoard desk={desk} />;
 }
 
+type DoctorFilter = "today" | "upcoming" | "weekly" | "monthly" | "yearly" | "custom";
+
+const DOCTOR_FILTERS: Array<{ key: DoctorFilter; label: string }> = [
+  { key: "today", label: "Today" },
+  { key: "upcoming", label: "Upcoming" },
+  { key: "weekly", label: "Weekly" },
+  { key: "monthly", label: "Monthly" },
+  { key: "yearly", label: "Yearly" },
+  { key: "custom", label: "Custom" },
+];
+
 function DoctorDashboard() {
   const { productionUser, session } = useAuth();
   const doctorId = productionUser?.userId ?? "";
   const title = session?.name || productionRoleLabel(productionUser?.roleKey ?? "doctor");
   const { workspaces, error } = useWorkspaces();
   const clinic = workspaces.find((item) => item.workspaceType === "clinic") ?? workspaces[0];
-  const [range, setRange] = useState<RangeKey>("today");
+  const [filter, setFilter] = useState<DoctorFilter>("today");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [pulse, setPulse] = useState({ consulted: 0, patients: 0, pending: 0, units: 0, days: [] as Array<{ day: string; sold: number }> });
-  const [cards, setCards] = useState<DeskPatient[]>([]);
+  const [allMine, setAllMine] = useState<DeskPatient[]>([]);
   const [open, setOpen] = useState<DeskPatient | null>(null);
   const [doctors, setDoctors] = useState<Array<{ userId: string; name: string }>>([]);
   const [formError, setFormError] = useState("");
   const [notice, setNotice] = useState("");
-  const mine = (rows: DeskPatient[]) => rows.filter((patient) => patientAssignedToDoctor(patient, doctorId));
+  const [seenUpcoming, setSeenUpcoming] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!doctorId) {
+      setSeenUpcoming([]);
+      return;
+    }
+    try {
+      const raw = window.sessionStorage.getItem(`doctor-upcoming-seen:${doctorId}`);
+      setSeenUpcoming(raw ? JSON.parse(raw) as string[] : []);
+    } catch {
+      setSeenUpcoming([]);
+    }
+  }, [doctorId]);
+
   const reloadPulse = () => {
     if (!clinic || !doctorId) return;
-    const bounds = rangeBounds(range, customFrom, customTo);
+    const bounds = doctorFilterBounds(filter, customFrom, customTo);
     void loadDoctorPulse(clinic.id, bounds.fromDate, bounds.toDate, bounds.from, bounds.to, doctorId).then(setPulse).catch(() => setPulse({ consulted: 0, patients: 0, pending: 0, units: 0, days: [] }));
   };
+
   const reloadCards = () => {
-    if (!clinic) return;
+    if (!clinic || !doctorId) return;
     clearDeskCache();
     void listDeskPatients(clinic.id).then((rows) => {
-      const next = mine(rows);
-      setCards(next);
+      const next = rows.filter((patient) => patientAssignedToDoctor(patient, doctorId));
+      setAllMine(next);
       setOpen((current) => current ? next.find((item) => item.id === current.id) ?? current : current);
-    }).catch(() => setCards([]));
+    }).catch(() => setAllMine([]));
   };
+
   useEffect(() => {
-    if (!clinic) return;
+    if (!clinic || !doctorId) return;
     reloadPulse();
-    void listDeskPatients(clinic.id).then((rows) => setCards(mine(rows))).catch(() => setCards([]));
+    reloadCards();
     void listDoctors(clinic.id).then(setDoctors).catch(() => setDoctors([]));
-    const timer = window.setInterval(reloadCards, 15000);
+    const timer = window.setInterval(() => {
+      reloadCards();
+      reloadPulse();
+    }, 15000);
     return () => window.clearInterval(timer);
-  }, [clinic, doctorId, range, customFrom, customTo]);
+  }, [clinic, doctorId, filter, customFrom, customTo]);
+
+  const visible = useMemo(
+    () => allMine.filter((patient) => doctorPatientInFilter(patient, doctorId, filter, customFrom, customTo)),
+    [allMine, doctorId, filter, customFrom, customTo],
+  );
+
+  const upcomingAssigned = useMemo(() => {
+    const rows: Array<{ patient: DeskPatient; appointment: DeskPatient["appointments"][number] }> = [];
+    for (const patient of allMine) {
+      for (const appointment of doctorUpcomingAppointments(patient, doctorId)) {
+        rows.push({ patient, appointment });
+      }
+    }
+    return rows.sort((left, right) => left.appointment.starts_at.localeCompare(right.appointment.starts_at));
+  }, [allMine, doctorId]);
+
+  const newUpcoming = useMemo(
+    () => upcomingAssigned.filter((row) => !seenUpcoming.includes(row.appointment.id)),
+    [upcomingAssigned, seenUpcoming],
+  );
+
+  useEffect(() => {
+    if (!doctorId || newUpcoming.length === 0) return;
+    setNotice(`${newUpcoming.length} upcoming patient${newUpcoming.length === 1 ? "" : "s"} assigned to you.`);
+  }, [doctorId, newUpcoming.length]);
+
+  const markUpcomingSeen = () => {
+    const ids = [...new Set([...seenUpcoming, ...upcomingAssigned.map((row) => row.appointment.id)])];
+    setSeenUpcoming(ids);
+    try {
+      window.sessionStorage.setItem(`doctor-upcoming-seen:${doctorId}`, JSON.stringify(ids));
+    } catch {
+      // ignore storage errors
+    }
+    setNotice("");
+  };
+
   return (
     <Shell title={title}>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {notice ? <p className="text-sm text-emerald-700">{notice}</p> : null}
-      <p className="text-sm text-muted">Patients assigned to you by reception. Treatments and products you save stay on the patient card for reception.</p>
-      <div className="flex flex-wrap gap-2">
-        {([["today", "Today"], ["7d", "Weekly"], ["this_month", "Monthly"], ["this_year", "Yearly"], ["custom", "Custom"]] as const).map(([key, label]) => (
-          <button key={key} type="button" className={`min-h-11 rounded-md border px-3 py-2 text-sm ${range === key ? "border-navy bg-navy text-white" : "border-line bg-white"}`} onClick={() => setRange(key)}>{label}</button>
+      <p className="text-sm text-muted">Only your real assigned patients and visits. Reception assignments stay on this desk.</p>
+
+      {upcomingAssigned.length > 0 ? (
+        <section className="rounded-2xl border border-[#c6a15b] bg-[#faf6ee] p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold tracking-wide text-[#8a6a2f] uppercase">Upcoming assigned</p>
+              <p className="mt-1 text-sm font-medium">
+                {newUpcoming.length > 0
+                  ? `${newUpcoming.length} new assignment${newUpcoming.length === 1 ? "" : "s"} waiting`
+                  : `${upcomingAssigned.length} upcoming visit${upcomingAssigned.length === 1 ? "" : "s"} on your list`}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="min-h-11 rounded-md border border-line bg-white px-3 text-sm" onClick={() => setFilter("upcoming")}>Show upcoming</button>
+              {newUpcoming.length > 0 ? <button type="button" className="min-h-11 rounded-md bg-navy px-3 text-sm text-white" onClick={markUpcomingSeen}>Mark seen</button> : null}
+            </div>
+          </div>
+          <div className="mt-3 space-y-2">
+            {upcomingAssigned.slice(0, 5).map(({ patient, appointment }) => (
+              <button
+                key={appointment.id}
+                type="button"
+                onClick={() => setOpen(patient)}
+                className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left text-sm ${seenUpcoming.includes(appointment.id) ? "border-line bg-white" : "border-[#c6a15b] bg-white"}`}
+              >
+                <span className="min-w-0">
+                  <span className="block font-medium">{patient.full_name}</span>
+                  <span className="mt-0.5 block text-xs text-muted">{formatWhen(appointment.starts_at)}{appointment.reason ? ` · ${appointment.reason}` : ""}</span>
+                </span>
+                {!seenUpcoming.includes(appointment.id) ? <span className="shrink-0 rounded-full bg-[#0e1420] px-2 py-1 text-[11px] font-medium text-[#e8d5a3]">New</span> : <span className="shrink-0 text-xs capitalize text-muted">{appointment.status.replaceAll("_", " ")}</span>}
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <div className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {DOCTOR_FILTERS.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => setFilter(item.key)}
+            className={`min-h-11 shrink-0 rounded-full px-3.5 text-sm ${filter === item.key ? "bg-[#0e1420] text-[#e8d5a3]" : "border border-line bg-white text-ink"}`}
+          >
+            {item.label}
+          </button>
         ))}
-        {range === "custom" ? (
+        {filter === "custom" ? (
           <>
-            <input type="date" className="rounded-md border border-line px-2 py-2" value={customFrom} onChange={(event) => setCustomFrom(event.target.value)} />
-            <input type="date" className="rounded-md border border-line px-2 py-2" value={customTo} onChange={(event) => setCustomTo(event.target.value)} />
+            <input type="date" aria-label="From" className="h-11 shrink-0 rounded-full border border-line bg-white px-3 text-base" value={customFrom} onChange={(event) => setCustomFrom(event.target.value)} />
+            <input type="date" aria-label="To" className="h-11 shrink-0 rounded-full border border-line bg-white px-3 text-base" value={customTo} onChange={(event) => setCustomTo(event.target.value)} />
           </>
         ) : null}
       </div>
+      <p className="text-sm text-muted">{visible.length.toLocaleString("en-IN")} patients in {DOCTOR_FILTERS.find((item) => item.key === filter)?.label.toLowerCase() || "this range"}</p>
+
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Total consulted" value={String(pulse.consulted)} />
-        <Stat label="Patients consulted" value={String(pulse.patients)} />
-        <Stat label="Pending" value={String(pulse.pending)} />
-        <Stat label="Products sold" value={String(pulse.units)} />
+        <Stat label="Total consulted" value={String(pulse.consulted)} hint="Your treatments in this range" />
+        <Stat label="Patients consulted" value={String(pulse.patients)} hint="Unique patients you treated" />
+        <Stat label="Pending" value={String(pulse.pending)} hint="Your open appointments" />
+        <Stat label="Products sold" value={String(pulse.units)} hint="Units from your visits" />
       </div>
       <div className="flex flex-wrap gap-2"><Tile to="/clinic" label="Patients and consultations" /><Tile to="/inventory" label="Stock" /></div>
       <section>
         <h2 className="text-sm font-semibold">Your patients</h2>
-        {cards.length === 0 ? <p className="mt-2 text-sm text-muted">No patients assigned to you yet. Reception assigns them when booking.</p> : (
+        {visible.length === 0 ? <p className="mt-2 text-sm text-muted">No patients in this filter yet. Reception must assign the visit to you.</p> : (
           <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {cards.map((patient) => {
+            {visible.map((patient) => {
+              const visit = doctorVisitForFilter(patient, doctorId, filter, customFrom, customTo);
               const latest = [...patient.treatments].sort((left, right) => right.performed_on.localeCompare(left.performed_on))[0];
               return (
-              <button key={patient.id} type="button" onClick={() => setOpen(patient)} className="touch-card flex gap-3 rounded-2xl border border-line bg-white p-3 text-left hover:border-[#c6a15b]">
-                <Portrait name={patient.full_name} path={patient.photo_path} />
-                <span className="min-w-0">
-                  <span className="block font-medium">{patient.full_name}</span>
-                  <span className="mt-1 block text-xs text-muted">{patient.patient_code} · {patient.mobile || "No mobile"}</span>
-                  <span className="mt-2 block text-sm">{latest ? `Last visit ${latest.performed_on} · ${latest.title}` : "Assigned by reception · add treatment"}</span>
-                </span>
-              </button>
+                <button key={patient.id} type="button" onClick={() => setOpen(patient)} className="touch-card flex gap-3 rounded-2xl border border-line bg-white p-3 text-left hover:border-[#c6a15b]">
+                  <Portrait name={patient.full_name} path={patient.photo_path} />
+                  <span className="min-w-0">
+                    <span className="block font-medium">{patient.full_name}</span>
+                    <span className="mt-1 block text-xs text-muted">{patient.patient_code} · {patient.mobile || "No mobile"}</span>
+                    <span className="mt-2 block text-sm">{visit ? `${formatWhen(visit.starts_at)} · ${visit.status.replaceAll("_", " ")}` : latest ? `Last visit ${latest.performed_on} · ${latest.title}` : "Assigned by reception"}</span>
+                  </span>
+                </button>
               );
             })}
           </div>
@@ -903,5 +1016,74 @@ function assignedDoctorIds(patient: DeskPatient) {
 function treatmentSummary(patient: DeskPatient) {
   const latest = [...patient.treatments].sort((left, right) => right.performed_on.localeCompare(left.performed_on))[0];
   return latest ? `${latest.performed_on} · ${latest.title}` : "";
+}
+
+function doctorFilterBounds(filter: DoctorFilter, customFrom: string, customTo: string) {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const endToday = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
+  if (filter === "upcoming") {
+    const to = new Date(now.getFullYear() + 2, 0, 1);
+    return {
+      from: endToday.toISOString(),
+      to: to.toISOString(),
+      fromDate: endToday.toISOString().slice(0, 10),
+      toDate: new Date(to.getTime() - 1).toISOString().slice(0, 10),
+      label: "Upcoming",
+    };
+  }
+  if (filter === "weekly") {
+    const monday = new Date(start);
+    monday.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+    const weekEnd = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 7);
+    return {
+      from: monday.toISOString(),
+      to: weekEnd.toISOString(),
+      fromDate: monday.toISOString().slice(0, 10),
+      toDate: new Date(weekEnd.getTime() - 1).toISOString().slice(0, 10),
+      label: "Weekly",
+    };
+  }
+  const key: RangeKey = filter === "monthly" ? "this_month" : filter === "yearly" ? "this_year" : filter === "custom" ? "custom" : "today";
+  return rangeBounds(key, customFrom, customTo, now);
+}
+
+function doctorLiveAppointments(patient: DeskPatient, doctorId: string) {
+  return patient.appointments.filter((item) => item.doctor_id === doctorId && !["cancelled", "no_show"].includes(item.status));
+}
+
+function doctorUpcomingAppointments(patient: DeskPatient, doctorId: string) {
+  const endToday = new Date();
+  endToday.setHours(24, 0, 0, 0);
+  return doctorLiveAppointments(patient, doctorId)
+    .filter((item) => new Date(item.starts_at).getTime() >= endToday.getTime() && !["completed"].includes(item.status))
+    .sort((left, right) => left.starts_at.localeCompare(right.starts_at));
+}
+
+function doctorPatientInFilter(patient: DeskPatient, doctorId: string, filter: DoctorFilter, customFrom: string, customTo: string) {
+  const mine = doctorLiveAppointments(patient, doctorId);
+  if (mine.length === 0) return false;
+  if (filter === "upcoming") return doctorUpcomingAppointments(patient, doctorId).length > 0;
+  const bounds = doctorFilterBounds(filter, customFrom, customTo);
+  const from = new Date(bounds.from).getTime();
+  const to = new Date(bounds.to).getTime();
+  return mine.some((item) => {
+    const time = new Date(item.starts_at).getTime();
+    return time >= from && time < to;
+  });
+}
+
+function doctorVisitForFilter(patient: DeskPatient, doctorId: string, filter: DoctorFilter, customFrom: string, customTo: string) {
+  const mine = doctorLiveAppointments(patient, doctorId);
+  if (filter === "upcoming") return doctorUpcomingAppointments(patient, doctorId)[0] ?? null;
+  const bounds = doctorFilterBounds(filter, customFrom, customTo);
+  const from = new Date(bounds.from).getTime();
+  const to = new Date(bounds.to).getTime();
+  return mine
+    .filter((item) => {
+      const time = new Date(item.starts_at).getTime();
+      return time >= from && time < to;
+    })
+    .sort((left, right) => left.starts_at.localeCompare(right.starts_at))[0] ?? null;
 }
 
