@@ -85,26 +85,84 @@ function AdminDashboard() {
   return <BusinessBoard desk={desk} />;
 }
 
+type SharedPatientFilter = "all" | "followups" | "followup_today" | "followup_week" | "my_patients" | "no_followup";
+
+const SHARED_PATIENT_FILTERS: Array<{ key: SharedPatientFilter; label: string }> = [
+  { key: "all", label: "All patients" },
+  { key: "followups", label: "Has follow-up" },
+  { key: "followup_today", label: "Follow-up today" },
+  { key: "followup_week", label: "Follow-up this week" },
+  { key: "my_patients", label: "My patients" },
+  { key: "no_followup", label: "No follow-up" },
+];
+
+function patientNextVisit(patient: DeskPatient) {
+  const follow = nextFollowUp(patient);
+  if (follow) return follow;
+  return patient.appointments
+    .filter((item) => !["completed", "cancelled", "no_show"].includes(item.status) && new Date(item.starts_at).getTime() >= Date.now())
+    .sort((left, right) => left.starts_at.localeCompare(right.starts_at))[0];
+}
+
+function followUpTone(iso?: string) {
+  if (!iso) return "none" as const;
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const endToday = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
+  const weekEnd = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7);
+  const time = new Date(iso).getTime();
+  if (Number.isNaN(time)) return "none" as const;
+  if (time < start.getTime()) return "overdue" as const;
+  if (time < endToday.getTime()) return "today" as const;
+  if (time < weekEnd.getTime()) return "week" as const;
+  return "later" as const;
+}
+
+function matchesSharedPatientFilter(patient: DeskPatient, filter: SharedPatientFilter, doctorId: string, query: string) {
+  const term = query.trim().toLowerCase();
+  if (term) {
+    const hay = `${patient.full_name} ${patient.mobile} ${patient.patient_code} ${patient.place}`.toLowerCase();
+    if (!hay.includes(term)) return false;
+  }
+  const follow = patientNextVisit(patient);
+  const tone = followUpTone(follow?.starts_at);
+  if (filter === "followups") return Boolean(follow);
+  if (filter === "followup_today") return tone === "today" || tone === "overdue";
+  if (filter === "followup_week") return tone === "today" || tone === "overdue" || tone === "week";
+  if (filter === "no_followup") return !follow;
+  if (filter === "my_patients") return patientAssignedToDoctor(patient, doctorId);
+  return true;
+}
+
 function DoctorPatientCard({
   patient,
   doctors,
   clinic,
   badge,
+  emphasizeFollowUp,
   onOpen,
 }: {
   patient: DeskPatient;
   doctors: Array<{ userId: string; name: string }>;
   clinic?: WorkspaceOption;
   badge?: string;
+  emphasizeFollowUp?: boolean;
   onOpen: () => void;
 }) {
   const latest = [...patient.appointments].sort((left, right) => left.starts_at.localeCompare(right.starts_at)).at(-1);
   const doctorsOnCard = assignedDoctorIds(patient).map((id) => doctorName(id, doctors));
   const care = treatmentSummary(patient);
+  const follow = patientNextVisit(patient);
+  const tone = followUpTone(follow?.starts_at);
+  const followShell = tone === "overdue" || tone === "today"
+    ? "border-[#c6a15b] bg-[linear-gradient(180deg,#fffaf0_0%,#ffffff_48%)] shadow-[0_12px_28px_rgba(198,161,91,0.18)]"
+    : emphasizeFollowUp
+      ? "border-[#eadfca] bg-white"
+      : "border-line bg-white";
   return (
-    <article className="touch-card rounded-2xl border border-line bg-white p-4 shadow-sm sm:transition sm:hover:-translate-y-0.5 sm:hover:border-[#c6a15b] sm:hover:shadow-md">
+    <article className={`touch-card overflow-hidden rounded-2xl border p-4 shadow-sm sm:transition sm:hover:-translate-y-0.5 sm:hover:border-[#c6a15b] sm:hover:shadow-md ${followShell}`}>
       <button type="button" onClick={onOpen} className="w-full text-left">
-        <div className="flex items-center gap-3">
+        <div className="flex items-start gap-3">
           <Portrait name={patient.full_name} path={patient.photo_path} />
           <span className="min-w-0 flex-1">
             <span className="flex items-start justify-between gap-2">
@@ -113,14 +171,115 @@ function DoctorPatientCard({
             </span>
             <span className="mt-0.5 block text-xs text-muted">{patient.patient_code}{badge ? ` · ${badge}` : ""}</span>
             <span className="mt-2 block truncate text-sm text-ink">{patient.mobile || "No mobile"}{patient.place ? ` · ${patient.place}` : ""}</span>
-            <span className="mt-1 block text-sm font-medium text-[#8a6a2f]">{doctorsOnCard.length ? doctorsOnCard.join(" · ") : "No doctor assigned"}</span>
+            <span className="mt-1 block text-sm font-medium text-[#8a6a2f]">{doctorsOnCard.length ? doctorsOnCard.join(" · ") : "Clinic patient file"}</span>
             {care ? <span className="mt-1 block text-sm">Care on card · {care}</span> : <span className="mt-1 block text-sm text-muted">Waiting for doctor treatment</span>}
-            {nextFollowUp(patient) ? <span className="mt-1 block text-sm font-medium text-[#8a6a2f]">Follow-up {formatWhen(nextFollowUp(patient)?.starts_at || "")}</span> : null}
           </span>
         </div>
+        {emphasizeFollowUp || follow ? (
+          <span className={`mt-3 flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 ${
+            tone === "overdue" ? "bg-[#3b1418] text-[#fca5a5]"
+              : tone === "today" ? "bg-[#0e1420] text-[#e8d5a3]"
+                : tone === "week" ? "bg-[#faf6ee] text-[#8a6a2f]"
+                  : "bg-[#f7f7f5] text-ink"
+          }`}>
+            <span className="min-w-0">
+              <span className="block text-[11px] font-semibold tracking-wide uppercase opacity-80">{tone === "overdue" ? "Follow-up overdue" : tone === "today" ? "Follow-up today" : follow ? "Next follow-up" : "Follow-up"}</span>
+              <span className="mt-0.5 block text-sm font-semibold">{follow ? formatWhen(follow.starts_at) : "Not scheduled"}</span>
+            </span>
+            <span className="shrink-0 text-xs capitalize opacity-80">{follow ? (follow.reason || follow.status.replaceAll("_", " ")) : "Add later"}</span>
+          </span>
+        ) : null}
       </button>
-      {clinic && phoneTel(patient.mobile) ? <DialLink organizationId={clinic.organizationId} workspaceId={clinic.id} name={patient.full_name} phone={patient.mobile} className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-navy" /> : null}
+      {clinic && phoneTel(patient.mobile) ? <DialLink organizationId={clinic.organizationId} workspaceId={clinic.id} name={patient.full_name} phone={patient.mobile} className="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-navy" /> : null}
     </article>
+  );
+}
+
+function SharedClinicPatientsPanel({
+  patients,
+  doctors,
+  clinic,
+  doctorId,
+  onOpen,
+}: {
+  patients: DeskPatient[];
+  doctors: Array<{ userId: string; name: string }>;
+  clinic?: WorkspaceOption;
+  doctorId: string;
+  onOpen: (patient: DeskPatient) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [shareFilter, setShareFilter] = useState<SharedPatientFilter>("all");
+  const shown = useMemo(
+    () => patients
+      .filter((patient) => matchesSharedPatientFilter(patient, shareFilter, doctorId, query))
+      .sort((left, right) => {
+        const leftFollow = patientNextVisit(left)?.starts_at || "9999";
+        const rightFollow = patientNextVisit(right)?.starts_at || "9999";
+        if (leftFollow !== rightFollow) return leftFollow.localeCompare(rightFollow);
+        return left.full_name.localeCompare(right.full_name);
+      }),
+    [patients, shareFilter, doctorId, query],
+  );
+  const followCount = patients.filter((patient) => Boolean(patientNextVisit(patient))).length;
+
+  return (
+    <section className="overflow-hidden rounded-[28px] border border-[#eadfca] bg-[linear-gradient(180deg,#faf6ee_0%,#ffffff_28%)] p-4 sm:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold tracking-[0.18em] text-[#8a6a2f] uppercase">Shared clinic patients</p>
+          <h2 className="mt-1 text-xl font-semibold tracking-tight">Previously consulted · all doctors</h2>
+          <p className="mt-1 text-sm text-muted">Search every shared patient file, check follow-up dates, and open the same card details as reception.</p>
+        </div>
+        <div className="flex flex-wrap gap-2 text-xs">
+          <span className="rounded-full border border-[#eadfca] bg-white px-3 py-1.5 font-medium text-ink">{patients.length.toLocaleString("en-IN")} patients</span>
+          <span className="rounded-full border border-[#eadfca] bg-white px-3 py-1.5 font-medium text-[#8a6a2f]">{followCount.toLocaleString("en-IN")} with follow-up</span>
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        <label className="block">
+          <span className="sr-only">Search shared patients</span>
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search name, mobile, place, or patient code"
+            className="h-12 w-full rounded-2xl border border-[#eadfca] bg-white px-4 text-base outline-none ring-[#c6a15b]/30 focus:ring-2"
+          />
+        </label>
+        <div className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {SHARED_PATIENT_FILTERS.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => setShareFilter(item.key)}
+              className={`min-h-11 shrink-0 rounded-full px-3.5 text-sm ${shareFilter === item.key ? "bg-[#0e1420] text-[#e8d5a3]" : "border border-[#eadfca] bg-white text-ink"}`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-sm text-muted">{shown.length.toLocaleString("en-IN")} showing · {SHARED_PATIENT_FILTERS.find((item) => item.key === shareFilter)?.label.toLowerCase()}</p>
+      </div>
+
+      {shown.length === 0 ? (
+        <p className="mt-4 rounded-2xl border border-dashed border-[#eadfca] bg-white px-4 py-10 text-center text-sm text-muted">No patients match this search or filter.</p>
+      ) : (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {shown.map((patient) => (
+            <DoctorPatientCard
+              key={`shared-${patient.id}`}
+              patient={patient}
+              doctors={doctors}
+              clinic={clinic}
+              badge="Shared file"
+              emphasizeFollowUp
+              onOpen={() => onOpen(patient)}
+            />
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -297,45 +456,32 @@ function DoctorDashboard() {
         <Stat label="Products sold" value={String(pulse.units)} hint="Units from your visits" />
       </div>
       <div className="flex flex-wrap gap-2"><Tile to="/clinic" label="Patients and consultations" /><Tile to="/inventory" label="Stock" /></div>
-      <section>
-        <h2 className="text-sm font-semibold">{filter === "previous" ? "Previously consulted patients" : filter === "today" || filter === "upcoming" ? "Your assigned patients" : "Patients"}</h2>
-        {visible.length === 0 ? <p className="mt-2 text-sm text-muted">{emptyHint}</p> : (
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {visible.map((patient) => (
-              <DoctorPatientCard
-                key={patient.id}
-                patient={patient}
-                doctors={doctors}
-                clinic={clinic}
-                badge={patientHistoricallyConsulted(patient) && !doctorAssignedFromToday(patient, doctorId) ? "Previous file" : ""}
-                onOpen={() => setOpen(patient)}
-              />
-            ))}
-          </div>
-        )}
-      </section>
-      {filter === "today" || filter === "upcoming" ? (
+      {filter === "previous" ? null : (
         <section>
-          <div className="flex flex-wrap items-end justify-between gap-2">
-            <h2 className="text-sm font-semibold">Previously consulted · all doctors</h2>
-            <button type="button" className="text-sm font-medium text-navy" onClick={() => setFilter("previous")}>Open full previous list</button>
-          </div>
-          {previousShared.length === 0 ? <p className="mt-2 text-sm text-muted">No previously consulted patients yet.</p> : (
+          <h2 className="text-sm font-semibold">{filter === "today" || filter === "upcoming" ? "Your assigned patients" : "Patients"}</h2>
+          {visible.length === 0 ? <p className="mt-2 text-sm text-muted">{emptyHint}</p> : (
             <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {previousShared.slice(0, 12).map((patient) => (
+              {visible.map((patient) => (
                 <DoctorPatientCard
-                  key={`prev-${patient.id}`}
+                  key={patient.id}
                   patient={patient}
                   doctors={doctors}
                   clinic={clinic}
-                  badge="Previous file"
+                  badge={patientHistoricallyConsulted(patient) && !doctorAssignedFromToday(patient, doctorId) ? "Previous file" : ""}
                   onOpen={() => setOpen(patient)}
                 />
               ))}
             </div>
           )}
         </section>
-      ) : null}
+      )}
+      <SharedClinicPatientsPanel
+        patients={previousShared}
+        doctors={doctors}
+        clinic={clinic}
+        doctorId={doctorId}
+        onOpen={setOpen}
+      />
       <section className="rounded-lg border border-line bg-white p-4">
         <h2 className="text-sm font-semibold">Products sold per day</h2>
         {pulse.days.length === 0 ? <p className="mt-2 text-sm text-muted">No products sold in this range.</p> : pulse.days.map((row) => (
