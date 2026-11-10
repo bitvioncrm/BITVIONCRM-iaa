@@ -1,0 +1,44 @@
+=== status before ===
+## main...origin/main
+ M src/App.tsx
+ M src/components/layout/MobileNav.tsx
+ M src/components/layout/nav.ts
+ M src/lib/production-access.ts
+
+=== staged ===
+(commit 1 via script partial run / local commit)
+src/App.tsx
+src/components/layout/nav.ts
+src/lib/production-access.ts
+
+=== commit ===
+exit 0
+[main 0ef9a58] Show Settings & Backups in admin nav and redeploy Premium Backups UI.
+ 3 files changed
+
+=== commit 2 (MobileNav, not in script FILES list) ===
+exit 0
+[main 639382f] Add Settings and Backups links to mobile admin nav.
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+=== push origin ===
+exit 0
+To https://github.com/bitvioncrm/BITVIONCRM-iaa.git
+   (pushed 0ef9a58..639382f  HEAD -> main)
+
+Note: Initial node scripts/_push_backups_visible.mjs and agent PowerShell wrappers were blocked or hung (Avast quarantining temp .ps1); origin push completed (verified: git ls-remote origin refs/heads/main = 639382f, local main matches origin/main).
+
+=== push previous ===
+exit 128
+remote: Permission to BITVIONTECHNOLOGIES/BITVION--CRM.git denied to bitvioncrm.
+fatal: unable to access 'https://github.com/BITVIONTECHNOLOGIES/BITVION--CRM.git/': The requested URL returned error: 403
+
+Note: previous/main still at d593ed7 (ahead of local history on that remote until push succeeds with authorized credentials).
+
+=== hash ===
+639382f106ea130aee502b0af7ac826bda689008
+
+=== status after ===
+## main...origin/main
+ M WHATSAPP_AUTOMATION/data/campaigns.json
+?? (untracked helper scripts under scripts/)

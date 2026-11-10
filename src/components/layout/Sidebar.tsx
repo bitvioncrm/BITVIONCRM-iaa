@@ -70,6 +70,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
 }
 
 function SideLink({ item, collapsed }: { item: { to: string; label: string; end: boolean; icon: typeof NAV_ITEMS[number]["icon"] }; collapsed: boolean }) {
+  const vault = item.to === "/backups";
   return (
     <NavLink
       to={item.to}
@@ -79,7 +80,8 @@ function SideLink({ item, collapsed }: { item: { to: string; label: string; end:
         cn(
           "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13.5px] font-medium text-slate-300 hover:bg-white/5 hover:text-white",
           collapsed && "justify-center px-0",
-          isActive && "bg-white/10 text-white shadow-[inset_2px_0_0_#60a5fa]",
+          vault && "border border-[#c6a15b]/35 bg-[#c6a15b]/10 text-[#e8d5a3] hover:bg-[#c6a15b]/20 hover:text-[#f6e2a8]",
+          isActive && (vault ? "bg-[#c6a15b]/25 text-[#f6e2a8] shadow-[inset_2px_0_0_#c6a15b]" : "bg-white/10 text-white shadow-[inset_2px_0_0_#60a5fa]"),
         )
       }
     >

@@ -85,9 +85,14 @@ export const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
       { to: "/reports", label: "Reports & Analytics", icon: BarChart3, end: false },
       { to: "/team", label: "Team & Permissions", icon: UsersRound, end: false },
       { to: "/activity", label: "Activity & Audit", icon: ScrollText, end: false },
-      { to: "/backups", label: "Backups", icon: HardDrive, end: false },
       { to: "/settings", label: "Settings", icon: Settings, end: false },
       { to: "/meta", label: "Meta leads", icon: Megaphone, end: false },
+    ],
+  },
+  {
+    label: "Vault",
+    items: [
+      { to: "/backups", label: "Backups", icon: HardDrive, end: false },
     ],
   },
 ];

@@ -663,7 +663,7 @@ function ReceptionDashboard() {
                           setCardNote(nextDoctor ? `Assigned to ${doctorName(nextDoctor, doctors)}.` : "Doctor cleared.");
                         }).catch((reason: unknown) => setRecordError(reason instanceof Error ? reason.message : "Could not assign the doctor"));
                       }} className="h-11 min-w-0 flex-1 rounded-md border border-line px-2">
-                        <option value="">Choose doctor</option>
+                        <option value="">Choose Doctor Rimisha, Siji, or Bhama</option>
                         {doctors.map((doctor) => <option key={doctor.userId} value={doctor.userId}>{doctor.name}</option>)}
                       </select>
                       <select value={item.status} onChange={(event) => {

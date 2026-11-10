@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, HardDrive, RefreshCw, Shield, Sparkles, Trash2, Zap } from "lucide-react";
+import { CheckCircle2, Circle, Download, HardDrive, Loader2, RefreshCw, Shield, Sparkles, Trash2, Zap } from "lucide-react";
 import {
   createWorkspaceBackup,
   downloadWorkspaceBackup,
@@ -22,9 +22,24 @@ const KIND_META: Record<BackupKind, { title: string; blurb: string; icon: typeof
   alternate: { title: "Alternate safe copy", blurb: "Protected spare copy that does not rotate with daily slots.", icon: Shield },
 };
 
+const PHASES: Array<{ key: BackupProgress["phase"]; label: string }> = [
+  { key: "prepare", label: "Prepare" },
+  { key: "collect", label: "Collect" },
+  { key: "pack", label: "Pack" },
+  { key: "upload", label: "Upload" },
+  { key: "finish", label: "Finish" },
+  { key: "done", label: "Ready" },
+];
+
+function phaseRank(phase: BackupProgress["phase"] | undefined) {
+  if (!phase || phase === "error") return -1;
+  const index = PHASES.findIndex((item) => item.key === phase);
+  return index < 0 ? 0 : index;
+}
+
 function daySlots(backups: WorkspaceBackup[]) {
   const rolling = backups.filter((row) => row.kind === "rolling" && row.status === "ready");
-  const days = Array.from({ length: 7 }, (_, index) => {
+  return Array.from({ length: 7 }, (_, index) => {
     const day = new Date();
     day.setHours(12, 0, 0, 0);
     day.setDate(day.getDate() - index);
@@ -32,20 +47,36 @@ function daySlots(backups: WorkspaceBackup[]) {
     const match = rolling.find((row) => row.createdAt.slice(0, 10) === key);
     return { key, label: day.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" }), backup: match };
   });
-  return days;
 }
 
 function ProgressTheatre({ progress, desk }: { progress: BackupProgress | null; desk: string }) {
   const percent = progress?.percent ?? 0;
   const running = Boolean(progress && progress.phase !== "done" && progress.phase !== "error");
+  const failed = progress?.phase === "error";
+  const current = phaseRank(progress?.phase);
   return (
-    <div className={`relative overflow-hidden rounded-[28px] border border-[#d7b56a]/50 bg-[linear-gradient(145deg,#0f1c2e_0%,#17324f_48%,#0d1724_100%)] p-5 text-white shadow-[0_24px_60px_rgba(15,28,46,0.35)] ${running ? "backup-pulse" : ""}`}>
+    <div className={`relative overflow-hidden rounded-[28px] border p-5 text-white shadow-[0_24px_60px_rgba(15,28,46,0.35)] ${failed ? "border-red-300/60 bg-[linear-gradient(145deg,#3b1418_0%,#1d0f14_100%)]" : "border-[#d7b56a]/50 bg-[linear-gradient(145deg,#0f1c2e_0%,#17324f_48%,#0d1724_100%)]"} ${running ? "backup-pulse" : ""}`}>
       <div className="pointer-events-none absolute inset-0 backup-sheen" />
       <div className="relative flex flex-wrap items-center justify-between gap-4">
-        <div>
+        <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold tracking-[0.22em] text-[#e7c87a] uppercase">Premium vault</p>
-          <h3 className="mt-2 font-[family-name:var(--font-display,inherit)] text-2xl font-semibold tracking-tight">{desk} backup</h3>
+          <h3 className="mt-2 text-2xl font-semibold tracking-tight">{desk} backup</h3>
           <p className="mt-2 max-w-xl text-sm text-white/70">{progress?.message || "Ready when you are. Clinic and institute vaults stay separate."}</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {PHASES.map((phase, index) => {
+              const done = current > index || progress?.phase === "done";
+              const active = running && current === index;
+              return (
+                <span
+                  key={phase.key}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${done ? "border-[#c6a15b]/50 bg-[#c6a15b]/20 text-[#f6e2a8]" : active ? "border-white/30 bg-white/10 text-white" : "border-white/10 bg-white/5 text-white/45"}`}
+                >
+                  {done ? <CheckCircle2 className="size-3.5" /> : active ? <Loader2 className="size-3.5 animate-spin" /> : <Circle className="size-3.5" />}
+                  {phase.label}
+                </span>
+              );
+            })}
+          </div>
         </div>
         <div className="relative grid size-28 place-items-center">
           <svg viewBox="0 0 120 120" className="size-28 -rotate-90">
@@ -55,7 +86,7 @@ function ProgressTheatre({ progress, desk }: { progress: BackupProgress | null; 
               cy="60"
               r="52"
               fill="none"
-              stroke="url(#backupGold)"
+              stroke={failed ? "#fca5a5" : "url(#backupGold)"}
               strokeWidth="10"
               strokeLinecap="round"
               strokeDasharray={`${2 * Math.PI * 52}`}
@@ -72,15 +103,18 @@ function ProgressTheatre({ progress, desk }: { progress: BackupProgress | null; 
           <span className="absolute text-lg font-semibold tabular-nums">{percent}%</span>
         </div>
       </div>
-      <div className="relative mt-5 h-2 overflow-hidden rounded-full bg-white/10">
-        <div className="h-full rounded-full bg-[linear-gradient(90deg,#f8e7b5,#c6a15b,#8a6a2f)] transition-all duration-500" style={{ width: `${percent}%` }} />
+      <div className="relative mt-5 h-2.5 overflow-hidden rounded-full bg-white/10">
+        <div className={`h-full rounded-full transition-all duration-500 ${failed ? "bg-red-300" : "bg-[linear-gradient(90deg,#f8e7b5,#c6a15b,#8a6a2f)]"}`} style={{ width: `${percent}%` }} />
         {running ? <div className="backup-runner" /> : null}
       </div>
       {progress?.phase === "collect" ? (
-        <p className="relative mt-3 text-xs text-[#e7c87a]">
-          Table {progress.tableIndex}/{progress.tableTotal}
-          {progress.table ? ` · ${progress.table.replaceAll("_", " ")}` : ""} · {progress.rows.toLocaleString("en-IN")} rows packed
-        </p>
+        <div className="relative mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-[#e7c87a]">
+          <p>
+            Table {progress.tableIndex}/{progress.tableTotal}
+            {progress.table ? ` · ${progress.table.replaceAll("_", " ")}` : ""}
+          </p>
+          <p>{progress.rows.toLocaleString("en-IN")} rows packed</p>
+        </div>
       ) : null}
     </div>
   );
@@ -90,6 +124,7 @@ function DeskBackupCard({
   workspace,
   backups,
   busy,
+  active,
   onRun,
   onDownload,
   onRemove,
@@ -97,6 +132,7 @@ function DeskBackupCard({
   workspace: WorkspaceOption;
   backups: WorkspaceBackup[];
   busy: boolean;
+  active: boolean;
   onRun: (kind: BackupKind, label?: string) => void;
   onDownload: (row: WorkspaceBackup) => void;
   onRemove: (row: WorkspaceBackup) => void;
@@ -108,7 +144,7 @@ function DeskBackupCard({
   const [label, setLabel] = useState("");
 
   return (
-    <article className="overflow-hidden rounded-[28px] border border-[#eadfca] bg-white shadow-sm">
+    <article className={`overflow-hidden rounded-[28px] border bg-white shadow-sm transition ${active ? "border-[#c6a15b] ring-2 ring-[#c6a15b]/25" : "border-[#eadfca]"}`}>
       <div className={`px-5 py-4 ${workspace.workspaceType === "institute" ? "bg-[linear-gradient(120deg,#f7f1e4,#fff)]" : "bg-[linear-gradient(120deg,#eef6f3,#fff)]"}`}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -117,7 +153,8 @@ function DeskBackupCard({
             <p className="mt-1 text-sm text-muted">Entire desk data — leads, people, visits, billing, stock, and channel settings (tokens redacted).</p>
           </div>
           <span className="inline-flex items-center gap-1 rounded-full border border-[#eadfca] bg-white px-3 py-1 text-xs font-medium text-[#8a6a2f]">
-            <HardDrive className="size-3.5" /> {backups.filter((row) => row.status === "ready").length} saved
+            {active ? <Loader2 className="size-3.5 animate-spin" /> : <HardDrive className="size-3.5" />}
+            {active ? "Processing" : `${backups.filter((row) => row.status === "ready").length} saved`}
           </span>
         </div>
       </div>
@@ -233,6 +270,7 @@ export function PremiumBackups({ workspaces }: Props) {
   const [notice, setNotice] = useState("");
   const [busyKey, setBusyKey] = useState("");
   const [activeDesk, setActiveDesk] = useState("");
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState("");
   const [progress, setProgress] = useState<BackupProgress | null>(null);
 
   const reload = () => {
@@ -249,6 +287,7 @@ export function PremiumBackups({ workspaces }: Props) {
     setError("");
     setNotice("");
     setBusyKey(`${workspace.id}:${kind}`);
+    setActiveWorkspaceId(workspace.id);
     setActiveDesk(workspace.workspaceType === "institute" ? "Institute" : "Clinic");
     setProgress({ phase: "prepare", table: "", tableIndex: 0, tableTotal: 1, rows: 0, percent: 1, message: "Starting premium backup…" });
     try {
@@ -262,7 +301,8 @@ export function PremiumBackups({ workspaces }: Props) {
       setError(reason instanceof Error ? reason.message : "Backup failed");
     } finally {
       setBusyKey("");
-      window.setTimeout(() => setProgress((current) => (current?.phase === "done" || current?.phase === "error" ? null : current)), 1600);
+      setActiveWorkspaceId("");
+      window.setTimeout(() => setProgress((current) => (current?.phase === "done" || current?.phase === "error" ? null : current)), 1800);
     }
   };
 
@@ -301,6 +341,7 @@ export function PremiumBackups({ workspaces }: Props) {
             workspace={workspace}
             backups={backups.filter((row) => row.workspaceId === workspace.id)}
             busy={Boolean(busyKey)}
+            active={activeWorkspaceId === workspace.id}
             onRun={(kind, label) => void run(workspace, kind, label)}
             onDownload={(row) => {
               void downloadWorkspaceBackup(row)

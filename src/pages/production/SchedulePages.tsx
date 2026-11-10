@@ -151,7 +151,7 @@ export function AppointmentsPage() {
         <label className="text-sm">Patient
           <select required value={patientId} onChange={(event) => setPatientId(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-line px-3">
             <option value="">Choose a patient</option>
-            {patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.full_name}</option>)}
+            {patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.full_name}{patient.patient_code ? ` · ${patient.patient_code}` : ""}{patient.mobile ? ` · ${patient.mobile}` : ""}</option>)}
           </select>
         </label>
         <label className="text-sm">Assign doctor
@@ -159,6 +159,7 @@ export function AppointmentsPage() {
             <option value="">Choose Doctor Rimisha, Siji, or Bhama</option>
             {doctors.map((doctor) => <option key={doctor.userId} value={doctor.userId}>{doctor.name}</option>)}
           </select>
+          {doctors.length === 0 ? <p className="mt-1 text-xs text-danger">Doctors did not load. Refresh and try again.</p> : <p className="mt-1 text-xs text-muted">Rimisha, Siji, and Bhama each keep their own assigned patients.</p>}
         </label>
         <label className="text-sm">Date and time
           <input required type="datetime-local" value={when} onChange={(event) => setWhen(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-line px-3" />
@@ -176,8 +177,9 @@ export function AppointmentsPage() {
             <article key={row.id} className="touch-card space-y-3 rounded-2xl border border-line bg-white p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="break-words text-lg font-semibold">{row.patientName}</p>
+                  <p className="break-words text-lg font-semibold">{row.patientName}{row.patientCode ? ` ${row.patientCode}` : ""}</p>
                   <p className="mt-1 text-sm">{row.patientMobile || "No mobile"}</p>
+                  <p className="mt-2 text-sm font-medium text-[#8a6a2f]">{row.doctorId ? doctorName(row.doctorId) || "Assigned doctor" : "No doctor assigned"}</p>
                 </div>
                 <span className="shrink-0 rounded-full bg-[#faf6ee] px-2 py-1 text-[11px] font-medium capitalize text-[#8a6a2f]">{statusLabel(row.status)}</span>
               </div>
@@ -187,7 +189,7 @@ export function AppointmentsPage() {
                   const nextDoctor = event.target.value || null;
                   void updateAppointment(row.id, { doctorId: nextDoctor }).then(() => { if (workspace) load(workspace.id); setNotice(nextDoctor ? `Assigned to ${doctorName(nextDoctor)}.` : "Doctor cleared."); }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not assign the doctor"));
                 }} className="mt-1 h-11 w-full rounded-md border border-line px-3">
-                  <option value="">Choose doctor</option>
+                  <option value="">Choose Doctor Rimisha, Siji, or Bhama</option>
                   {doctors.map((doctor) => <option key={doctor.userId} value={doctor.userId}>{doctor.name}</option>)}
                 </select>
               </label>

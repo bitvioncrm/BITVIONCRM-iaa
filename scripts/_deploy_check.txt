@@ -1,0 +1,61 @@
+=== git show f13cf13 --stat ===
+commit f13cf13caf2887f2ea57b53d14fcd3be3a789140
+Author: 14akhilshijo <14akhilshijo@users.noreply.github.com>
+Date:   Sun Nov 9 15:14:16 2026 +0530
+
+    Add premium backups, local day-long admin sessions, and reception delete fixes.
+
+ .gitignore                                               |   3 +
+ WHATSAPP_AUTOMATION/FREE_LOCAL_SEND.md                   |  33 +++
+ WHATSAPP_AUTOMATION/app/main.py                          |   4 +
+ WHATSAPP_AUTOMATION/app/waha_client.py                   |   3 +-
+ WHATSAPP_AUTOMATION/data/accounts.json                    |   3 +-
+ WHATSAPP_AUTOMATION/data/projects.json                   |   1 +
+ WHATSAPP_AUTOMATION/posters/diwali-membership-offer.jpg  | Bin 0 -> 0
+ WHATSAPP_AUTOMATION/scripts/seed_diwali_campaign.py      |  83 +++++++
+ WHATSAPP_AUTOMATION/scripts/test_and_start_diwali.py     |  91 +++++++
+ WHATSAPP_AUTOMATION/scripts/watch_qr_then_bulk.py        |  85 +++++++
+ netlify.toml                                             |   4 +
+ netlify/functions/backup-daily.ts                        | 221 +++++++++++++++++
+ netlify/lib/workspace-backup-core.ts                     |  73 ++++++
+ scripts/install-local-backup-task.bat                    |  13 +
+ scripts/local-backup-daemon.mjs                          | 246 +++++++++++++++++++
+ scripts/start-local-backup-daemon.bat                    |  10 +
+ scripts/test-workspace-backup.mjs                        | 142 +++++++++++
+ src/components/settings/PremiumBackups.tsx                 | 325 +++++++++++++++++++++++++
+ src/context/AuthContext.tsx                              |  54 ++--
+ src/lib/supabase.ts                                      |  67 +++--
+ src/pages/LoginPage.tsx                                  |   2 +-
+ src/pages/production/ProductionDashboard.tsx             |  61 +++--
+ src/pages/production/ProductionModule.tsx                |   2 +-
+ src/pages/production/ProductionOpsPages.tsx              |  51 +++-
+ src/pages/production/ProductionWhatsApp.tsx              |  74 +++--
+ src/services/production-ops.ts                           |  83 +++++--
+ src/services/workspace-backups.ts                        | 356 ++++++++++++++++++++++++++++
+ supabase/migrations/20261109143000_soft_delete_patient.sql |  31 +++
+ supabase/migrations/20261109150000_workspace_backups.sql |  51 ++++
+ 29 files changed, 2172 insertions(+), 76 deletions(-)
+
+=== git show f13cf13:src/pages/production/ProductionOpsPages.tsx | findstr /i "PremiumBackups MetaLeadCentre ProductionSettings" ===
+import { PremiumBackups } from "@/components/settings/PremiumBackups";
+export function ProductionSettings() {
+      {tab === "backups" ? <PremiumBackups workspaces={workspaces} /> : (
+
+=== git log -3 --oneline ===
+f13cf13 Add premium backups, local day-long admin sessions, and reception delete fixes.
+1c806f1 Surface Meta WhatsApp payment block that stops all campaign delivery.
+2c55259 Set up Diwali membership campaign with poster template and live desk preload.
+
+=== git status -sb ===
+## main...origin/main
+ M WHATSAPP_AUTOMATION/data/campaigns.json
+?? WHATSAPP_AUTOMATION/scripts/_patch_create_patient.py
+?? _shell_test.txt
+?? scripts/_commit_push_action.mjs
+?? scripts/_commit_push_action.txt
+?? scripts/_do_git_commit.mjs
+?? scripts/_git_commit_helper.mjs
+?? scripts/_git_push_now.mjs
+?? scripts/_git_push_report.txt
+?? scripts/do-git-commit.bat
+?? scripts/git-push-all-now.bat

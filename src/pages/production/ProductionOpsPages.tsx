@@ -272,21 +272,22 @@ export function ProductionSettings() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold tracking-[0.18em] text-[#8a6a2f] uppercase">Admin settings</p>
+          <p className="text-xs font-semibold tracking-[0.18em] text-[#8a6a2f] uppercase">{tab === "backups" ? "Admin vault" : "Admin settings"}</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">{tab === "backups" ? "Backups" : "Settings"}</h1>
-          <p className="mt-1 text-sm text-muted">{tab === "backups" ? "Premium desk backups for clinic and institute." : "Channel links and Meta tools for Dr. K's."}</p>
+          <p className="mt-1 text-sm text-muted">{tab === "backups" ? "Run, watch, download, and manage clinic and institute desk backups." : "Channel links and Meta tools for Dr. K's."}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link to="/backups" className={`inline-flex min-h-11 items-center rounded-full px-4 text-sm font-medium ${tab === "backups" ? "bg-navy text-white" : "border border-line bg-white"}`}>Premium backups</Link>
-          <Link to="/settings" className={`inline-flex min-h-11 items-center rounded-full px-4 text-sm font-medium ${tab === "links" ? "bg-navy text-white" : "border border-line bg-white"}`}>Quick links</Link>
+          <Link to="/backups" className={`inline-flex min-h-11 items-center rounded-full px-4 text-sm font-medium ${tab === "backups" ? "bg-[#0e1420] text-[#e8d5a3]" : "border border-line bg-white"}`}>Backups</Link>
+          <Link to="/settings" className={`inline-flex min-h-11 items-center rounded-full px-4 text-sm font-medium ${tab === "links" ? "bg-navy text-white" : "border border-line bg-white"}`}>Settings</Link>
         </div>
       </div>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {tab === "backups" ? <PremiumBackups workspaces={workspaces} /> : (
         <div className="grid gap-3 md:grid-cols-2">
-          <Link to="/backups" className="rounded-2xl border border-line bg-white p-5 transition hover:border-[#c6a15b]">
-            <p className="text-sm font-semibold">Premium backups</p>
-            <p className="mt-1 text-sm text-muted">Instant, rolling, and alternate desk snapshots.</p>
+          <Link to="/backups" className="rounded-2xl border border-[#eadfca] bg-[linear-gradient(135deg,#faf6ee,#fff)] p-5 transition hover:border-[#c6a15b]">
+            <p className="text-xs font-semibold tracking-[0.16em] text-[#8a6a2f] uppercase">Vault</p>
+            <p className="mt-2 text-sm font-semibold">Premium backups</p>
+            <p className="mt-1 text-sm text-muted">Instant, rolling, and alternate desk snapshots with live processing.</p>
           </Link>
           <Link to="/meta" className="rounded-2xl border border-line bg-white p-5 transition hover:border-[#c6a15b]">
             <p className="text-sm font-semibold">Meta lead centre</p>

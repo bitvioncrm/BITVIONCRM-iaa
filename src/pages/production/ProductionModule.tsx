@@ -176,7 +176,7 @@ function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
           <label className="text-sm">Patient
             <select required value={patientId} onChange={(event) => setPatientId(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-line px-3">
               <option value="">Choose a patient</option>
-              {patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.full_name}</option>)}
+              {patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.full_name}{patient.patient_code ? ` · ${patient.patient_code}` : ""}{patient.mobile ? ` · ${patient.mobile}` : ""}</option>)}
             </select>
           </label>
           <label className="text-sm">Assign doctor
@@ -195,15 +195,16 @@ function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
           {visibleAppointments.map((item) => (
             <article key={item.id} className="touch-card space-y-2 rounded-2xl border border-line p-3 text-sm">
               <button type="button" className="text-left" onClick={() => setOpenId(item.patientId)}>
-                <p className="font-medium">{item.patientName}</p>
-                <p className="mt-1 text-muted">{whenLabel(item.startsAt)}{item.reason ? ` · ${item.reason}` : ""}{item.doctorId ? ` · ${doctors.find((doctor) => doctor.userId === item.doctorId)?.name || "Doctor"}` : ""}</p>
+                <p className="font-medium">{item.patientName}{item.patientCode ? ` ${item.patientCode}` : ""}</p>
+                <p className="mt-1 text-sm font-medium text-[#8a6a2f]">{item.doctorId ? (doctors.find((doctor) => doctor.userId === item.doctorId)?.name || "Assigned doctor") : "No doctor assigned"}</p>
+                <p className="mt-1 text-muted">{whenLabel(item.startsAt)}{item.reason ? ` · ${item.reason}` : ""}</p>
               </button>
               <div className="flex flex-wrap items-center gap-2">
                 {doctorOnly ? null : (
                   <select value={item.doctorId || ""} onChange={(event) => {
                     void updateAppointment(item.id, { doctorId: event.target.value || null }).then(reload).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not assign the doctor"));
                   }} className="h-11 min-w-0 flex-1 rounded-md border border-line px-2">
-                    <option value="">Choose doctor</option>
+                    <option value="">Choose Doctor Rimisha, Siji, or Bhama</option>
                     {doctors.map((doctor) => <option key={doctor.userId} value={doctor.userId}>{doctor.name}</option>)}
                   </select>
                 )}

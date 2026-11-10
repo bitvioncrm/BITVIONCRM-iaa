@@ -1,0 +1,210 @@
+=== RUN ===
+node scripts/_commit_push_action.mjs
+root: D:\Bitvion Techzz\BITVION CRM
+branch target: main
+
+=== git status -sb ===
+## main...origin/main
+ M .gitignore
+ M WHATSAPP_AUTOMATION/app/main.py
+ M WHATSAPP_AUTOMATION/app/waha_client.py
+ M WHATSAPP_AUTOMATION/data/accounts.json
+ M WHATSAPP_AUTOMATION/data/campaigns.json
+ M WHATSAPP_AUTOMATION/data/projects.json
+ M netlify.toml
+ M src/context/AuthContext.tsx
+ M src/lib/supabase.ts
+ M src/pages/LoginPage.tsx
+ M src/pages/production/ProductionDashboard.tsx
+ M src/pages/production/ProductionModule.tsx
+ M src/pages/production/ProductionOpsPages.tsx
+ M src/pages/production/ProductionWhatsApp.tsx
+ M src/services/production-ops.ts
+?? WHATSAPP_AUTOMATION/FREE_LOCAL_SEND.md
+?? WHATSAPP_AUTOMATION/posters/
+?? WHATSAPP_AUTOMATION/scripts/
+?? _shell_test.txt
+?? netlify/functions/backup-daily.ts
+?? netlify/lib/workspace-backup-core.ts
+?? scripts/_commit_push_action.mjs
+?? scripts/_do_git_commit.mjs
+?? scripts/_git_commit_helper.mjs
+?? scripts/_git_push_now.mjs
+?? scripts/_git_push_report.txt
+?? scripts/do-git-commit.bat
+?? scripts/git-push-all-now.bat
+?? scripts/install-local-backup-task.bat
+?? scripts/local-backup-daemon.mjs
+?? scripts/start-local-backup-daemon.bat
+?? scripts/test-workspace-backup.mjs
+?? src/components/settings/
+?? src/services/workspace-backups.ts
+?? supabase/migrations/20261109143000_soft_delete_patient.sql
+?? supabase/migrations/20261109150000_workspace_backups.sql
+
+=== git branch --show-current ===
+main
+
+=== git diff --stat (unstaged) ===
+ .gitignore                                   |     3 +
+ WHATSAPP_AUTOMATION/app/main.py              |     4 +
+ WHATSAPP_AUTOMATION/app/waha_client.py       |     6 +-
+ WHATSAPP_AUTOMATION/data/accounts.json       |    11 +-
+ WHATSAPP_AUTOMATION/data/campaigns.json      | 98928 ++++++++++++++++++++++++-
+ WHATSAPP_AUTOMATION/data/projects.json       |     2 +-
+ netlify.toml                                 |     4 +
+ src/context/AuthContext.tsx                  |    77 +-
+ src/lib/supabase.ts                          |    69 +-
+ src/pages/LoginPage.tsx                      |     4 +-
+ src/pages/production/ProductionDashboard.tsx |    72 +-
+ src/pages/production/ProductionModule.tsx    |     3 +-
+ src/pages/production/ProductionOpsPages.tsx  |    53 +-
+ src/pages/production/ProductionWhatsApp.tsx  |    92 +-
+ src/services/production-ops.ts               |    88 +-
+ 15 files changed, 99339 insertions(+), 77 deletions(-)
+warning: in the working copy of '.gitignore', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'WHATSAPP_AUTOMATION/app/main.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'WHATSAPP_AUTOMATION/app/waha_client.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'WHATSAPP_AUTOMATION/data/accounts.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'netlify.toml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/context/AuthContext.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/supabase.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/LoginPage.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/production/ProductionDashboard.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/production/ProductionModule.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/production/ProductionOpsPages.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/production/ProductionWhatsApp.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/services/production-ops.ts', LF will be replaced by CRLF the next time Git touches it
+
+=== git log -3 --oneline ===
+1c806f1 Surface Meta WhatsApp payment block that stops all campaign delivery.
+2c55259 Set up Diwali membership campaign with poster template and live desk preload.
+c9d1c0b Stop hello_world 502s and show live bulk send numbers with completion.
+
+=== include present on disk ===
+.gitignore
+src/lib/supabase.ts
+src/context/AuthContext.tsx
+src/pages/LoginPage.tsx
+src/components/settings/PremiumBackups.tsx
+src/services/workspace-backups.ts
+src/services/production-ops.ts
+src/pages/production/ProductionDashboard.tsx
+src/pages/production/ProductionModule.tsx
+src/pages/production/ProductionOpsPages.tsx
+src/pages/production/ProductionWhatsApp.tsx
+netlify.toml
+netlify/functions/backup-daily.ts
+netlify/lib/workspace-backup-core.ts
+supabase/migrations/20261109143000_soft_delete_patient.sql
+supabase/migrations/20261109150000_workspace_backups.sql
+scripts/local-backup-daemon.mjs
+scripts/start-local-backup-daemon.bat
+scripts/install-local-backup-task.bat
+scripts/test-workspace-backup.mjs
+WHATSAPP_AUTOMATION/FREE_LOCAL_SEND.md
+WHATSAPP_AUTOMATION/posters/diwali-membership-offer.jpg
+WHATSAPP_AUTOMATION/scripts/seed_diwali_campaign.py
+WHATSAPP_AUTOMATION/scripts/test_and_start_diwali.py
+WHATSAPP_AUTOMATION/scripts/watch_qr_then_bulk.py
+WHATSAPP_AUTOMATION/app/main.py
+WHATSAPP_AUTOMATION/app/waha_client.py
+WHATSAPP_AUTOMATION/data/accounts.json
+WHATSAPP_AUTOMATION/data/projects.json
+
+=== include missing (skipped) ===
+WHATSAPP_AUTOMATION/scripts/update_diwali_and_go.py
+
+=== staged files ===
+.gitignore
+WHATSAPP_AUTOMATION/FREE_LOCAL_SEND.md
+WHATSAPP_AUTOMATION/app/main.py
+WHATSAPP_AUTOMATION/app/waha_client.py
+WHATSAPP_AUTOMATION/data/accounts.json
+WHATSAPP_AUTOMATION/data/projects.json
+WHATSAPP_AUTOMATION/posters/diwali-membership-offer.jpg
+WHATSAPP_AUTOMATION/scripts/seed_diwali_campaign.py
+WHATSAPP_AUTOMATION/scripts/test_and_start_diwali.py
+WHATSAPP_AUTOMATION/scripts/watch_qr_then_bulk.py
+netlify.toml
+netlify/functions/backup-daily.ts
+netlify/lib/workspace-backup-core.ts
+scripts/install-local-backup-task.bat
+scripts/local-backup-daemon.mjs
+scripts/start-local-backup-daemon.bat
+scripts/test-workspace-backup.mjs
+src/components/settings/PremiumBackups.tsx
+src/context/AuthContext.tsx
+src/lib/supabase.ts
+src/pages/LoginPage.tsx
+src/pages/production/ProductionDashboard.tsx
+src/pages/production/ProductionModule.tsx
+src/pages/production/ProductionOpsPages.tsx
+src/pages/production/ProductionWhatsApp.tsx
+src/services/production-ops.ts
+src/services/workspace-backups.ts
+supabase/migrations/20261109143000_soft_delete_patient.sql
+supabase/migrations/20261109150000_workspace_backups.sql
+
+=== git commit ===
+exit 0
+[main f13cf13] Add premium backups, local day-long admin sessions, and reception delete fixes.
+ 29 files changed, 2172 insertions(+), 76 deletions(-)
+ create mode 100644 WHATSAPP_AUTOMATION/FREE_LOCAL_SEND.md
+ create mode 100644 WHATSAPP_AUTOMATION/posters/diwali-membership-offer.jpg
+ create mode 100644 WHATSAPP_AUTOMATION/scripts/seed_diwali_campaign.py
+ create mode 100644 WHATSAPP_AUTOMATION/scripts/test_and_start_diwali.py
+ create mode 100644 WHATSAPP_AUTOMATION/scripts/watch_qr_then_bulk.py
+ create mode 100644 netlify/functions/backup-daily.ts
+ create mode 100644 netlify/lib/workspace-backup-core.ts
+ create mode 100644 scripts/install-local-backup-task.bat
+ create mode 100644 scripts/local-backup-daemon.mjs
+ create mode 100644 scripts/start-local-backup-daemon.bat
+ create mode 100644 scripts/test-workspace-backup.mjs
+ create mode 100644 src/components/settings/PremiumBackups.tsx
+ create mode 100644 src/services/workspace-backups.ts
+ create mode 100644 supabase/migrations/20261109143000_soft_delete_patient.sql
+ create mode 100644 supabase/migrations/20261109150000_workspace_backups.sql
+
+=== git push -u origin HEAD ===
+exit 0
+branch 'main' set up to track 'origin/main'.
+To https://github.com/bitvioncrm/BITVIONCRM-iaa.git
+   1c806f1..f13cf13  HEAD -> main
+
+=== commit hash ===
+f13cf13caf2887f2ea57b53d14fcd3be3a789140
+
+=== git status --short ===
+ M WHATSAPP_AUTOMATION/data/campaigns.json
+?? WHATSAPP_AUTOMATION/scripts/_patch_create_patient.py
+?? _shell_test.txt
+?? scripts/_commit_push_action.mjs
+?? scripts/_do_git_commit.mjs
+?? scripts/_git_commit_helper.mjs
+?? scripts/_git_push_now.mjs
+?? scripts/_git_push_report.txt
+?? scripts/do-git-commit.bat
+?? scripts/git-push-all-now.bat
+
+=== git status -sb (final) ===
+## main...origin/main
+ M WHATSAPP_AUTOMATION/data/campaigns.json
+?? WHATSAPP_AUTOMATION/scripts/_patch_create_patient.py
+?? _shell_test.txt
+?? scripts/_commit_push_action.mjs
+?? scripts/_do_git_commit.mjs
+?? scripts/_git_commit_helper.mjs
+?? scripts/_git_push_now.mjs
+?? scripts/_git_push_report.txt
+?? scripts/do-git-commit.bat
+?? scripts/git-push-all-now.bat
+
+=== SUMMARY ===
+{
+  "commitHash": "f13cf13caf2887f2ea57b53d14fcd3be3a789140",
+  "commitExit": 0,
+  "pushExit": 0,
+  "commitMessage": "Add premium backups, local day-long admin sessions, and reception delete fixes.",
+  "stagedCount": 29
+}

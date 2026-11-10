@@ -1,0 +1,137 @@
+=== run ===
+node scripts/_push_fast.mjs
+root: D:\Bitvion Techzz\BITVION CRM
+time: 2026-11-09T10:30:39.524Z
+
+=== remotes ===
+origin	https://github.com/bitvioncrm/BITVIONCRM-iaa.git (fetch)
+origin	https://github.com/bitvioncrm/BITVIONCRM-iaa.git (push)
+previous	https://github.com/BITVIONTECHNOLOGIES/BITVION--CRM.git (fetch)
+previous	https://github.com/BITVIONTECHNOLOGIES/BITVION--CRM.git (push)
+
+=== branch ===
+main
+
+=== status before ===
+## main...origin/main
+ M WHATSAPP_AUTOMATION/data/campaigns.json
+?? WHATSAPP_AUTOMATION/scripts/_patch_create_patient.py
+?? _shell_test.txt
+?? scripts/_commit_push_action.mjs
+?? scripts/_commit_push_action.txt
+?? scripts/_deploy_check.txt
+?? scripts/_do_git_commit.mjs
+?? scripts/_finish_push.mjs
+?? scripts/_git_commit_helper.mjs
+?? scripts/_git_push_now.mjs
+?? scripts/_git_push_report.txt
+?? scripts/_push_backups_visible.mjs
+?? scripts/_push_backups_visible.txt
+?? scripts/_push_fast.bat
+?? scripts/_push_fast.mjs
+?? scripts/_push_fast.txt
+?? scripts/_push_previous_only.mjs
+?? scripts/do-git-commit.bat
+?? scripts/git-push-all-now.bat
+
+=== log -3 ===
+639382f Add Settings and Backups links to mobile admin nav.
+0ef9a58 Show Settings & Backups in admin nav and redeploy Premium Backups UI.
+f13cf13 Add premium backups, local day-long admin sessions, and reception delete fixes.
+
+=== staged files ===
+(none)
+
+=== skipped ===
+src/App.tsx (unchanged)
+src/components/layout/nav.ts (unchanged)
+src/components/layout/MobileNav.tsx (unchanged)
+src/lib/production-access.ts (unchanged)
+src/pages/production/ProductionOpsPages.tsx (unchanged)
+src/components/settings/PremiumBackups.tsx (unchanged)
+src/services/workspace-backups.ts (unchanged)
+
+=== cached names ===
+(empty)
+
+=== commit ===
+exit 1
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   WHATSAPP_AUTOMATION/data/campaigns.json
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	WHATSAPP_AUTOMATION/scripts/_patch_create_patient.py
+	_shell_test.txt
+	scripts/_commit_push_action.mjs
+	scripts/_commit_push_action.txt
+	scripts/_deploy_check.txt
+	scripts/_do_git_commit.mjs
+	scripts/_finish_push.mjs
+	scripts/_git_commit_helper.mjs
+	scripts/_git_push_now.mjs
+	scripts/_git_push_report.txt
+	scripts/_push_backups_visible.mjs
+	scripts/_push_backups_visible.txt
+	scripts/_push_fast.bat
+	scripts/_push_fast.mjs
+	scripts/_push_fast.txt
+	scripts/_push_previous_only.mjs
+	scripts/do-git-commit.bat
+	scripts/git-push-all-now.bat
+
+no changes added to commit (use "git add" and/or "git commit -a")
+
+=== commit hash ===
+639382f106ea130aee502b0af7ac826bda689008
+
+=== push origin HEAD ===
+exit 0
+Everything up-to-date
+
+=== push previous HEAD:main ===
+exit 0
+To https://github.com/BITVIONTECHNOLOGIES/BITVION--CRM.git
+   d593ed7..639382f  HEAD -> main
+
+=== status after ===
+## main...origin/main
+ M WHATSAPP_AUTOMATION/data/campaigns.json
+?? WHATSAPP_AUTOMATION/scripts/_patch_create_patient.py
+?? _shell_test.txt
+?? scripts/_commit_push_action.mjs
+?? scripts/_commit_push_action.txt
+?? scripts/_deploy_check.txt
+?? scripts/_do_git_commit.mjs
+?? scripts/_finish_push.mjs
+?? scripts/_git_commit_helper.mjs
+?? scripts/_git_push_now.mjs
+?? scripts/_git_push_report.txt
+?? scripts/_push_backups_visible.mjs
+?? scripts/_push_backups_visible.txt
+?? scripts/_push_fast.bat
+?? scripts/_push_fast.mjs
+?? scripts/_push_fast.txt
+?? scripts/_push_previous_only.mjs
+?? scripts/do-git-commit.bat
+?? scripts/git-push-all-now.bat
+
+=== note ===
+No new commit: all listed source files were already on main (0ef9a58 + 639382f).
+Requested message was not applied because there were no staged changes among those paths.
+Avast blocked Cursor PowerShell; push ran via IDE terminal: scripts\_push_fast.bat -> node _push_fast.mjs.
+GitHub account BITVIONTECHNOLOGIES selected for previous remote push.
+
+=== SUMMARY ===
+{
+  "commitHash": "639382f106ea130aee502b0af7ac826bda689008",
+  "commitExit": 1,
+  "pushOriginExit": 0,
+  "pushPreviousExit": 0,
+  "message": "Show Settings & Backups in admin nav so Premium Backups is visible on live."
+}

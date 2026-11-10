@@ -138,15 +138,58 @@ export async function listAssignableMembers(workspaceId: string, workspaceType?:
   }) satisfies MemberOption[];
 }
 
+export function clinicDoctorLabel(input: { fullName?: string; roleKey?: string; email?: string }) {
+  const name = String(input.fullName || "").trim();
+  const email = String(input.email || "").toLowerCase();
+  const role = String(input.roleKey || "");
+  if (/bhama/i.test(name) || email.includes("bhama") || role === "doctor_bhama") return "Doctor Bhama";
+  if (/siji/i.test(name) || email.includes("siji") || email.startsWith("duty@") || role === "duty_doctor") return "Doctor Siji";
+  if (/rimisha/i.test(name) || email.startsWith("doctor@") || email.includes("rimisha")) return "Doctor Rimisha";
+  if (/^(doctor|duty doctor|duty_doctor)$/i.test(name) || !name) {
+    if (role === "duty_doctor") return "Doctor Siji";
+    if (role === "doctor_bhama") return "Doctor Bhama";
+    return name || "Doctor Rimisha";
+  }
+  return name;
+}
+
 export async function listDoctors(workspaceId: string) {
+  const mapRows = (rows: Array<{ user_id: string; full_name?: string; role_key?: string; email?: string }>) =>
+    rows.map((row) => {
+      const roleKey = String(row.role_key || "");
+      return {
+        userId: String(row.user_id),
+        name: clinicDoctorLabel({ fullName: row.full_name, roleKey, email: row.email }),
+        roleKey,
+      };
+    });
+
   const { data, error } = await client().rpc("list_clinic_doctors", { ws: workspaceId });
-  if (error) throw new Error(error.message);
-  return (data ?? []).map((row: { user_id: string; full_name: string; role_key: string }) => {
-    const role = String(row.role_key || "");
-    const named = String(row.full_name || "").trim();
-    const fallback = role === "duty_doctor" ? "Doctor Siji" : role === "doctor_bhama" ? "Doctor Bhama" : "Doctor Rimisha";
-    return { userId: String(row.user_id), name: named || fallback, roleKey: role };
-  });
+  if (!error && data) {
+    const mapped = mapRows(data as Array<{ user_id: string; full_name?: string; role_key?: string; email?: string }>);
+    if (mapped.length) return mapped;
+  }
+
+  const fallback = await client()
+    .from("user_roles")
+    .select("user_id, roles(key), profiles(full_name, email)")
+    .eq("workspace_id", workspaceId);
+  if (fallback.error) throw new Error(error?.message || fallback.error.message);
+  return mapRows(
+    (fallback.data ?? []).flatMap((row) => {
+      const roles = row.roles as { key?: string } | { key?: string }[] | null;
+      const roleKey = String((Array.isArray(roles) ? roles[0]?.key : roles?.key) || "");
+      if (!["doctor", "duty_doctor", "doctor_bhama"].includes(roleKey)) return [];
+      const profiles = row.profiles as { full_name?: string; email?: string } | { full_name?: string; email?: string }[] | null;
+      const profile = Array.isArray(profiles) ? profiles[0] : profiles;
+      return [{
+        user_id: String(row.user_id),
+        full_name: profile?.full_name,
+        role_key: roleKey,
+        email: profile?.email,
+      }];
+    }),
+  );
 }
 
 export interface LeadQuery {

@@ -90,7 +90,16 @@ export function MobileNav() {
           <div className="border-b border-line px-4 py-4 text-sm font-semibold">All sections</div>
           <div className="max-h-[calc(100dvh-4rem)] space-y-1 overflow-y-auto p-3 pb-8">
             {more.map((item) => (
-              <NavLink key={item.to} to={item.to} end={item.end} onClick={() => setOpen(false)} className="flex min-h-11 items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-slate-50">
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                onClick={() => setOpen(false)}
+                className={cn(
+                  "flex min-h-11 items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-slate-50",
+                  item.to === "/backups" && "border border-[#eadfca] bg-[#faf6ee] font-medium text-[#8a6a2f]",
+                )}
+              >
                 <item.icon className="size-4 shrink-0" />
                 {item.label}
               </NavLink>

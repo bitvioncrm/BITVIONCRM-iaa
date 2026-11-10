@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { HardDrive, Shield, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useDesk, type DeskKey } from "@/context/DeskContext";
@@ -6,6 +7,7 @@ import { formatLeadArrived } from "@/lib/dates";
 import { inr } from "@/lib/money";
 import { loadOverview, type Overview } from "@/services/overview";
 import { listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
+import { formatBytes, listWorkspaceBackups, type WorkspaceBackup } from "@/services/workspace-backups";
 
 const tooltipStyle = { border: "1px solid #e6e8ee", borderRadius: 8, fontSize: 12 };
 
@@ -38,6 +40,7 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
   const { bounds, rangeKey } = useDesk();
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
   const [data, setData] = useState<Overview | null>(null);
+  const [backups, setBackups] = useState<WorkspaceBackup[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -60,6 +63,11 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
         .finally(() => {
           if (active && initial) setLoading(false);
         });
+      if (variant === "full") {
+        void listWorkspaceBackups()
+          .then((rows) => { if (active) setBackups(rows); })
+          .catch(() => { if (active) setBackups([]); });
+      }
     };
     load(true);
     const onLead = () => load(false);
@@ -74,7 +82,7 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
       window.removeEventListener("bitvion-lead-update", onLead);
       window.clearInterval(timer);
     };
-  }, [bounds, desk, rangeKey]);
+  }, [bounds, desk, rangeKey, variant]);
 
   const clinic = workspaces.find((item) => item.workspaceType === "clinic");
   const institute = workspaces.find((item) => item.workspaceType === "institute");
@@ -96,6 +104,7 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
       </header>
       {error ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
       {data?.errors.length ? <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{data.errors[0]}</p> : null}
+      {variant === "full" ? <AdminBackupStrip backups={backups} clinicId={clinic?.id} instituteId={institute?.id} /> : null}
       {!data ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {Array.from({ length: 10 }, (_, index) => <div key={index} className="h-[92px] animate-pulse rounded-lg border border-line bg-white" />)}
@@ -327,6 +336,36 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
       )}
       {clinic || institute ? null : !loading && !error ? <p className="text-sm text-muted">No clinic or institute workspace is available for this account.</p> : null}
     </div>
+  );
+}
+
+function AdminBackupStrip({ backups, clinicId, instituteId }: { backups: WorkspaceBackup[]; clinicId?: string; instituteId?: string }) {
+  const ready = backups.filter((row) => row.status === "ready");
+  const clinicReady = ready.filter((row) => row.workspaceId === clinicId).length;
+  const instituteReady = ready.filter((row) => row.workspaceId === instituteId).length;
+  const latest = ready[0];
+  return (
+    <section className="overflow-hidden rounded-2xl border border-[#eadfca] bg-[linear-gradient(135deg,#0f1c2e_0%,#17324f_55%,#122033_100%)] p-4 text-white shadow-sm sm:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="inline-flex items-center gap-2 text-xs font-semibold tracking-[0.18em] text-[#e7c87a] uppercase">
+            <HardDrive className="size-3.5" /> Admin vault
+          </p>
+          <h2 className="mt-2 text-xl font-semibold tracking-tight">Premium backups</h2>
+          <p className="mt-1 max-w-2xl text-sm text-white/70">
+            Instant, 7-day rolling, and alternate safe copies for clinic and institute. Live processing shows prepare → collect → pack → upload → finish.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+            <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/10 px-2.5 py-1"><Zap className="size-3" /> Clinic {clinicReady} saved</span>
+            <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/10 px-2.5 py-1"><Shield className="size-3" /> Institute {instituteReady} saved</span>
+            {latest ? <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1">Latest {new Date(latest.createdAt).toLocaleString("en-IN")} · {formatBytes(latest.byteSize)}</span> : null}
+          </div>
+        </div>
+        <Link to="/backups" className="inline-flex min-h-11 items-center rounded-full bg-[#e8d5a3] px-4 text-sm font-semibold text-[#0e1420] hover:bg-[#f6e2a8]">
+          Open backups
+        </Link>
+      </div>
+    </section>
   );
 }
 

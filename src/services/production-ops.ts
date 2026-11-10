@@ -799,6 +799,7 @@ export interface DeskAppointmentRow {
   reason: string;
   patientId: string;
   patientName: string;
+  patientCode: string;
   patientMobile: string;
   doctorId: string;
 }
@@ -806,13 +807,13 @@ export interface DeskAppointmentRow {
 export async function listDeskAppointments(workspaceId: string) {
   const { data, error } = await client()
     .from("appointments")
-    .select("id, starts_at, status, reason, patient_id, doctor_id, patients(full_name, mobile)")
+    .select("id, starts_at, status, reason, patient_id, doctor_id, patients(full_name, mobile, patient_code)")
     .eq("workspace_id", workspaceId)
     .order("starts_at", { ascending: false })
     .limit(200);
   if (error) throw new Error(error.message);
   return (data ?? []).map((row) => {
-    const patient = row.patients as { full_name?: string; mobile?: string } | { full_name?: string; mobile?: string }[] | null;
+    const patient = row.patients as { full_name?: string; mobile?: string; patient_code?: string } | { full_name?: string; mobile?: string; patient_code?: string }[] | null;
     const named = Array.isArray(patient) ? patient[0] : patient;
     return {
       id: String(row.id),
@@ -821,6 +822,7 @@ export async function listDeskAppointments(workspaceId: string) {
       reason: String(row.reason || ""),
       patientId: String(row.patient_id || ""),
       patientName: named?.full_name || "Patient",
+      patientCode: named?.patient_code || "",
       patientMobile: named?.mobile || "",
       doctorId: String(row.doctor_id || ""),
     } satisfies DeskAppointmentRow;
