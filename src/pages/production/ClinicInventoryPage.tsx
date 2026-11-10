@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Package, Search, ShoppingCart, AlertTriangle, Plus, Pencil } from "lucide-react";
 import { InventoryCartProvider, useInventoryCart } from "@/context/InventoryCartContext";
 import { useAuth } from "@/context/AuthContext";
-import { canOperateWhatsApp } from "@/lib/production-access";
+import { canOperateWhatsApp, isClinicDoctor } from "@/lib/production-access";
 import { listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
 import {
   INVENTORY_CATEGORIES,
@@ -33,7 +33,7 @@ type TabKey = "overview" | "catalogue" | "cart" | "history";
 type SortKey = "name" | "price" | "stock";
 
 function canManageInventory(roleKey: string) {
-  return canOperateWhatsApp(roleKey) || roleKey === "doctor" || roleKey === "duty_doctor" || roleKey === "receptionist";
+  return canOperateWhatsApp(roleKey) || isClinicDoctor(roleKey) || roleKey === "receptionist";
 }
 
 function StockStepper({ stock, busy, onAdd, onRemove }: { stock: number; busy: boolean; onAdd: () => void; onRemove: () => void }) {

@@ -1,7 +1,7 @@
 import { outcomeFromPhoneReturn, summarizeCalls } from "../src/lib/call-time.ts";
 import { isExcelLead } from "../src/lib/lead-origin.ts";
 import { automationDecision, rangeForPreset } from "../src/lib/production-rules.ts";
-import { pathsForRole, roleAllowsPath, canOperateWhatsApp, canSendBulk, canWriteWhatsApp, deskCallerRoles, WHATSAPP_BULK_ADMIN_LIMIT } from "../src/lib/production-access.ts";
+import { pathsForRole, roleAllowsPath, canOperateWhatsApp, canSendBulk, canWriteWhatsApp, deskCallerRoles, isClinicDoctor, productionRoleLabel, WHATSAPP_BULK_ADMIN_LIMIT } from "../src/lib/production-access.ts";
 
 const today = rangeForPreset("today", new Date("2026-10-07T12:00:00+05:30"));
 if (today.from !== today.to) throw new Error("today range");
@@ -40,6 +40,9 @@ if (!canSendBulk("clinic_telecaller", WHATSAPP_BULK_ADMIN_LIMIT + 1) || !canSend
   throw new Error("whatsapp roles can bulk from the clinic number");
 }
 if (canSendBulk("doctor", 1) || canSendBulk("receptionist", WHATSAPP_BULK_ADMIN_LIMIT + 1)) throw new Error("bulk stays with whatsapp roles");
+if (!isClinicDoctor("doctor") || !isClinicDoctor("duty_doctor") || !isClinicDoctor("doctor_bhama") || isClinicDoctor("receptionist")) throw new Error("clinic doctors");
+if (!pathsForRole("doctor_bhama").includes("/clinic") || pathsForRole("doctor_bhama").includes("/billing")) throw new Error("bhama desk");
+if (productionRoleLabel("doctor") !== "Doctor Rimisha" || productionRoleLabel("duty_doctor") !== "Doctor Siji" || productionRoleLabel("doctor_bhama") !== "Doctor Bhama") throw new Error("doctor labels");
 
 const calls = summarizeCalls([
   { status: "completed", outcome: "connected", duration_seconds: 90 },

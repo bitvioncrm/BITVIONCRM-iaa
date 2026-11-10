@@ -143,8 +143,9 @@ export async function listDoctors(workspaceId: string) {
   if (error) throw new Error(error.message);
   return (data ?? []).map((row: { user_id: string; full_name: string; role_key: string }) => {
     const role = String(row.role_key || "");
-    const label = role === "duty_doctor" ? "Duty Doctor" : "Doctor";
-    return { userId: String(row.user_id), name: label };
+    const named = String(row.full_name || "").trim();
+    const fallback = role === "duty_doctor" ? "Doctor Siji" : role === "doctor_bhama" ? "Doctor Bhama" : "Doctor Rimisha";
+    return { userId: String(row.user_id), name: named || fallback, roleKey: role };
   });
 }
 

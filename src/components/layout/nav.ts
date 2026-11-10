@@ -20,7 +20,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { pathsForRole } from "@/lib/production-access";
+import { isClinicDoctor, pathsForRole } from "@/lib/production-access";
 
 export interface NavItem {
   to: string;
@@ -97,7 +97,7 @@ export const ADMIN_ONLY_PREFIXES = ["/desk", "/pipeline", "/follow-ups", "/campa
 
 export function productionGroups(roleKey: string) {
   const allowed = new Set(pathsForRole(roleKey));
-  const home = roleKey === "doctor" || roleKey === "duty_doctor"
+  const home = isClinicDoctor(roleKey)
     ? "Consultations"
     : roleKey === "receptionist"
       ? "Reception"

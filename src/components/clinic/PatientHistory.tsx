@@ -408,7 +408,7 @@ export function PatientHistory({
       <section className="space-y-2">
         <h3 className="text-sm font-semibold">Appointments</h3>
         {patient.appointments.length === 0 ? <p className="text-sm text-muted">No appointments yet.</p> : patient.appointments.map((item) => (
-          <AppointmentRow key={item.id} item={item} onSaved={async (message) => { onNotice(message); onChanged(patient); }} onError={onError} />
+          <AppointmentRow key={item.id} item={item} doctors={doctors} onSaved={async (message) => { onNotice(message); onChanged(patient); }} onError={onError} />
         ))}
       </section>
       ) : null}
@@ -436,15 +436,22 @@ export function PatientHistory({
   );
 }
 
-function AppointmentRow({ item, onSaved, onError }: { item: DeskAppointment; onSaved: (message: string) => Promise<void>; onError: (message: string) => void }) {
+function AppointmentRow({ item, doctors, onSaved, onError }: { item: DeskAppointment; doctors: Array<{ userId: string; name: string }>; onSaved: (message: string) => Promise<void>; onError: (message: string) => void }) {
   const [when, setWhen] = useState(() => localInput(item.starts_at));
   const [reason, setReason] = useState(item.reason);
+  const [doctorId, setDoctorId] = useState(item.doctor_id || "");
   return (
     <div className="grid gap-2 rounded-2xl border border-line bg-white p-3">
       <label className="text-sm">Appointment
         <input type="datetime-local" value={when} onChange={(event) => setWhen(event.target.value)} className={field} />
       </label>
       <label className="text-sm">Reason<input value={reason} onChange={(event) => setReason(event.target.value)} className={field} /></label>
+      <label className="text-sm">Assigned doctor
+        <select value={doctorId} onChange={(event) => setDoctorId(event.target.value)} className={field}>
+          <option value="">Choose Doctor Rimisha, Siji, or Bhama</option>
+          {doctors.map((doctor) => <option key={doctor.userId} value={doctor.userId}>{doctor.name}</option>)}
+        </select>
+      </label>
       <label className="text-sm">Status
         <select value={item.status} onChange={(event) => {
           void updateAppointment(item.id, { status: event.target.value }).then(() => onSaved("Appointment updated.")).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not update the appointment"));
@@ -454,7 +461,7 @@ function AppointmentRow({ item, onSaved, onError }: { item: DeskAppointment; onS
       </label>
       <div className="flex flex-wrap gap-2">
         <button type="button" className="min-h-11 rounded-md bg-navy px-3 text-sm text-white" onClick={() => {
-          void updateAppointment(item.id, { startsAt: new Date(when).toISOString(), reason }).then(() => onSaved("Appointment saved.")).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not save the appointment"));
+          void updateAppointment(item.id, { startsAt: new Date(when).toISOString(), reason, doctorId: doctorId || null }).then(() => onSaved("Appointment saved.")).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not save the appointment"));
         }}>Save appointment</button>
         <button type="button" className="min-h-11 text-sm font-medium text-danger" onClick={() => {
           if (!window.confirm("Delete this appointment?")) return;

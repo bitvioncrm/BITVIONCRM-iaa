@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 
-const CLINICAL = new Set(["super_admin", "admin", "doctor", "duty_doctor", "receptionist"]);
+const CLINICAL = new Set(["super_admin", "admin", "doctor", "duty_doctor", "doctor_bhama", "receptionist"]);
 
 /** Live stock and treatment notices for the people who use the clinic store. */
 export function StockLive({ roleKey }: { roleKey: string }) {

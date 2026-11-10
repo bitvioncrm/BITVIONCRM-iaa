@@ -161,23 +161,26 @@ export async function loadRecentPatients(workspaceId: string) {
   return (data ?? []) as Array<{ id: string; patient_code: string; full_name: string; mobile: string; created_at: string }>;
 }
 
-export async function loadDoctorPulse(workspaceId: string, fromDate: string, toDate: string, fromIso: string, toIso: string) {
-  const [visits, pending] = await Promise.all([
-    db()
-      .from("patient_procedures")
-      .select("id, patient_id, performed_on, patient_procedure_items(quantity)")
-      .eq("workspace_id", workspaceId)
-      .gte("performed_on", fromDate)
-      .lte("performed_on", toDate)
-      .limit(1000),
-    db()
-      .from("appointments")
-      .select("id", { count: "exact", head: true })
-      .eq("workspace_id", workspaceId)
-      .gte("starts_at", fromIso)
-      .lt("starts_at", toIso)
-      .in("status", ["scheduled", "confirmed", "arrived", "in_consultation"]),
-  ]);
+export async function loadDoctorPulse(workspaceId: string, fromDate: string, toDate: string, fromIso: string, toIso: string, doctorId?: string) {
+  let visitsQuery = db()
+    .from("patient_procedures")
+    .select("id, patient_id, performed_on, patient_procedure_items(quantity)")
+    .eq("workspace_id", workspaceId)
+    .gte("performed_on", fromDate)
+    .lte("performed_on", toDate)
+    .limit(1000);
+  let pendingQuery = db()
+    .from("appointments")
+    .select("id", { count: "exact", head: true })
+    .eq("workspace_id", workspaceId)
+    .gte("starts_at", fromIso)
+    .lt("starts_at", toIso)
+    .in("status", ["scheduled", "confirmed", "arrived", "in_consultation"]);
+  if (doctorId) {
+    visitsQuery = visitsQuery.eq("doctor_id", doctorId);
+    pendingQuery = pendingQuery.eq("doctor_id", doctorId);
+  }
+  const [visits, pending] = await Promise.all([visitsQuery, pendingQuery]);
   if (visits.error) throw new Error(visits.error.message);
   if (pending.error) throw new Error(pending.error.message);
   const rows = visits.data ?? [];

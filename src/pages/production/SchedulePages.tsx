@@ -119,18 +119,21 @@ export function AppointmentsPage() {
   const visible = useMemo(() => rows.filter((row) => matchesWhen(row.startsAt, filter)), [rows, filter]);
   const doctorName = (id: string) => doctors.find((item) => item.userId === id)?.name || "";
   const book = () => {
-    if (!workspace || !patientId || !when) return;
+    if (!workspace || !patientId || !when || !doctorId) {
+      setError("Choose the patient, doctor, and time.");
+      return;
+    }
     setSaving(true);
     void createAppointment({
       organizationId: workspace.organizationId,
       workspaceId: workspace.id,
       patientId,
-      doctorId: doctorId || null,
+      doctorId,
       startsAt: new Date(when).toISOString(),
       reason,
       status: walkIn ? "arrived" : "scheduled",
     }).then(() => {
-      setNotice("Appointment saved.");
+      setNotice(`Appointment saved for ${doctorName(doctorId)}.`);
       setReason("");
       setWhen("");
       load(workspace.id);
@@ -151,9 +154,9 @@ export function AppointmentsPage() {
             {patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.full_name}</option>)}
           </select>
         </label>
-        <label className="text-sm">Doctor
-          <select value={doctorId} onChange={(event) => setDoctorId(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-line px-3">
-            <option value="">No doctor yet</option>
+        <label className="text-sm">Assign doctor
+          <select required value={doctorId} onChange={(event) => setDoctorId(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-line px-3">
+            <option value="">Choose Doctor Rimisha, Siji, or Bhama</option>
             {doctors.map((doctor) => <option key={doctor.userId} value={doctor.userId}>{doctor.name}</option>)}
           </select>
         </label>
@@ -178,7 +181,16 @@ export function AppointmentsPage() {
                 </div>
                 <span className="shrink-0 rounded-full bg-[#faf6ee] px-2 py-1 text-[11px] font-medium capitalize text-[#8a6a2f]">{statusLabel(row.status)}</span>
               </div>
-              <p className="text-sm">{formatWhen(row.startsAt)}{row.reason ? ` · ${row.reason}` : ""}{doctorName(row.doctorId) ? ` · ${doctorName(row.doctorId)}` : ""}</p>
+              <p className="text-sm">{formatWhen(row.startsAt)}{row.reason ? ` · ${row.reason}` : ""}</p>
+              <label className="block text-sm">Assigned doctor
+                <select value={row.doctorId || ""} onChange={(event) => {
+                  const nextDoctor = event.target.value || null;
+                  void updateAppointment(row.id, { doctorId: nextDoctor }).then(() => { if (workspace) load(workspace.id); setNotice(nextDoctor ? `Assigned to ${doctorName(nextDoctor)}.` : "Doctor cleared."); }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not assign the doctor"));
+                }} className="mt-1 h-11 w-full rounded-md border border-line px-3">
+                  <option value="">Choose doctor</option>
+                  {doctors.map((doctor) => <option key={doctor.userId} value={doctor.userId}>{doctor.name}</option>)}
+                </select>
+              </label>
               <label className="block text-sm">Status
                 <select value={row.status} onChange={(event) => {
                   const status = event.target.value;

@@ -5,6 +5,7 @@ import { NAV_ITEMS, productionNav, STAFF_NAV, type NavItem } from "@/components/
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useAuth } from "@/context/AuthContext";
 import { useCrm } from "@/context/CrmContext";
+import { isClinicDoctor } from "@/lib/production-access";
 import { isAdmin } from "@/lib/scope";
 import { cn } from "@/lib/utils";
 
@@ -39,7 +40,7 @@ const BOTTOM_FIRST = ["/", "/leads", "/whatsapp", "/calls"];
 function bottomFirst(roleKey: string) {
   if (roleKey === "institute_telecaller" || roleKey === "institute_bde" || roleKey === "institute_user") return ["/", "/bookings", "/leads", "/whatsapp"];
   if (roleKey === "receptionist") return ["/", "/appointments", "/leads", "/calls"];
-  if (roleKey === "doctor" || roleKey === "duty_doctor") return ["/", "/clinic", "/inventory"];
+  if (isClinicDoctor(roleKey)) return ["/", "/clinic", "/inventory"];
   if (roleKey === "clinic_telecaller" || roleKey === "clinic_bde") return ["/", "/appointments", "/leads", "/whatsapp"];
   return BOTTOM_FIRST;
 }

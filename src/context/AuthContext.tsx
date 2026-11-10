@@ -40,8 +40,14 @@ function appRole(key: string): Role {
 async function hydrateUser(user: { id: string; email?: string | null }) {
   if (!user.email) return null;
   const key = await primaryRoleKey().catch(() => "");
+  let name = user.email;
+  if (supabase) {
+    const profile = await supabase.from("profiles").select("full_name").eq("id", user.id).maybeSingle();
+    const fullName = String(profile.data?.full_name || "").trim();
+    if (fullName) name = fullName;
+  }
   return {
-    session: { email: user.email, userId: user.id, name: user.email, role: appRole(key) } satisfies Session,
+    session: { email: user.email, userId: user.id, name, role: appRole(key) } satisfies Session,
     productionUser: { userId: user.id, email: user.email, roleKey: key } satisfies ProductionUser,
   };
 }

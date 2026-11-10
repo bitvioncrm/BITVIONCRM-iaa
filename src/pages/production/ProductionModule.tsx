@@ -2,12 +2,12 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { StudentFile } from "@/components/institute/StudentFile";
 import { blankStudent, detailsFromStudent, StudentForm } from "@/components/institute/StudentForm";
 import { Portrait } from "@/components/shared/Portrait";
-import { FilterBar, studentMatches, type DeskFilter } from "@/pages/production/ProductionDashboard";
+import { FilterBar, patientAssignedToDoctor, studentMatches, type DeskFilter } from "@/pages/production/ProductionDashboard";
 import { Sheet, SheetBody, SheetContent, SheetHeader } from "@/components/ui/sheet";
 import { PatientHistory } from "@/components/clinic/PatientHistory";
 import { BusinessBoard } from "@/components/dashboard/BusinessBoard";
 import { useAuth } from "@/context/AuthContext";
-import { canOperateWhatsApp } from "@/lib/production-access";
+import { canOperateWhatsApp, isClinicDoctor } from "@/lib/production-access";
 import { listDoctors, listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
 import { DialLink } from "@/components/calls/DialLink";
 import { phoneTel } from "@/lib/phone";
@@ -60,6 +60,7 @@ export function ProductionModule({ module }: { module: "clinic" | "institute" | 
 
 function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
   const { productionUser } = useAuth();
+  const doctorOnly = isClinicDoctor(productionUser?.roleKey ?? "");
   const [patients, setPatients] = useState<DeskPatient[]>([]);
   const [appointments, setAppointments] = useState<DeskAppointmentRow[]>([]);
   const [doctors, setDoctors] = useState<Array<{ userId: string; name: string }>>([]);
@@ -67,12 +68,20 @@ function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
   const [openId, setOpenId] = useState("");
   const [patientId, setPatientId] = useState("");
   const [doctorId, setDoctorId] = useState("");
-  const open = patients.find((item) => item.id === openId) ?? null;
+  const scopedPatients = useMemo(() => {
+    if (!doctorOnly || !productionUser?.userId) return patients;
+    return patients.filter((item) => patientAssignedToDoctor(item, productionUser.userId));
+  }, [doctorOnly, patients, productionUser?.userId]);
+  const open = scopedPatients.find((item) => item.id === openId) ?? patients.find((item) => item.id === openId) ?? null;
   const visible = useMemo(() => {
     const term = query.trim().toLowerCase();
-    if (!term) return patients;
-    return patients.filter((item) => `${item.full_name} ${item.mobile} ${item.patient_code} ${item.place}`.toLowerCase().includes(term));
-  }, [patients, query]);
+    if (!term) return scopedPatients;
+    return scopedPatients.filter((item) => `${item.full_name} ${item.mobile} ${item.patient_code} ${item.place}`.toLowerCase().includes(term));
+  }, [scopedPatients, query]);
+  const visibleAppointments = useMemo(() => {
+    if (!doctorOnly || !productionUser?.userId) return appointments;
+    return appointments.filter((item) => item.doctorId === productionUser.userId);
+  }, [appointments, doctorOnly, productionUser?.userId]);
   const reload = () => {
     clearDeskCache();
     void listDeskPatients(workspace.id).then(setPatients).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load patients"));
@@ -109,6 +118,7 @@ function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
         )}
       </section>
 
+      {doctorOnly ? null : (
       <details className="rounded-2xl border border-line bg-white p-4">
         <summary className="cursor-pointer text-sm font-semibold">Register a patient</summary>
         <form className="mt-3 grid gap-3 sm:grid-cols-2" onSubmit={(event) => submit(event, async (data) => {
@@ -143,20 +153,24 @@ function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
           <button className="min-h-11 rounded-md bg-navy px-3 text-sm text-white sm:col-span-2" type="submit">Save patient</button>
         </form>
       </details>
+      )}
 
       <section className="space-y-3 rounded-2xl border border-line bg-white p-4">
-        <h2 className="font-semibold">Queue</h2>
+        <h2 className="font-semibold">{doctorOnly ? "Your queue" : "Queue"}</h2>
+        {doctorOnly ? <p className="text-sm text-muted">Only patients assigned to you. Reception chooses Doctor Rimisha, Siji, or Bhama when booking.</p> : null}
+        {doctorOnly ? null : (
         <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => submit(event, async (data) => {
+          if (!doctorId) throw new Error("Assign Doctor Rimisha, Doctor Siji, or Doctor Bhama.");
           await createAppointment({
             organizationId: workspace.organizationId,
             workspaceId: workspace.id,
             patientId,
-            doctorId: doctorId || null,
+            doctorId,
             startsAt: new Date(data.get("when") as string).toISOString(),
             reason: data.get("reason") as string,
             status: data.get("walkin") === "on" ? "arrived" : "scheduled",
           });
-          onNotice("Appointment saved.");
+          onNotice("Appointment saved and assigned to the doctor.");
           reload();
         }, onError)}>
           <label className="text-sm">Patient
@@ -165,9 +179,9 @@ function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
               {patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.full_name}</option>)}
             </select>
           </label>
-          <label className="text-sm">Doctor
-            <select value={doctorId} onChange={(event) => setDoctorId(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-line px-3">
-              <option value="">No doctor yet</option>
+          <label className="text-sm">Assign doctor
+            <select required value={doctorId} onChange={(event) => setDoctorId(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-line px-3">
+              <option value="">Choose Doctor Rimisha, Siji, or Bhama</option>
               {doctors.map((item) => <option key={item.userId} value={item.userId}>{item.name}</option>)}
             </select>
           </label>
@@ -176,23 +190,34 @@ function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
           <label className="flex min-h-11 items-center gap-2 text-sm sm:col-span-2"><input name="walkin" type="checkbox" /> Walk-in, mark arrived</label>
           <button className="min-h-11 rounded-md bg-navy px-3 text-sm text-white sm:col-span-2" type="submit">Book</button>
         </form>
+        )}
         <div className="space-y-2">
-          {appointments.map((item) => (
+          {visibleAppointments.map((item) => (
             <article key={item.id} className="touch-card space-y-2 rounded-2xl border border-line p-3 text-sm">
               <button type="button" className="text-left" onClick={() => setOpenId(item.patientId)}>
                 <p className="font-medium">{item.patientName}</p>
-                <p className="mt-1 text-muted">{whenLabel(item.startsAt)}{item.reason ? ` · ${item.reason}` : ""}</p>
+                <p className="mt-1 text-muted">{whenLabel(item.startsAt)}{item.reason ? ` · ${item.reason}` : ""}{item.doctorId ? ` · ${doctors.find((doctor) => doctor.userId === item.doctorId)?.name || "Doctor"}` : ""}</p>
               </button>
               <div className="flex flex-wrap items-center gap-2">
+                {doctorOnly ? null : (
+                  <select value={item.doctorId || ""} onChange={(event) => {
+                    void updateAppointment(item.id, { doctorId: event.target.value || null }).then(reload).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not assign the doctor"));
+                  }} className="h-11 min-w-0 flex-1 rounded-md border border-line px-2">
+                    <option value="">Choose doctor</option>
+                    {doctors.map((doctor) => <option key={doctor.userId} value={doctor.userId}>{doctor.name}</option>)}
+                  </select>
+                )}
                 <select value={item.status} onChange={(event) => {
                   void updateAppointment(item.id, { status: event.target.value }).then(reload).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not update the appointment"));
                 }} className="h-11 min-w-0 flex-1 rounded-md border border-line px-2 capitalize">
                   {["scheduled", "confirmed", "arrived", "in_consultation", "completed", "cancelled", "no_show"].map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}
                 </select>
-                <button type="button" className="min-h-11 text-sm font-medium text-danger" onClick={() => {
-                  if (!window.confirm("Delete this appointment?")) return;
-                  void removeAppointment(item.id).then(() => { onNotice("Appointment deleted."); reload(); }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not delete the appointment"));
-                }}>Delete</button>
+                {doctorOnly ? null : (
+                  <button type="button" className="min-h-11 text-sm font-medium text-danger" onClick={() => {
+                    if (!window.confirm("Delete this appointment?")) return;
+                    void removeAppointment(item.id).then(() => { onNotice("Appointment deleted."); reload(); }).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not delete the appointment"));
+                  }}>Delete</button>
+                )}
               </div>
             </article>
           ))}

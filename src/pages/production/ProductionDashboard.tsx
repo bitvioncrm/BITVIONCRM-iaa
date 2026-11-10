@@ -14,6 +14,7 @@ import { loadDoctorPulse } from "@/services/clinic-care";
 import { formatClock } from "@/lib/call-time";
 import { DialLink } from "@/components/calls/DialLink";
 import { phoneTel } from "@/lib/phone";
+import { isClinicDoctor, productionRoleLabel } from "@/lib/production-access";
 import { rangeBounds, type RangeKey } from "@/lib/range";
 import { callDeskReport, countRows, listClinicBills, listDeskMoney, listDeskPatients, listDeskStudents, listFollowUps, clearDeskCache, ensureFollowUpVisit, removeAppointment, removeDeskMoney, removePatient, removeStudent, savePersonPhoto, saveStudentDetails, updateAppointment, updatePatient, type ClinicBill, type DeskMoney, type DeskPatient, type DeskStudent, type StudentDetails } from "@/services/production-ops";
 import { listDoctors } from "@/services/production-leads";
@@ -48,7 +49,7 @@ function Shell({ title, children }: { title: string; children: ReactNode }) {
 export function ProductionDashboard() {
   const { productionUser } = useAuth();
   const key = productionUser?.roleKey ?? "";
-  if (key === "doctor" || key === "duty_doctor") return <DoctorDashboard />;
+  if (isClinicDoctor(key)) return <DoctorDashboard />;
   if (key === "receptionist") return <ReceptionDashboard />;
   if (key === "clinic_telecaller" || key === "clinic_bde") return <ClinicCallerDashboard />;
   if (key === "institute_telecaller" || key === "institute_bde" || key === "institute_user") return <InstituteCallerDashboard />;
@@ -70,7 +71,9 @@ function AdminDashboard() {
 }
 
 function DoctorDashboard() {
-  const { productionUser } = useAuth();
+  const { productionUser, session } = useAuth();
+  const doctorId = productionUser?.userId ?? "";
+  const title = session?.name || productionRoleLabel(productionUser?.roleKey ?? "doctor");
   const { workspaces, error } = useWorkspaces();
   const clinic = workspaces.find((item) => item.workspaceType === "clinic") ?? workspaces[0];
   const [range, setRange] = useState<RangeKey>("today");
@@ -81,30 +84,35 @@ function DoctorDashboard() {
   const [open, setOpen] = useState<DeskPatient | null>(null);
   const [doctors, setDoctors] = useState<Array<{ userId: string; name: string }>>([]);
   const [formError, setFormError] = useState("");
+  const [notice, setNotice] = useState("");
+  const mine = (rows: DeskPatient[]) => rows.filter((patient) => patientAssignedToDoctor(patient, doctorId));
   const reloadPulse = () => {
-    if (!clinic) return;
+    if (!clinic || !doctorId) return;
     const bounds = rangeBounds(range, customFrom, customTo);
-    void loadDoctorPulse(clinic.id, bounds.fromDate, bounds.toDate, bounds.from, bounds.to).then(setPulse).catch(() => setPulse({ consulted: 0, patients: 0, pending: 0, units: 0, days: [] }));
+    void loadDoctorPulse(clinic.id, bounds.fromDate, bounds.toDate, bounds.from, bounds.to, doctorId).then(setPulse).catch(() => setPulse({ consulted: 0, patients: 0, pending: 0, units: 0, days: [] }));
   };
   const reloadCards = () => {
     if (!clinic) return;
     clearDeskCache();
     void listDeskPatients(clinic.id).then((rows) => {
-      setCards(rows);
-      setOpen((current) => current ? rows.find((item) => item.id === current.id) ?? current : current);
+      const next = mine(rows);
+      setCards(next);
+      setOpen((current) => current ? next.find((item) => item.id === current.id) ?? current : current);
     }).catch(() => setCards([]));
   };
   useEffect(() => {
     if (!clinic) return;
     reloadPulse();
-    void listDeskPatients(clinic.id).then(setCards).catch(() => setCards([]));
+    void listDeskPatients(clinic.id).then((rows) => setCards(mine(rows))).catch(() => setCards([]));
     void listDoctors(clinic.id).then(setDoctors).catch(() => setDoctors([]));
     const timer = window.setInterval(reloadCards, 15000);
     return () => window.clearInterval(timer);
-  }, [clinic, range, customFrom, customTo]);
+  }, [clinic, doctorId, range, customFrom, customTo]);
   return (
-    <Shell title="Doctor">
+    <Shell title={title}>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
+      {notice ? <p className="text-sm text-emerald-700">{notice}</p> : null}
+      <p className="text-sm text-muted">Patients assigned to you by reception. Treatments and products you save stay on the patient card for reception.</p>
       <div className="flex flex-wrap gap-2">
         {([["today", "Today"], ["7d", "Weekly"], ["this_month", "Monthly"], ["this_year", "Yearly"], ["custom", "Custom"]] as const).map(([key, label]) => (
           <button key={key} type="button" className={`min-h-11 rounded-md border px-3 py-2 text-sm ${range === key ? "border-navy bg-navy text-white" : "border-line bg-white"}`} onClick={() => setRange(key)}>{label}</button>
@@ -124,8 +132,8 @@ function DoctorDashboard() {
       </div>
       <div className="flex flex-wrap gap-2"><Tile to="/clinic" label="Patients and consultations" /><Tile to="/inventory" label="Stock" /></div>
       <section>
-        <h2 className="text-sm font-semibold">Patients</h2>
-        {cards.length === 0 ? <p className="mt-2 text-sm text-muted">No patients registered yet.</p> : (
+        <h2 className="text-sm font-semibold">Your patients</h2>
+        {cards.length === 0 ? <p className="mt-2 text-sm text-muted">No patients assigned to you yet. Reception assigns them when booking.</p> : (
           <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {cards.map((patient) => {
               const latest = [...patient.treatments].sort((left, right) => right.performed_on.localeCompare(left.performed_on))[0];
@@ -135,7 +143,7 @@ function DoctorDashboard() {
                 <span className="min-w-0">
                   <span className="block font-medium">{patient.full_name}</span>
                   <span className="mt-1 block text-xs text-muted">{patient.patient_code} · {patient.mobile || "No mobile"}</span>
-                  <span className="mt-2 block text-sm">{latest ? `Last visit ${latest.performed_on} · ${latest.title}` : "Registered by reception · no treatment yet"}</span>
+                  <span className="mt-2 block text-sm">{latest ? `Last visit ${latest.performed_on} · ${latest.title}` : "Assigned by reception · add treatment"}</span>
                 </span>
               </button>
               );
@@ -154,17 +162,17 @@ function DoctorDashboard() {
           <SheetContent title={open.full_name}>
             <SheetHeader>
               <p className="text-lg font-semibold">Patient from reception</p>
-              <p className="text-sm text-muted">Add the treatment, procedure, products, and how long the medicine is given.</p>
+              <p className="text-sm text-muted">Add the treatment, procedure, products, and how long the medicine is given. Reception sees everything on this card.</p>
             </SheetHeader>
             <SheetBody>
               <PatientHistory
                 patient={open}
                 workspace={clinic}
                 doctors={doctors}
-                currentUserId={productionUser?.userId ?? ""}
+                currentUserId={doctorId}
                 onChanged={() => { reloadCards(); reloadPulse(); }}
                 onDeleted={() => { setOpen(null); reloadCards(); reloadPulse(); }}
-                onNotice={() => undefined}
+                onNotice={setNotice}
                 onError={setFormError}
               />
               {formError ? <p className="mt-3 text-sm text-danger">{formError}</p> : null}
@@ -310,6 +318,8 @@ function ReceptionDashboard() {
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {shown.map((patient) => {
             const latest = [...patient.appointments].sort((left, right) => left.starts_at.localeCompare(right.starts_at)).at(-1);
+            const doctorsOnCard = assignedDoctorIds(patient).map((id) => doctorName(id, doctors));
+            const care = treatmentSummary(patient);
             return (
               <article key={patient.id} className="touch-card rounded-2xl border border-line bg-white p-4 shadow-sm sm:transition sm:hover:-translate-y-0.5 sm:hover:border-[#c6a15b] sm:hover:shadow-md">
                 <button type="button" onClick={() => setOpen(patient)} className="w-full text-left">
@@ -322,6 +332,8 @@ function ReceptionDashboard() {
                       </span>
                       <span className="mt-0.5 block text-xs text-muted">{patient.patient_code}</span>
                       <span className="mt-2 block truncate text-sm text-ink">{patient.mobile || "No mobile"}{patient.place ? ` · ${patient.place}` : ""}</span>
+                      <span className="mt-1 block text-sm font-medium text-[#8a6a2f]">{doctorsOnCard.length ? doctorsOnCard.join(" · ") : "No doctor assigned"}</span>
+                      {care ? <span className="mt-1 block text-sm">Care on card · {care}</span> : <span className="mt-1 block text-sm text-muted">Waiting for doctor treatment</span>}
                       {nextFollowUp(patient) ? <span className="mt-1 block text-sm font-medium text-[#8a6a2f]">Follow-up {formatWhen(nextFollowUp(patient)?.starts_at || "")}</span> : null}
                     </span>
                   </div>
@@ -520,14 +532,27 @@ function ReceptionDashboard() {
                 </form>
               </section>
               <section className="rounded-2xl border border-line bg-white p-3 sm:p-4">
-                <h3 className="text-sm font-semibold">Bookings</h3>
-                {open.appointments.length === 0 ? <p className="mt-2 text-sm text-muted">No appointments yet.</p> : open.appointments.map((item) => (
+                <h3 className="text-sm font-semibold">Bookings and doctor assignment</h3>
+                <p className="mt-1 text-sm text-muted">Assign each visit to Doctor Rimisha, Doctor Siji, or Doctor Bhama. Their treatments stay on this card.</p>
+                {open.appointments.length === 0 ? <p className="mt-2 text-sm text-muted">No appointments yet. Book one from Appointments or Clinic and choose the doctor.</p> : open.appointments.map((item) => (
                   <div key={item.id} className="mt-2 space-y-2 rounded-xl border border-line px-3 py-2 text-sm">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="min-w-0">{formatWhen(item.starts_at)}{item.reason ? ` · ${item.reason}` : ""}{item.doctor_id ? ` · ${doctorName(item.doctor_id, doctors)}` : ""}</span>
+                      <span className="min-w-0">{formatWhen(item.starts_at)}{item.reason ? ` · ${item.reason}` : ""}</span>
                       <StatusChip status={item.status} />
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
+                      <select value={item.doctor_id || ""} onChange={(event) => {
+                        const nextDoctor = event.target.value || null;
+                        void updateAppointment(item.id, { doctorId: nextDoctor }).then(() => {
+                          const next = { ...open, appointments: open.appointments.map((row) => row.id === item.id ? { ...row, doctor_id: nextDoctor || "" } : row) };
+                          setOpen(next);
+                          setCards((current) => current.map((patient) => patient.id === open.id ? next : patient));
+                          setCardNote(nextDoctor ? `Assigned to ${doctorName(nextDoctor, doctors)}.` : "Doctor cleared.");
+                        }).catch((reason: unknown) => setRecordError(reason instanceof Error ? reason.message : "Could not assign the doctor"));
+                      }} className="h-11 min-w-0 flex-1 rounded-md border border-line px-2">
+                        <option value="">Choose doctor</option>
+                        {doctors.map((doctor) => <option key={doctor.userId} value={doctor.userId}>{doctor.name}</option>)}
+                      </select>
                       <select value={item.status} onChange={(event) => {
                         const status = event.target.value;
                         void updateAppointment(item.id, { status }).then(() => {
@@ -831,9 +856,9 @@ function PatientFileSummary({ patient, bills, recorded }: { patient: DeskPatient
   return (
     <div className="grid gap-2 sm:grid-cols-3">
       <article className="rounded-2xl border border-[#eadfca] bg-white px-3 py-3">
-        <p className="text-[11px] font-medium tracking-wide text-[#8a6a2f] uppercase">Last visit</p>
+        <p className="text-[11px] font-medium tracking-wide text-[#8a6a2f] uppercase">Last treatment</p>
         <p className="mt-1 text-sm font-medium">{latestCare ? latestCare.title : "Not recorded yet"}</p>
-        <p className="mt-1 text-xs text-muted">{latestCare ? formatWhen(latestCare.performed_on) : "Waiting for the doctor"}</p>
+        <p className="mt-1 text-xs text-muted">{latestCare ? `Saved on patient card · ${formatWhen(latestCare.performed_on)}` : "Waiting for the doctor"}</p>
       </article>
       <article className="rounded-2xl border border-[#eadfca] bg-white px-3 py-3">
         <p className="text-[11px] font-medium tracking-wide text-[#8a6a2f] uppercase">{follow ? "Follow-up" : "Appointment"}</p>
@@ -864,5 +889,19 @@ function localFollowInput(iso: string) {
 
 function doctorName(doctorId: string, doctors: Array<{ userId: string; name: string }>) {
   return doctors.find((item) => item.userId === doctorId)?.name || "Doctor";
+}
+
+export function patientAssignedToDoctor(patient: DeskPatient, doctorId: string) {
+  if (!doctorId) return false;
+  return patient.appointments.some((item) => item.doctor_id === doctorId);
+}
+
+function assignedDoctorIds(patient: DeskPatient) {
+  return [...new Set(patient.appointments.map((item) => item.doctor_id).filter(Boolean))];
+}
+
+function treatmentSummary(patient: DeskPatient) {
+  const latest = [...patient.treatments].sort((left, right) => right.performed_on.localeCompare(left.performed_on))[0];
+  return latest ? `${latest.performed_on} · ${latest.title}` : "";
 }
 
