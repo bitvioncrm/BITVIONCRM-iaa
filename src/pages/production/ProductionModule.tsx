@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { StudentFile } from "@/components/institute/StudentFile";
 import { blankStudent, detailsFromStudent, StudentForm } from "@/components/institute/StudentForm";
 import { Portrait } from "@/components/shared/Portrait";
-import { FilterBar, patientAssignedToDoctor, studentMatches, type DeskFilter } from "@/pages/production/ProductionDashboard";
+import { FilterBar, studentMatches, type DeskFilter } from "@/pages/production/ProductionDashboard";
 import { Sheet, SheetBody, SheetContent, SheetHeader } from "@/components/ui/sheet";
 import { PatientHistory } from "@/components/clinic/PatientHistory";
 import { BusinessBoard } from "@/components/dashboard/BusinessBoard";
 import { useAuth } from "@/context/AuthContext";
+import { doctorDeskPool } from "@/lib/doctor-desk";
 import { canOperateWhatsApp, isClinicDoctor } from "@/lib/production-access";
 import { listDoctors, listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
 import { DialLink } from "@/components/calls/DialLink";
@@ -70,7 +71,7 @@ function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
   const [doctorId, setDoctorId] = useState("");
   const scopedPatients = useMemo(() => {
     if (!doctorOnly || !productionUser?.userId) return patients;
-    return patients.filter((item) => patientAssignedToDoctor(item, productionUser.userId));
+    return doctorDeskPool(patients, productionUser.userId);
   }, [doctorOnly, patients, productionUser?.userId]);
   const open = scopedPatients.find((item) => item.id === openId) ?? patients.find((item) => item.id === openId) ?? null;
   const visible = useMemo(() => {

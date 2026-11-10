@@ -15,12 +15,25 @@ import { formatClock } from "@/lib/call-time";
 import { DialLink } from "@/components/calls/DialLink";
 import { phoneTel } from "@/lib/phone";
 import { MoneyPeriodBar } from "@/components/shared/MoneyPeriodBar";
+import {
+  DOCTOR_FILTERS,
+  doctorDeskPool,
+  doctorFilterBounds,
+  doctorPatientInFilter,
+  doctorAssignedFromToday,
+  doctorUpcomingAppointments,
+  patientAssignedToDoctor,
+  patientHistoricallyConsulted,
+  type DoctorFilter,
+} from "@/lib/doctor-desk";
 import { isClinicDoctor, productionRoleLabel } from "@/lib/production-access";
 import { stampInMoneyPeriod, type MoneyPeriod } from "@/lib/money-filter";
 import { rangeBounds, type RangeKey } from "@/lib/range";
 import { callDeskReport, countRows, listClinicBills, listDeskMoney, listDeskPatients, listDeskStudents, listFollowUps, clearDeskCache, ensureFollowUpVisit, removeAppointment, removeDeskMoney, removePatient, removeStudent, savePersonPhoto, saveStudentDetails, updateAppointment, updatePatient, type ClinicBill, type DeskMoney, type DeskPatient, type DeskStudent, type StudentDetails } from "@/services/production-ops";
 import { listDoctors } from "@/services/production-leads";
 import { inr } from "@/lib/money";
+
+export { patientAssignedToDoctor };
 
 function Stat({ label, value, hint, active, onClick }: { label: string; value: string; hint?: string; active?: boolean; onClick?: () => void }) {
   const className = `min-h-20 rounded-2xl border px-4 py-3 text-left ${active ? "border-[#c6a15b] bg-[#faf6ee]" : "border-line bg-white"}`;
@@ -72,16 +85,44 @@ function AdminDashboard() {
   return <BusinessBoard desk={desk} />;
 }
 
-type DoctorFilter = "today" | "upcoming" | "weekly" | "monthly" | "yearly" | "custom";
-
-const DOCTOR_FILTERS: Array<{ key: DoctorFilter; label: string }> = [
-  { key: "today", label: "Today" },
-  { key: "upcoming", label: "Upcoming" },
-  { key: "weekly", label: "Weekly" },
-  { key: "monthly", label: "Monthly" },
-  { key: "yearly", label: "Yearly" },
-  { key: "custom", label: "Custom" },
-];
+function DoctorPatientCard({
+  patient,
+  doctors,
+  clinic,
+  badge,
+  onOpen,
+}: {
+  patient: DeskPatient;
+  doctors: Array<{ userId: string; name: string }>;
+  clinic?: WorkspaceOption;
+  badge?: string;
+  onOpen: () => void;
+}) {
+  const latest = [...patient.appointments].sort((left, right) => left.starts_at.localeCompare(right.starts_at)).at(-1);
+  const doctorsOnCard = assignedDoctorIds(patient).map((id) => doctorName(id, doctors));
+  const care = treatmentSummary(patient);
+  return (
+    <article className="touch-card rounded-2xl border border-line bg-white p-4 shadow-sm sm:transition sm:hover:-translate-y-0.5 sm:hover:border-[#c6a15b] sm:hover:shadow-md">
+      <button type="button" onClick={onOpen} className="w-full text-left">
+        <div className="flex items-center gap-3">
+          <Portrait name={patient.full_name} path={patient.photo_path} />
+          <span className="min-w-0 flex-1">
+            <span className="flex items-start justify-between gap-2">
+              <span className="block truncate text-base font-semibold text-ink">{patient.full_name}</span>
+              {latest ? <StatusChip status={latest.status} /> : null}
+            </span>
+            <span className="mt-0.5 block text-xs text-muted">{patient.patient_code}{badge ? ` · ${badge}` : ""}</span>
+            <span className="mt-2 block truncate text-sm text-ink">{patient.mobile || "No mobile"}{patient.place ? ` · ${patient.place}` : ""}</span>
+            <span className="mt-1 block text-sm font-medium text-[#8a6a2f]">{doctorsOnCard.length ? doctorsOnCard.join(" · ") : "No doctor assigned"}</span>
+            {care ? <span className="mt-1 block text-sm">Care on card · {care}</span> : <span className="mt-1 block text-sm text-muted">Waiting for doctor treatment</span>}
+            {nextFollowUp(patient) ? <span className="mt-1 block text-sm font-medium text-[#8a6a2f]">Follow-up {formatWhen(nextFollowUp(patient)?.starts_at || "")}</span> : null}
+          </span>
+        </div>
+      </button>
+      {clinic && phoneTel(patient.mobile) ? <DialLink organizationId={clinic.organizationId} workspaceId={clinic.id} name={patient.full_name} phone={patient.mobile} className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-navy" /> : null}
+    </article>
+  );
+}
 
 function DoctorDashboard() {
   const { productionUser, session } = useAuth();
@@ -123,7 +164,7 @@ function DoctorDashboard() {
     if (!clinic || !doctorId) return;
     clearDeskCache();
     void listDeskPatients(clinic.id).then((rows) => {
-      const next = rows.filter((patient) => patientAssignedToDoctor(patient, doctorId));
+      const next = doctorDeskPool(rows, doctorId);
       setAllMine(next);
       setOpen((current) => current ? next.find((item) => item.id === current.id) ?? current : current);
     }).catch(() => setAllMine([]));
@@ -144,6 +185,11 @@ function DoctorDashboard() {
   const visible = useMemo(
     () => allMine.filter((patient) => doctorPatientInFilter(patient, doctorId, filter, customFrom, customTo)),
     [allMine, doctorId, filter, customFrom, customTo],
+  );
+
+  const previousShared = useMemo(
+    () => allMine.filter((patient) => patientHistoricallyConsulted(patient)),
+    [allMine],
   );
 
   const upcomingAssigned = useMemo(() => {
@@ -177,11 +223,17 @@ function DoctorDashboard() {
     setNotice("");
   };
 
+  const emptyHint = filter === "today" || filter === "upcoming"
+    ? "No patients assigned to you in this filter yet. Reception must assign the visit to you."
+    : filter === "previous"
+      ? "No previously consulted patients yet."
+      : "No consulted or assigned patients in this range.";
+
   return (
     <Shell title={title}>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {notice ? <p className="text-sm text-emerald-700">{notice}</p> : null}
-      <p className="text-sm text-muted">Only your real assigned patients and visits. Reception assignments stay on this desk.</p>
+      <p className="text-sm text-muted">Previous consulted patient cards are shared with every doctor. From today onward, only your reception-assigned visits show day by day.</p>
 
       {upcomingAssigned.length > 0 ? (
         <section className="rounded-2xl border border-[#c6a15b] bg-[#faf6ee] p-4">
@@ -246,26 +298,44 @@ function DoctorDashboard() {
       </div>
       <div className="flex flex-wrap gap-2"><Tile to="/clinic" label="Patients and consultations" /><Tile to="/inventory" label="Stock" /></div>
       <section>
-        <h2 className="text-sm font-semibold">Your patients</h2>
-        {visible.length === 0 ? <p className="mt-2 text-sm text-muted">No patients in this filter yet. Reception must assign the visit to you.</p> : (
+        <h2 className="text-sm font-semibold">{filter === "previous" ? "Previously consulted patients" : filter === "today" || filter === "upcoming" ? "Your assigned patients" : "Patients"}</h2>
+        {visible.length === 0 ? <p className="mt-2 text-sm text-muted">{emptyHint}</p> : (
           <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {visible.map((patient) => {
-              const visit = doctorVisitForFilter(patient, doctorId, filter, customFrom, customTo);
-              const latest = [...patient.treatments].sort((left, right) => right.performed_on.localeCompare(left.performed_on))[0];
-              return (
-                <button key={patient.id} type="button" onClick={() => setOpen(patient)} className="touch-card flex gap-3 rounded-2xl border border-line bg-white p-3 text-left hover:border-[#c6a15b]">
-                  <Portrait name={patient.full_name} path={patient.photo_path} />
-                  <span className="min-w-0">
-                    <span className="block font-medium">{patient.full_name}</span>
-                    <span className="mt-1 block text-xs text-muted">{patient.patient_code} · {patient.mobile || "No mobile"}</span>
-                    <span className="mt-2 block text-sm">{visit ? `${formatWhen(visit.starts_at)} · ${visit.status.replaceAll("_", " ")}` : latest ? `Last visit ${latest.performed_on} · ${latest.title}` : "Assigned by reception"}</span>
-                  </span>
-                </button>
-              );
-            })}
+            {visible.map((patient) => (
+              <DoctorPatientCard
+                key={patient.id}
+                patient={patient}
+                doctors={doctors}
+                clinic={clinic}
+                badge={patientHistoricallyConsulted(patient) && !doctorAssignedFromToday(patient, doctorId) ? "Previous file" : ""}
+                onOpen={() => setOpen(patient)}
+              />
+            ))}
           </div>
         )}
       </section>
+      {filter === "today" || filter === "upcoming" ? (
+        <section>
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <h2 className="text-sm font-semibold">Previously consulted · all doctors</h2>
+            <button type="button" className="text-sm font-medium text-navy" onClick={() => setFilter("previous")}>Open full previous list</button>
+          </div>
+          {previousShared.length === 0 ? <p className="mt-2 text-sm text-muted">No previously consulted patients yet.</p> : (
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {previousShared.slice(0, 12).map((patient) => (
+                <DoctorPatientCard
+                  key={`prev-${patient.id}`}
+                  patient={patient}
+                  doctors={doctors}
+                  clinic={clinic}
+                  badge="Previous file"
+                  onOpen={() => setOpen(patient)}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
       <section className="rounded-lg border border-line bg-white p-4">
         <h2 className="text-sm font-semibold">Products sold per day</h2>
         {pulse.days.length === 0 ? <p className="mt-2 text-sm text-muted">No products sold in this range.</p> : pulse.days.map((row) => (
@@ -276,8 +346,15 @@ function DoctorDashboard() {
         {open && clinic ? (
           <SheetContent title={open.full_name}>
             <SheetHeader>
-              <p className="text-lg font-semibold">Patient from reception</p>
-              <p className="text-sm text-muted">Add the treatment, procedure, products, and how long the medicine is given. Reception sees everything on this card.</p>
+              <div className="flex items-center gap-3">
+                <Portrait name={open.full_name} path={open.photo_path} className="size-16 text-xl" />
+                <div className="min-w-0">
+                  <p className="text-xs font-medium tracking-wide text-[#a6843d] uppercase">{open.patient_code}</p>
+                  <h2 className="mt-1 truncate text-xl font-semibold">{open.full_name}</h2>
+                  <p className="mt-1 text-sm text-muted">{open.mobile || "No mobile"}{open.place ? ` · ${open.place}` : ""}</p>
+                </div>
+              </div>
+              <p className="mt-3 text-sm text-muted">Same patient card details as reception. Add treatment when this visit is assigned to you.</p>
             </SheetHeader>
             <SheetBody>
               <PatientHistory
@@ -1029,11 +1106,6 @@ function doctorName(doctorId: string, doctors: Array<{ userId: string; name: str
   return doctors.find((item) => item.userId === doctorId)?.name || "Doctor";
 }
 
-export function patientAssignedToDoctor(patient: DeskPatient, doctorId: string) {
-  if (!doctorId) return false;
-  return patient.appointments.some((item) => item.doctor_id === doctorId);
-}
-
 function assignedDoctorIds(patient: DeskPatient) {
   return [...new Set(patient.appointments.map((item) => item.doctor_id).filter(Boolean))];
 }
@@ -1041,74 +1113,5 @@ function assignedDoctorIds(patient: DeskPatient) {
 function treatmentSummary(patient: DeskPatient) {
   const latest = [...patient.treatments].sort((left, right) => right.performed_on.localeCompare(left.performed_on))[0];
   return latest ? `${latest.performed_on} · ${latest.title}` : "";
-}
-
-function doctorFilterBounds(filter: DoctorFilter, customFrom: string, customTo: string) {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const endToday = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
-  if (filter === "upcoming") {
-    const to = new Date(now.getFullYear() + 2, 0, 1);
-    return {
-      from: endToday.toISOString(),
-      to: to.toISOString(),
-      fromDate: endToday.toISOString().slice(0, 10),
-      toDate: new Date(to.getTime() - 1).toISOString().slice(0, 10),
-      label: "Upcoming",
-    };
-  }
-  if (filter === "weekly") {
-    const monday = new Date(start);
-    monday.setDate(start.getDate() - ((start.getDay() + 6) % 7));
-    const weekEnd = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 7);
-    return {
-      from: monday.toISOString(),
-      to: weekEnd.toISOString(),
-      fromDate: monday.toISOString().slice(0, 10),
-      toDate: new Date(weekEnd.getTime() - 1).toISOString().slice(0, 10),
-      label: "Weekly",
-    };
-  }
-  const key: RangeKey = filter === "monthly" ? "this_month" : filter === "yearly" ? "this_year" : filter === "custom" ? "custom" : "today";
-  return rangeBounds(key, customFrom, customTo, now);
-}
-
-function doctorLiveAppointments(patient: DeskPatient, doctorId: string) {
-  return patient.appointments.filter((item) => item.doctor_id === doctorId && !["cancelled", "no_show"].includes(item.status));
-}
-
-function doctorUpcomingAppointments(patient: DeskPatient, doctorId: string) {
-  const endToday = new Date();
-  endToday.setHours(24, 0, 0, 0);
-  return doctorLiveAppointments(patient, doctorId)
-    .filter((item) => new Date(item.starts_at).getTime() >= endToday.getTime() && !["completed"].includes(item.status))
-    .sort((left, right) => left.starts_at.localeCompare(right.starts_at));
-}
-
-function doctorPatientInFilter(patient: DeskPatient, doctorId: string, filter: DoctorFilter, customFrom: string, customTo: string) {
-  const mine = doctorLiveAppointments(patient, doctorId);
-  if (mine.length === 0) return false;
-  if (filter === "upcoming") return doctorUpcomingAppointments(patient, doctorId).length > 0;
-  const bounds = doctorFilterBounds(filter, customFrom, customTo);
-  const from = new Date(bounds.from).getTime();
-  const to = new Date(bounds.to).getTime();
-  return mine.some((item) => {
-    const time = new Date(item.starts_at).getTime();
-    return time >= from && time < to;
-  });
-}
-
-function doctorVisitForFilter(patient: DeskPatient, doctorId: string, filter: DoctorFilter, customFrom: string, customTo: string) {
-  const mine = doctorLiveAppointments(patient, doctorId);
-  if (filter === "upcoming") return doctorUpcomingAppointments(patient, doctorId)[0] ?? null;
-  const bounds = doctorFilterBounds(filter, customFrom, customTo);
-  const from = new Date(bounds.from).getTime();
-  const to = new Date(bounds.to).getTime();
-  return mine
-    .filter((item) => {
-      const time = new Date(item.starts_at).getTime();
-      return time >= from && time < to;
-    })
-    .sort((left, right) => left.starts_at.localeCompare(right.starts_at))[0] ?? null;
 }
 

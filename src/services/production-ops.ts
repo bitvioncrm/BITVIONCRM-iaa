@@ -303,14 +303,14 @@ export interface DeskMoney {
 }
 
 export async function listDeskPatients(workspaceId: string) {
-  const key = `patients:v3:${workspaceId}`;
+  const key = `patients:v4:${workspaceId}`;
   const cached = readDesk<DeskPatient[]>(key);
   if (cached) return cached;
   const [patients, appointments, treatments, consultations] = await Promise.all([
-    client().from("patients").select("id, patient_code, full_name, mobile, email, gender, date_of_birth, age, place, address, emergency_contact, notes, created_at, photo_path").eq("workspace_id", workspaceId).is("deleted_at", null).order("created_at", { ascending: false }).limit(200),
-    client().from("appointments").select("id, patient_id, doctor_id, starts_at, status, reason").eq("workspace_id", workspaceId).not("status", "in", "(cancelled)").order("starts_at", { ascending: false }).limit(500),
-    client().from("patient_procedures").select("id, patient_id, performed_on, procedure_1, procedure_2").eq("workspace_id", workspaceId).order("performed_on", { ascending: true }).limit(500),
-    client().from("consultations").select("id, patient_id, diagnosis, created_at").eq("workspace_id", workspaceId).order("created_at", { ascending: true }).limit(500),
+    client().from("patients").select("id, patient_code, full_name, mobile, email, gender, date_of_birth, age, place, address, emergency_contact, notes, created_at, photo_path").eq("workspace_id", workspaceId).is("deleted_at", null).order("created_at", { ascending: false }).limit(500),
+    client().from("appointments").select("id, patient_id, doctor_id, starts_at, status, reason").eq("workspace_id", workspaceId).not("status", "in", "(cancelled)").order("starts_at", { ascending: false }).limit(1000),
+    client().from("patient_procedures").select("id, patient_id, performed_on, procedure_1, procedure_2").eq("workspace_id", workspaceId).order("performed_on", { ascending: true }).limit(1000),
+    client().from("consultations").select("id, patient_id, diagnosis, created_at").eq("workspace_id", workspaceId).order("created_at", { ascending: true }).limit(1000),
   ]);
   if (patients.error) throw new Error(patients.error.message);
   if (appointments.error) throw new Error(appointments.error.message);
