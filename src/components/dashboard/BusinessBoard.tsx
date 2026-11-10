@@ -1,5 +1,4 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { HardDrive, Shield, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { MoneyPeriodBar } from "@/components/shared/MoneyPeriodBar";
@@ -9,7 +8,6 @@ import { inr } from "@/lib/money";
 import { moneyPeriodToRangeKey, rangeKeyToMoneyPeriod } from "@/lib/money-filter";
 import { loadOverview, type Overview } from "@/services/overview";
 import { listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
-import { formatBytes, listWorkspaceBackups, type WorkspaceBackup } from "@/services/workspace-backups";
 
 const tooltipStyle = { border: "1px solid #e6e8ee", borderRadius: 8, fontSize: 12 };
 
@@ -42,7 +40,6 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
   const { bounds, rangeKey, setRangeKey, customFrom, setCustomFrom, customTo, setCustomTo } = useDesk();
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
   const [data, setData] = useState<Overview | null>(null);
-  const [backups, setBackups] = useState<WorkspaceBackup[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -65,11 +62,6 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
         .finally(() => {
           if (active && initial) setLoading(false);
         });
-      if (variant === "full") {
-        void listWorkspaceBackups()
-          .then((rows) => { if (active) setBackups(rows); })
-          .catch(() => { if (active) setBackups([]); });
-      }
     };
     load(true);
     const onLead = () => load(false);
@@ -84,7 +76,7 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
       window.removeEventListener("bitvion-lead-update", onLead);
       window.clearInterval(timer);
     };
-  }, [bounds, desk, rangeKey, variant]);
+  }, [bounds, desk, rangeKey]);
 
   const clinic = workspaces.find((item) => item.workspaceType === "clinic");
   const institute = workspaces.find((item) => item.workspaceType === "institute");
@@ -98,15 +90,12 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
   const showInstitute = desk !== "clinic";
   const chartsReady = Boolean(data && !data.chartNote);
 
-  const readyBackups = backups.filter((row) => row.status === "ready").length;
-
   return (
     <div className="space-y-6">
       <header>
         <p className="text-xs font-medium tracking-wide text-accent uppercase">{bounds.label}</p>
         <h1 className="mt-1 text-[26px] font-semibold tracking-tight">{heading}</h1>
       </header>
-      {variant === "full" ? <AdminBackupStrip backups={backups} clinicId={clinic?.id} instituteId={institute?.id} /> : null}
       {variant === "full" ? (
         <section className="rounded-2xl border border-line bg-white p-3 sm:p-4">
           <h2 className="text-sm font-semibold">Payments & overview period</h2>
@@ -133,7 +122,6 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            {variant === "full" ? <Kpi label="Backups" value={String(readyBackups)} detail="Open premium vault" to="/backups" /> : null}
             <Kpi label="Total leads" value={text(data.leads)} detail="Created in this range" to={leadTo(desk)} />
             <Kpi label="New leads" value={text(data.newLeads)} detail="Still in New" to={leadTo(desk, { status: "new" })} />
             {showClinic ? <Kpi label="Registered patients" value={text(data.patients)} detail={`${text(data.newPatients)} new in this range`} to="/clinic" /> : null}
@@ -166,7 +154,6 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
                 <Action to="/inventory">Manage inventory</Action>
                 <Action to="/billing">View clinic billing</Action>
                 <Action to="/reports">Open clinic reports</Action>
-                <Action to="/backups">Open backups</Action>
               </div>
             </section>
           ) : null}
@@ -192,7 +179,6 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
                 <Action to="/institute">View certificates</Action>
                 <Action to="/institute-billing">View institute billing</Action>
                 <Action to="/reports">Open institute reports</Action>
-                <Action to="/backups">Open backups</Action>
               </div>
             </section>
           ) : null}
@@ -358,41 +344,6 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
       )}
       {clinic || institute ? null : !loading && !error ? <p className="text-sm text-muted">No clinic or institute workspace is available for this account.</p> : null}
     </div>
-  );
-}
-
-function AdminBackupStrip({ backups, clinicId, instituteId }: { backups: WorkspaceBackup[]; clinicId?: string; instituteId?: string }) {
-  const ready = backups.filter((row) => row.status === "ready");
-  const clinicReady = ready.filter((row) => row.workspaceId === clinicId).length;
-  const instituteReady = ready.filter((row) => row.workspaceId === instituteId).length;
-  const latest = ready[0];
-  return (
-    <section className="overflow-hidden rounded-2xl border-2 border-[#c6a15b] bg-[linear-gradient(135deg,#0f1c2e_0%,#17324f_55%,#122033_100%)] p-4 text-white shadow-[0_18px_40px_rgba(15,28,46,0.28)] sm:p-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <p className="inline-flex items-center gap-2 text-xs font-semibold tracking-[0.18em] text-[#e7c87a] uppercase">
-            <HardDrive className="size-3.5" /> Admin dashboard · Backups
-          </p>
-          <h2 className="mt-2 text-xl font-semibold tracking-tight">Premium backups</h2>
-          <p className="mt-1 max-w-2xl text-sm text-white/70">
-            Run instant, rolling, or alternate safe copies for clinic and institute from here. Open the vault to process and download snapshots.
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2 text-xs">
-            <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/10 px-2.5 py-1"><Zap className="size-3" /> Clinic {clinicReady} saved</span>
-            <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/10 px-2.5 py-1"><Shield className="size-3" /> Institute {instituteReady} saved</span>
-            {latest ? <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1">Latest {new Date(latest.createdAt).toLocaleString("en-IN")} · {formatBytes(latest.byteSize)}</span> : <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1">No copy yet — open vault to create one</span>}
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link to="/backups" className="inline-flex min-h-11 items-center rounded-full bg-[#e8d5a3] px-4 text-sm font-semibold text-[#0e1420] hover:bg-[#f6e2a8]">
-            Open backups
-          </Link>
-          <Link to="/settings" className="inline-flex min-h-11 items-center rounded-full border border-white/20 bg-white/10 px-4 text-sm font-medium text-white hover:bg-white/15">
-            Settings
-          </Link>
-        </div>
-      </div>
-    </section>
   );
 }
 

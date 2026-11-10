@@ -53,7 +53,6 @@ export const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
     label: "Overview",
     items: [
       { to: "/", label: "Business Overview", icon: LayoutDashboard, end: true },
-      { to: "/backups", label: "Backups", icon: HardDrive, end: false },
       { to: "/clinic", label: "Clinic", icon: Building2, end: false },
       { to: "/billing", label: "Billing", icon: Receipt, end: false },
       { to: "/institute", label: "Institute", icon: GraduationCap, end: false },
