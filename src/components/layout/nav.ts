@@ -7,6 +7,7 @@ import {
   ContactRound,
   FileText,
   GraduationCap,
+  HardDrive,
   Kanban,
   LayoutDashboard,
   Megaphone,
@@ -43,7 +44,8 @@ export const NAV_ITEMS = [
   { to: "/reports", label: "Reports", icon: BarChart3, end: false },
   { to: "/team", label: "Team", icon: UsersRound, end: false },
   { to: "/activity", label: "Activity", icon: ScrollText, end: false },
-  { to: "/settings", label: "Settings & Backups", icon: Settings, end: false },
+  { to: "/settings", label: "Settings", icon: Settings, end: false },
+  { to: "/backups", label: "Backups", icon: HardDrive, end: false },
 ] as const;
 
 export const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
@@ -83,7 +85,8 @@ export const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
       { to: "/reports", label: "Reports & Analytics", icon: BarChart3, end: false },
       { to: "/team", label: "Team & Permissions", icon: UsersRound, end: false },
       { to: "/activity", label: "Activity & Audit", icon: ScrollText, end: false },
-      { to: "/settings", label: "Settings & Backups", icon: Settings, end: false },
+      { to: "/backups", label: "Backups", icon: HardDrive, end: false },
+      { to: "/settings", label: "Settings", icon: Settings, end: false },
       { to: "/meta", label: "Meta leads", icon: Megaphone, end: false },
     ],
   },

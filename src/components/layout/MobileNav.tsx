@@ -23,7 +23,7 @@ const SHORT_LABEL: Record<string, string> = {
   "/reports": "Reports",
   "/team": "Team",
   "/activity": "Activity",
-  "/settings": "Settings & Backups",
+  "/settings": "Settings",
   "/backups": "Backups",
   "/meta": "Meta",
   "/clinic": "Clinic",

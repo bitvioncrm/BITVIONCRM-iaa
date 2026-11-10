@@ -135,6 +135,7 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
                 <Action to="/inventory">Manage inventory</Action>
                 <Action to="/billing">View clinic billing</Action>
                 <Action to="/reports">Open clinic reports</Action>
+                <Action to="/backups">Open backups</Action>
               </div>
             </section>
           ) : null}
@@ -160,6 +161,7 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
                 <Action to="/institute">View certificates</Action>
                 <Action to="/institute-billing">View institute billing</Action>
                 <Action to="/reports">Open institute reports</Action>
+                <Action to="/backups">Open backups</Action>
               </div>
             </section>
           ) : null}

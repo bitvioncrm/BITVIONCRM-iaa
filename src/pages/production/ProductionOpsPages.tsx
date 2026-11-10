@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { PremiumBackups } from "@/components/settings/PremiumBackups";
 import { listLeads, listWorkspaces, updateLeadStatus, type ProductionLead, type WorkspaceOption } from "@/services/production-leads";
 import { bookFromLead, createTask, listAudit, listTasks, removeTask, revenueSummary, updateTask } from "@/services/production-ops";
@@ -248,10 +248,11 @@ export function ProductionActivity() {
 
 export function ProductionSettings() {
   const { productionUser } = useAuth();
+  const location = useLocation();
   const admin = canOperateWhatsApp(productionUser?.roleKey ?? "");
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
   const [error, setError] = useState("");
-  const [tab, setTab] = useState<"backups" | "links">("backups");
+  const tab: "backups" | "links" = location.pathname.startsWith("/settings") ? "links" : "backups";
 
   useEffect(() => {
     void listWorkspaces()
@@ -272,17 +273,21 @@ export function ProductionSettings() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs font-semibold tracking-[0.18em] text-[#8a6a2f] uppercase">Admin settings</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight">Control centre</h1>
-          <p className="mt-1 text-sm text-muted">Premium backups, channel links, and Meta tools for Dr. K&apos;s.</p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight">{tab === "backups" ? "Backups" : "Settings"}</h1>
+          <p className="mt-1 text-sm text-muted">{tab === "backups" ? "Premium desk backups for clinic and institute." : "Channel links and Meta tools for Dr. K's."}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => setTab("backups")} className={`min-h-11 rounded-full px-4 text-sm font-medium ${tab === "backups" ? "bg-navy text-white" : "border border-line bg-white"}`}>Premium backups</button>
-          <button type="button" onClick={() => setTab("links")} className={`min-h-11 rounded-full px-4 text-sm font-medium ${tab === "links" ? "bg-navy text-white" : "border border-line bg-white"}`}>Quick links</button>
+          <Link to="/backups" className={`inline-flex min-h-11 items-center rounded-full px-4 text-sm font-medium ${tab === "backups" ? "bg-navy text-white" : "border border-line bg-white"}`}>Premium backups</Link>
+          <Link to="/settings" className={`inline-flex min-h-11 items-center rounded-full px-4 text-sm font-medium ${tab === "links" ? "bg-navy text-white" : "border border-line bg-white"}`}>Quick links</Link>
         </div>
       </div>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {tab === "backups" ? <PremiumBackups workspaces={workspaces} /> : (
         <div className="grid gap-3 md:grid-cols-2">
+          <Link to="/backups" className="rounded-2xl border border-line bg-white p-5 transition hover:border-[#c6a15b]">
+            <p className="text-sm font-semibold">Premium backups</p>
+            <p className="mt-1 text-sm text-muted">Instant, rolling, and alternate desk snapshots.</p>
+          </Link>
           <Link to="/meta" className="rounded-2xl border border-line bg-white p-5 transition hover:border-[#c6a15b]">
             <p className="text-sm font-semibold">Meta lead centre</p>
             <p className="mt-1 text-sm text-muted">Form mappings, pull, and import health.</p>
