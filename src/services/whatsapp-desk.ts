@@ -14,6 +14,9 @@ export interface WhatsAppChat {
   workspaceId: string;
   createdAt: string;
   preview: string;
+  lastMessageAt: string;
+  lastDirection: string;
+  hasThread: boolean;
 }
 
 export interface WhatsAppBubble {
@@ -30,7 +33,9 @@ export interface WhatsAppPoster {
   url: string;
 }
 
-export async function listWhatsAppChats(workspaceId: string, search: string, scope: "clicks" | "all" = "clicks", page = 1) {
+export type WhatsAppChatScope = "clicks" | "all" | "replied";
+
+export async function listWhatsAppChats(workspaceId: string, search: string, scope: WhatsAppChatScope = "all", page = 1) {
   const result = await listLeads({
     page,
     workspaceId: workspaceId || undefined,
@@ -38,32 +43,54 @@ export async function listWhatsAppChats(workspaceId: string, search: string, sco
     ...(scope === "clicks" ? { origin: "live" as const, source: "whatsapp_click" } : {}),
   });
   const ids = result.leads.map((lead) => lead.id);
-  const preview = new Map<string, string>();
+  const preview = new Map<string, { body: string; at: string; direction: string }>();
   if (ids.length) {
     const { data, error } = await client()
       .from("messages")
-      .select("lead_id, body, created_at")
+      .select("lead_id, body, created_at, direction")
       .eq("channel", "whatsapp")
       .in("lead_id", ids)
       .order("created_at", { ascending: false })
-      .limit(80);
+      .limit(Math.max(ids.length * 3, 120));
     if (error) throw new Error(error.message);
     for (const row of data ?? []) {
       const leadId = String(row.lead_id ?? "");
-      if (leadId && !preview.has(leadId)) preview.set(leadId, String(row.body ?? ""));
+      if (leadId && !preview.has(leadId)) {
+        preview.set(leadId, {
+          body: String(row.body ?? ""),
+          at: String(row.created_at ?? ""),
+          direction: String(row.direction ?? ""),
+        });
+      }
     }
   }
-  return {
-    total: result.total,
-    chats: result.leads.map((lead) => ({
+  let chats = result.leads.map((lead) => {
+    const last = preview.get(lead.id);
+    return {
       id: lead.id,
       fullName: lead.fullName,
       phone: lead.phone,
       workspaceId: lead.workspaceId,
       createdAt: lead.createdAt,
-      preview: preview.get(lead.id) ?? "",
-    })) satisfies WhatsAppChat[],
+      preview: last?.body ?? "",
+      lastMessageAt: last?.at || lead.createdAt,
+      lastDirection: last?.direction ?? "",
+      hasThread: Boolean(last),
+    } satisfies WhatsAppChat;
+  });
+  if (scope === "replied") chats = chats.filter((chat) => chat.hasThread);
+  chats.sort((left, right) => right.lastMessageAt.localeCompare(left.lastMessageAt));
+  return {
+    total: scope === "replied" ? chats.length : result.total,
+    chats,
   };
+}
+
+export function whatsAppMeLink(phone: string, text = "") {
+  const digits = phone.replace(/\D/g, "");
+  if (!digits) return "";
+  const query = text ? `?text=${encodeURIComponent(text)}` : "";
+  return `https://wa.me/${digits}${query}`;
 }
 
 export async function listWhatsAppThread(leadId: string) {
