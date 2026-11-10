@@ -19,7 +19,7 @@ const DeskContext = createContext<DeskValue | null>(null);
 
 export function DeskProvider({ children }: { children: ReactNode }) {
   const [desk, setDesk] = useState<DeskKey>("all");
-  const [rangeKey, setRangeKey] = useState<RangeKey>("30d");
+  const [rangeKey, setRangeKey] = useState<RangeKey>("today");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const bounds = useMemo(() => rangeBounds(rangeKey, customFrom, customTo), [customFrom, customTo, rangeKey]);

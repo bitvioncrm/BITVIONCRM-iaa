@@ -12,7 +12,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useDesk, type DeskKey } from "@/context/DeskContext";
 import { useCrm } from "@/context/CrmContext";
 import { isAdmin } from "@/lib/scope";
-import { RANGE_OPTIONS } from "@/lib/range";
+import { ADMIN_MONEY_RANGE_OPTIONS } from "@/lib/range";
 import { ROLE_LABEL } from "@/data/catalog";
 
 export function TopBar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
@@ -50,7 +50,7 @@ export function TopBar({ collapsed, onToggle }: { collapsed: boolean; onToggle: 
             <option value="institute">Institute</option>
           </select>
           <select aria-label="Date range" value={rangeKey} onChange={(event) => setRangeKey(event.target.value as typeof rangeKey)} className="h-11 min-w-0 flex-1 rounded-md border border-line bg-white px-2 text-base sm:h-9 sm:flex-none sm:text-sm">
-            {RANGE_OPTIONS.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+            {ADMIN_MONEY_RANGE_OPTIONS.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
           </select>
           {rangeKey === "custom" ? (
             <>

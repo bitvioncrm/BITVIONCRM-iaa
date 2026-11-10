@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Portrait } from "@/components/shared/Portrait";
 import { ProductSearchSelect } from "@/components/clinic/ProductSearchSelect";
+import { MoneyPeriodBar } from "@/components/shared/MoneyPeriodBar";
 import { billParts, inr, invoiceTotal } from "@/lib/money";
+import { stampInMoneyPeriod, type MoneyPeriod } from "@/lib/money-filter";
 import { addLedgerEntry, listCareProducts, listLedger, recordPatientCare, removeLedgerEntry } from "@/services/clinic-care";
-import { addToPatientBill, addToStudentBill, cancelClinicBill, listClinicBills, listDeskPatients, listDeskStudents, loadPatientRecord, recordPayment, recordRefund, removeConsultation, removeInvoiceItem, removeProcedure, updateInvoiceItem, type ClinicBill, type DeskPatient, type DeskStudent } from "@/services/production-ops";
+import { addToPatientBill, addToStudentBill, cancelClinicBill, listClinicBills, listDeskMoney, listDeskPatients, listDeskStudents, loadPatientRecord, recordPayment, recordRefund, removeConsultation, removeInvoiceItem, removeProcedure, updateInvoiceItem, type ClinicBill, type DeskMoney, type DeskPatient, type DeskStudent } from "@/services/production-ops";
 import type { WorkspaceOption } from "@/services/production-leads";
 
 type ChargeKind = "Treatment" | "Booking" | "Product" | "Course fee" | "Registration" | "Material" | "Exam" | "Certificate";
@@ -42,12 +44,17 @@ export function BillingDesk({ workspace, mode = "clinic", onError, onNotice }: {
   const [expenseDetail, setExpenseDetail] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
   const [stockProducts, setStockProducts] = useState<StockProduct[]>([]);
+  const [money, setMoney] = useState<DeskMoney[]>([]);
+  const [moneyPeriod, setMoneyPeriod] = useState<MoneyPeriod>("today");
+  const [moneyFrom, setMoneyFrom] = useState("");
+  const [moneyTo, setMoneyTo] = useState("");
 
   const reload = () => {
     if (institute) void listDeskStudents(workspace.id).then(setStudents).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load students"));
     else void listDeskPatients(workspace.id).then(setPatients).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load patients"));
     void listClinicBills(workspace.id).then(setBills).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load bills"));
     void listLedger(workspace.id).then(setLedger).catch(() => setLedger([]));
+    void listDeskMoney(workspace.id).then(setMoney).catch(() => setMoney([]));
     if (!institute) void listCareProducts(workspace.id).then(setStockProducts).catch(() => setStockProducts([]));
   };
 
@@ -71,17 +78,31 @@ export function BillingDesk({ workspace, mode = "clinic", onError, onNotice }: {
   const productsTotal = lines
     .filter((line) => line.kind === "Product")
     .reduce((sum, line) => sum + (Number(line.quantity) || 0) * (Number(line.price) || 0), 0);
-  const collected = bills.reduce((sum, bill) => sum + bill.paid, 0);
-  const otherIncome = ledger.filter((row) => row.kind === "income").reduce((sum, row) => sum + row.amount, 0);
-  const expenses = ledger.filter((row) => row.kind === "expense").reduce((sum, row) => sum + row.amount, 0);
+  const periodMoney = useMemo(
+    () => money.filter((row) => stampInMoneyPeriod(row.at, moneyPeriod, moneyFrom, moneyTo)),
+    [money, moneyPeriod, moneyFrom, moneyTo],
+  );
+  const collected = periodMoney.filter((row) => row.kind === "income" && row.source === "payment").reduce((sum, row) => sum + row.amount, 0);
+  const otherIncome = periodMoney.filter((row) => row.kind === "income" && row.source === "ledger").reduce((sum, row) => sum + row.amount, 0);
+  const expenses = periodMoney.filter((row) => row.kind === "expense").reduce((sum, row) => sum + row.amount, 0);
   const people = useMemo(() => {
     const rows = institute
       ? students.map((student) => ({ id: student.id, full_name: student.full_name, code: student.student_code, photo_path: student.photo_path, detail: student.course || "No course" }))
       : patients.map((patient) => ({ id: patient.id, full_name: patient.full_name, code: patient.patient_code, photo_path: patient.photo_path, detail: "" }));
     return rows.sort((left, right) => left.full_name.localeCompare(right.full_name));
   }, [institute, patients, students]);
-  const incomeRows = ledger.filter((row) => row.kind === "income");
-  const expenseRows = ledger.filter((row) => row.kind === "expense");
+  const incomeRows = useMemo(
+    () => ledger.filter((row) => row.kind === "income" && stampInMoneyPeriod(row.createdAt, moneyPeriod, moneyFrom, moneyTo)),
+    [ledger, moneyPeriod, moneyFrom, moneyTo],
+  );
+  const expenseRows = useMemo(
+    () => ledger.filter((row) => row.kind === "expense" && stampInMoneyPeriod(row.createdAt, moneyPeriod, moneyFrom, moneyTo)),
+    [ledger, moneyPeriod, moneyFrom, moneyTo],
+  );
+  const paymentRows = useMemo(
+    () => periodMoney.filter((row) => row.kind === "income").sort((left, right) => right.at.localeCompare(left.at)),
+    [periodMoney],
+  );
   const expenseCategories = institute ? INSTITUTE_EXPENSES : CLINIC_EXPENSES;
 
   const fillFromVisits = () => {
@@ -132,12 +153,39 @@ export function BillingDesk({ workspace, mode = "clinic", onError, onNotice }: {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-        <Summary label="Collected on bills" value={inr(collected)} />
-        <Summary label="Other income" value={inr(otherIncome)} />
-        <Summary label="Additional expenses" value={inr(expenses)} />
-        <Summary label="Balance" value={inr(collected + otherIncome - expenses)} />
-      </div>
+      <section className="space-y-3 rounded-2xl border border-line bg-white p-3 sm:p-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold">Payments filter</h2>
+            <p className="mt-1 text-sm text-muted">Today, yesterday, week, month, year, or a custom range for billing totals.</p>
+          </div>
+        </div>
+        <MoneyPeriodBar
+          period={moneyPeriod}
+          customFrom={moneyFrom}
+          customTo={moneyTo}
+          onPeriod={setMoneyPeriod}
+          onFrom={setMoneyFrom}
+          onTo={setMoneyTo}
+          countLabel={`${paymentRows.length.toLocaleString("en-IN")} payment rows in this period`}
+        />
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+          <Summary label="Collected on bills" value={inr(collected)} />
+          <Summary label="Other income" value={inr(otherIncome)} />
+          <Summary label="Additional expenses" value={inr(expenses)} />
+          <Summary label="Balance" value={inr(collected + otherIncome - expenses)} />
+        </div>
+        {paymentRows.length === 0 ? <p className="text-sm text-muted">No payments in this period.</p> : (
+          <div className="space-y-2">
+            {paymentRows.slice(0, 12).map((row) => (
+              <div key={`${row.source}-${row.id}`} className="flex items-center justify-between gap-3 rounded-xl border border-line px-3 py-2 text-sm">
+                <span className="min-w-0 truncate">{row.note || (row.source === "payment" ? "Bill payment" : "Income")} · {new Date(row.at).toLocaleDateString("en-IN")}</span>
+                <span className="shrink-0 font-medium">{inr(row.amount)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       <section className="rounded-2xl border border-[#eadfca] bg-[#faf6ee] p-3 sm:p-4">
         <h2 className="text-sm font-semibold">{institute ? "Students" : "People"}</h2>

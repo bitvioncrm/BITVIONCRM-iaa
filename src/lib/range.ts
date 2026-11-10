@@ -1,15 +1,25 @@
-export type RangeKey = "all" | "today" | "yesterday" | "7d" | "30d" | "this_month" | "last_month" | "this_year" | "custom";
+export type RangeKey = "all" | "today" | "yesterday" | "7d" | "30d" | "this_week" | "this_month" | "last_month" | "this_year" | "custom";
 
 export const RANGE_OPTIONS: Array<{ key: RangeKey; label: string }> = [
   { key: "all", label: "All days" },
   { key: "today", label: "Today" },
   { key: "yesterday", label: "Yesterday" },
+  { key: "this_week", label: "Week" },
+  { key: "this_month", label: "Month" },
+  { key: "this_year", label: "Year" },
+  { key: "custom", label: "Custom" },
   { key: "7d", label: "Last 7 days" },
   { key: "30d", label: "Last 30 days" },
-  { key: "this_month", label: "This month" },
   { key: "last_month", label: "Last month" },
-  { key: "this_year", label: "This year" },
-  { key: "custom", label: "Custom range" },
+];
+
+export const ADMIN_MONEY_RANGE_OPTIONS: Array<{ key: RangeKey; label: string }> = [
+  { key: "today", label: "Today" },
+  { key: "yesterday", label: "Yesterday" },
+  { key: "this_week", label: "Week" },
+  { key: "this_month", label: "Month" },
+  { key: "this_year", label: "Year" },
+  { key: "custom", label: "Custom" },
 ];
 
 function ymd(date: Date) {
@@ -32,6 +42,11 @@ export function rangeBounds(key: RangeKey, customFrom = "", customTo = "", now =
   } else if (key === "yesterday") {
     from = new Date(from.getFullYear(), from.getMonth(), from.getDate() - 1);
     to = startOfDay(now);
+  } else if (key === "this_week") {
+    const monday = new Date(from);
+    monday.setDate(from.getDate() - ((from.getDay() + 6) % 7));
+    from = monday;
+    to = endExclusive(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6));
   } else if (key === "7d") {
     from = new Date(from.getFullYear(), from.getMonth(), from.getDate() - 6);
   } else if (key === "30d") {

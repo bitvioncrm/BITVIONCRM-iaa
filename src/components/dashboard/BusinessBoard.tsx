@@ -2,9 +2,11 @@ import { useEffect, useState, type ReactNode } from "react";
 import { HardDrive, Shield, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { MoneyPeriodBar } from "@/components/shared/MoneyPeriodBar";
 import { useDesk, type DeskKey } from "@/context/DeskContext";
 import { formatLeadArrived } from "@/lib/dates";
 import { inr } from "@/lib/money";
+import { moneyPeriodToRangeKey, rangeKeyToMoneyPeriod } from "@/lib/money-filter";
 import { loadOverview, type Overview } from "@/services/overview";
 import { listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
 import { formatBytes, listWorkspaceBackups, type WorkspaceBackup } from "@/services/workspace-backups";
@@ -37,7 +39,7 @@ function Action({ to, children }: { to: string; children: string }) {
 }
 
 export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; variant?: "full" | "operations" }) {
-  const { bounds, rangeKey } = useDesk();
+  const { bounds, rangeKey, setRangeKey, customFrom, setCustomFrom, customTo, setCustomTo } = useDesk();
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
   const [data, setData] = useState<Overview | null>(null);
   const [backups, setBackups] = useState<WorkspaceBackup[]>([]);
@@ -102,6 +104,23 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
         <p className="text-xs font-medium tracking-wide text-accent uppercase">{bounds.label}</p>
         <h1 className="mt-1 text-[26px] font-semibold tracking-tight">{heading}</h1>
       </header>
+      {variant === "full" ? (
+        <section className="rounded-2xl border border-line bg-white p-3 sm:p-4">
+          <h2 className="text-sm font-semibold">Payments & overview period</h2>
+          <p className="mt-1 text-sm text-muted">Filter collections, income, and expenses by today, yesterday, week, month, year, or custom.</p>
+          <div className="mt-3">
+            <MoneyPeriodBar
+              period={rangeKeyToMoneyPeriod(rangeKey)}
+              customFrom={customFrom}
+              customTo={customTo}
+              onPeriod={(period) => setRangeKey(moneyPeriodToRangeKey(period))}
+              onFrom={setCustomFrom}
+              onTo={setCustomTo}
+              countLabel={`Showing ${bounds.label}`}
+            />
+          </div>
+        </section>
+      ) : null}
       {error ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
       {data?.errors.length ? <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{data.errors[0]}</p> : null}
       {variant === "full" ? <AdminBackupStrip backups={backups} clinicId={clinic?.id} instituteId={institute?.id} /> : null}

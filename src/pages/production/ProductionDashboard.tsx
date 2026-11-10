@@ -14,7 +14,9 @@ import { loadDoctorPulse } from "@/services/clinic-care";
 import { formatClock } from "@/lib/call-time";
 import { DialLink } from "@/components/calls/DialLink";
 import { phoneTel } from "@/lib/phone";
+import { MoneyPeriodBar } from "@/components/shared/MoneyPeriodBar";
 import { isClinicDoctor, productionRoleLabel } from "@/lib/production-access";
+import { stampInMoneyPeriod, type MoneyPeriod } from "@/lib/money-filter";
 import { rangeBounds, type RangeKey } from "@/lib/range";
 import { callDeskReport, countRows, listClinicBills, listDeskMoney, listDeskPatients, listDeskStudents, listFollowUps, clearDeskCache, ensureFollowUpVisit, removeAppointment, removeDeskMoney, removePatient, removeStudent, savePersonPhoto, saveStudentDetails, updateAppointment, updatePatient, type ClinicBill, type DeskMoney, type DeskPatient, type DeskStudent, type StudentDetails } from "@/services/production-ops";
 import { listDoctors } from "@/services/production-leads";
@@ -304,6 +306,9 @@ function ReceptionDashboard() {
   const [bills, setBills] = useState<ClinicBill[]>([]);
   const [money, setMoney] = useState<DeskMoney[]>([]);
   const [filter, setFilter] = useState<DeskFilter>("all");
+  const [moneyPeriod, setMoneyPeriod] = useState<MoneyPeriod>("today");
+  const [moneyFrom, setMoneyFrom] = useState("");
+  const [moneyTo, setMoneyTo] = useState("");
   const [focus, setFocus] = useState<"patients" | "appointments" | "arrived" | "followups">("patients");
   const [followAt, setFollowAt] = useState("");
   const [customFrom, setCustomFrom] = useState("");
@@ -350,16 +355,22 @@ function ReceptionDashboard() {
     const timer = window.setInterval(refresh, 15000);
     return () => window.clearInterval(timer);
   }, [clinic]);
-  const incomeRows = useMemo(() => money.filter((row) => row.kind === "income").sort((left, right) => right.at.localeCompare(left.at)), [money]);
+  const incomeRows = useMemo(
+    () => money
+      .filter((row) => row.kind === "income" && stampInMoneyPeriod(row.at, moneyPeriod, moneyFrom, moneyTo))
+      .sort((left, right) => right.at.localeCompare(left.at)),
+    [money, moneyPeriod, moneyFrom, moneyTo],
+  );
   const incomeTotal = incomeRows.reduce((sum, row) => sum + row.amount, 0);
   const patientTotal = useMemo(() => {
     const totals = new Map<string, number>();
     for (const row of money) {
       if (!row.patientId || row.kind !== "income") continue;
+      if (!stampInMoneyPeriod(row.at, moneyPeriod, moneyFrom, moneyTo)) continue;
       totals.set(row.patientId, (totals.get(row.patientId) ?? 0) + row.amount);
     }
     return totals;
-  }, [money]);
+  }, [money, moneyPeriod, moneyFrom, moneyTo]);
   const visible = useMemo(() => cards.filter((patient) => patientMatches(patient, filter, customFrom, customTo)), [cards, filter, customFrom, customTo]);
   const withAppointments = useMemo(() => cards.filter((patient) => rangedAppointments(patient, filter, customFrom, customTo).length > 0), [cards, filter, customFrom, customTo]);
   const arrivedPatients = useMemo(() => cards.filter((patient) => rangedAppointments(patient, filter, customFrom, customTo).some((item) => item.status === "arrived")), [cards, filter, customFrom, customTo]);
@@ -380,11 +391,25 @@ function ReceptionDashboard() {
         <Stat label="Appointments" value={String(appointmentCount)} hint={`${withAppointments.length} patients`} active={focus === "appointments"} onClick={() => choose("appointments")} />
         <Stat label="Arrived" value={String(arrivedCount)} hint={`${arrivedPatients.length} patients`} active={focus === "arrived"} onClick={() => choose("arrived")} />
         <Stat label="Follow-ups" value={String(followPatients.length)} hint="Due back" active={focus === "followups"} onClick={() => choose("followups")} />
-        <Stat label="Income" value={inr(incomeTotal)} hint="Collected for the clinic" />
+        <Stat label="Income" value={inr(incomeTotal)} hint="Payments in this period" />
       </div>
       <section className="rounded-2xl border border-line bg-white p-3 sm:p-4">
-        <h2 className="text-sm font-semibold">Income</h2>
-        {incomeRows.length === 0 ? <p className="mt-2 text-sm text-muted">No income yet.</p> : (
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <h2 className="text-sm font-semibold">Payments & income</h2>
+          <p className="text-sm font-medium">{inr(incomeTotal)}</p>
+        </div>
+        <div className="mt-3">
+          <MoneyPeriodBar
+            period={moneyPeriod}
+            customFrom={moneyFrom}
+            customTo={moneyTo}
+            onPeriod={setMoneyPeriod}
+            onFrom={setMoneyFrom}
+            onTo={setMoneyTo}
+            countLabel={`${incomeRows.length.toLocaleString("en-IN")} payments in this period`}
+          />
+        </div>
+        {incomeRows.length === 0 ? <p className="mt-2 text-sm text-muted">No payments in this period.</p> : (
           <div className="mt-3 space-y-2">
             {incomeRows.slice(0, 12).map((row) => {
               const person = cards.find((item) => item.id === row.patientId);
