@@ -63,6 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setReady(true);
       return;
     }
+    const client = supabase;
 
     let active = true;
     const apply = async (user: { id: string; email?: string | null } | null | undefined) => {
@@ -79,18 +80,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setPreviewRole(next.session.role);
     };
 
-    void supabase.auth.getSession().then(({ data }) => apply(data.session?.user)).finally(() => {
+    void client.auth.getSession().then(({ data }) => apply(data.session?.user)).finally(() => {
       if (active) setReady(true);
     });
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: sub } = client.auth.onAuthStateChange((_event, nextSession) => {
       void apply(nextSession?.user);
     });
 
     // Refresh proactively during a long local admin day.
     const timer = window.setInterval(() => {
-      void supabase.auth.getSession().then(({ data }) => {
-        if (data.session) void supabase.auth.refreshSession();
+      void client.auth.getSession().then(({ data }) => {
+        if (data.session) void client.auth.refreshSession();
       });
     }, 45 * 60 * 1000);
 

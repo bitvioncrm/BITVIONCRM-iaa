@@ -468,7 +468,7 @@ export function ProductionWhatsApp() {
             leadId: "test",
             phone: to,
             name: "Test number",
-            status: ok ? "sent" : "failed",
+            status: (ok ? "sent" : "failed") as WhatsAppSendResult["status"],
             detail: status,
           },
           ...currentLog.filter((row) => row.leadId !== "test"),
@@ -479,7 +479,13 @@ export function ProductionWhatsApp() {
         setTestReady(false);
         const message = reason instanceof Error ? reason.message : "Could not send the test";
         setSendLog((currentLog) => [
-          { leadId: "test", phone: to, name: "Test number", status: "failed", detail: message },
+          {
+            leadId: "test",
+            phone: to,
+            name: "Test number",
+            status: "failed" as const,
+            detail: message,
+          },
           ...currentLog.filter((row) => row.leadId !== "test"),
         ].slice(0, 300));
         flash(message, "err");
