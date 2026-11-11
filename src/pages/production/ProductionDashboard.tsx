@@ -334,11 +334,20 @@ function DoctorDashboard() {
     reloadPulse();
     reloadCards();
     void listDoctors(clinic.id).then(setDoctors).catch(() => setDoctors([]));
-    const timer = window.setInterval(() => {
+    const onDesk = () => {
       reloadCards();
       reloadPulse();
-    }, 15000);
-    return () => window.clearInterval(timer);
+    };
+    window.addEventListener("bitvion-lead", onDesk);
+    window.addEventListener("bitvion-lead-update", onDesk);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") onDesk();
+    }, 8000);
+    return () => {
+      window.removeEventListener("bitvion-lead", onDesk);
+      window.removeEventListener("bitvion-lead-update", onDesk);
+      window.clearInterval(timer);
+    };
   }, [clinic, doctorId, filter, customFrom, customTo]);
 
   const visible = useMemo(
@@ -904,10 +913,28 @@ function ReceptionDashboard() {
                     <div className="flex flex-wrap items-center gap-2">
                       <select value={item.doctor_id || ""} onChange={(event) => {
                         const nextDoctor = event.target.value || null;
-                        void updateAppointment(item.id, { doctorId: nextDoctor }).then(() => {
-                          const next = { ...open, appointments: open.appointments.map((row) => row.id === item.id ? { ...row, doctor_id: nextDoctor || "" } : row) };
+                        const openStatuses = new Set(["scheduled", "confirmed", "arrived", "in_consultation"]);
+                        const start = new Date();
+                        start.setHours(0, 0, 0, 0);
+                        const pastOpen = openStatuses.has(item.status) && new Date(item.starts_at).getTime() < start.getTime();
+                        void updateAppointment(item.id, {
+                          doctorId: nextDoctor,
+                          ...(pastOpen ? { startsAt: new Date().toISOString() } : {}),
+                        }).then(() => {
+                          const next = {
+                            ...open,
+                            appointments: open.appointments.map((row) => row.id === item.id
+                              ? {
+                                  ...row,
+                                  doctor_id: nextDoctor || "",
+                                  ...(pastOpen ? { starts_at: new Date().toISOString() } : {}),
+                                }
+                              : row),
+                          };
                           setOpen(next);
                           setCards((current) => current.map((patient) => patient.id === open.id ? next : patient));
+                          clearDeskCache();
+                          window.dispatchEvent(new CustomEvent("bitvion-lead-update"));
                           setCardNote(nextDoctor ? `Assigned to ${doctorName(nextDoctor, doctors)}.` : "Doctor cleared.");
                         }).catch((reason: unknown) => setRecordError(reason instanceof Error ? reason.message : "Could not assign the doctor"));
                       }} className="h-11 min-w-0 flex-1 rounded-md border border-line px-2">

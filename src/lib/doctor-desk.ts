@@ -32,8 +32,15 @@ export function patientAssignedToDoctor(patient: DeskPatient, doctorId: string) 
   return patient.appointments.some((item) => item.doctor_id === doctorId);
 }
 
+const OPEN_VISIT_STATUSES = new Set(["scheduled", "confirmed", "arrived", "in_consultation"]);
+
 export function doctorLiveAppointments(patient: DeskPatient, doctorId: string) {
   return patient.appointments.filter((item) => item.doctor_id === doctorId && !["cancelled", "no_show"].includes(item.status));
+}
+
+/** Open assigned visits reception put on this doctor (even if booking date is older). */
+export function doctorOpenAssignments(patient: DeskPatient, doctorId: string) {
+  return doctorLiveAppointments(patient, doctorId).filter((item) => OPEN_VISIT_STATUSES.has(item.status));
 }
 
 export function doctorUpcomingAppointments(patient: DeskPatient, doctorId: string, now = new Date()) {
@@ -70,10 +77,13 @@ export function patientHistoricallyConsulted(patient: DeskPatient, now = new Dat
   return consultationStamps(patient).some((time) => time < cutoff);
 }
 
-/** Assigned visits from local start of today onward (includes today + future). */
+/** Assigned for today onward, or still-open visits reception assigned on an older booking date. */
 export function doctorAssignedFromToday(patient: DeskPatient, doctorId: string, now = new Date()) {
   const cutoff = startOfLocalDay(now).getTime();
-  return doctorLiveAppointments(patient, doctorId).some((item) => stampMs(item.starts_at) >= cutoff);
+  return doctorLiveAppointments(patient, doctorId).some((item) => {
+    if (stampMs(item.starts_at) >= cutoff) return true;
+    return OPEN_VISIT_STATUSES.has(item.status);
+  });
 }
 
 export function doctorDeskPool(patients: DeskPatient[], doctorId: string, now = new Date()) {
@@ -152,11 +162,15 @@ export function doctorPatientInFilter(
   if (filter === "today") {
     return doctorLiveAppointments(patient, doctorId).some((item) => {
       const time = stampMs(item.starts_at);
-      return time >= from && time < to;
+      if (time >= from && time < to) return true;
+      // Keep open reception assignments visible on Today even if the booking date is older.
+      return OPEN_VISIT_STATUSES.has(item.status);
     });
   }
 
-  return historyInRange(patient, from, to, todayStart) || assignedInRange(patient, doctorId, from, to, todayStart);
+  return historyInRange(patient, from, to, todayStart)
+    || assignedInRange(patient, doctorId, from, to, todayStart)
+    || doctorOpenAssignments(patient, doctorId).length > 0;
 }
 
 export function doctorVisitForFilter(
@@ -177,6 +191,8 @@ export function doctorVisitForFilter(
   const from = stampMs(bounds.from);
   const to = stampMs(bounds.to);
   const todayStart = startOfLocalDay(now).getTime();
+  const open = doctorOpenAssignments(patient, doctorId).sort((left, right) => left.starts_at.localeCompare(right.starts_at));
+  if (filter === "today" && open[0]) return open[0];
   const mine = doctorLiveAppointments(patient, doctorId)
     .filter((item) => {
       const time = stampMs(item.starts_at);
@@ -184,6 +200,7 @@ export function doctorVisitForFilter(
     })
     .sort((left, right) => left.starts_at.localeCompare(right.starts_at));
   if (mine[0]) return mine[0];
+  if (open[0]) return open[0];
   return [...patient.appointments]
     .filter((item) => {
       const time = stampMs(item.starts_at);
