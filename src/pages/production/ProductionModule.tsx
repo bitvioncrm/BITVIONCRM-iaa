@@ -5,6 +5,7 @@ import { Portrait } from "@/components/shared/Portrait";
 import { FilterBar, studentMatches, type DeskFilter } from "@/pages/production/ProductionDashboard";
 import { Sheet, SheetBody, SheetContent, SheetHeader } from "@/components/ui/sheet";
 import { PatientHistory } from "@/components/clinic/PatientHistory";
+import { PatientSearchSelect } from "@/components/clinic/PatientSearchSelect";
 import { BusinessBoard } from "@/components/dashboard/BusinessBoard";
 import { useAuth } from "@/context/AuthContext";
 import { doctorDeskPool } from "@/lib/doctor-desk";
@@ -175,10 +176,14 @@ function ClinicPanel({ workspace, onError, onNotice }: PanelProps) {
           reload();
         }, onError)}>
           <label className="text-sm">Patient
-            <select required value={patientId} onChange={(event) => setPatientId(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-line px-3">
-              <option value="">Choose a patient</option>
-              {patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.full_name}{patient.patient_code ? ` · ${patient.patient_code}` : ""}{patient.mobile ? ` · ${patient.mobile}` : ""}</option>)}
-            </select>
+            <PatientSearchSelect
+              required
+              patients={patients}
+              value={patientId}
+              onChange={setPatientId}
+              emptyLabel="Choose a patient"
+              placeholder="Search name, mobile, or code…"
+            />
           </label>
           <label className="text-sm">Assign doctor
             <select required value={doctorId} onChange={(event) => setDoctorId(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-line px-3">

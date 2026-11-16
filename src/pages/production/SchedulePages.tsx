@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { PatientSearchSelect } from "@/components/clinic/PatientSearchSelect";
 import { Portrait } from "@/components/shared/Portrait";
 import { DialLink } from "@/components/calls/DialLink";
 import { phoneTel } from "@/lib/phone";
@@ -149,10 +150,14 @@ export function AppointmentsPage() {
       {notice ? <p className="text-sm text-emerald-700">{notice}</p> : null}
       <form className="grid gap-2 rounded-2xl border border-line bg-white p-4 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); book(); }}>
         <label className="text-sm">Patient
-          <select required value={patientId} onChange={(event) => setPatientId(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-line px-3">
-            <option value="">Choose a patient</option>
-            {patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.full_name}{patient.patient_code ? ` · ${patient.patient_code}` : ""}{patient.mobile ? ` · ${patient.mobile}` : ""}</option>)}
-          </select>
+          <PatientSearchSelect
+            required
+            patients={patients}
+            value={patientId}
+            onChange={setPatientId}
+            emptyLabel="Choose a patient"
+            placeholder="Search name, mobile, or code…"
+          />
         </label>
         <label className="text-sm">Assign doctor
           <select required value={doctorId} onChange={(event) => setDoctorId(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-line px-3">
