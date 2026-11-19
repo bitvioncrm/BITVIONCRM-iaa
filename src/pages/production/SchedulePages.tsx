@@ -27,6 +27,15 @@ const APPOINTMENT_FILTERS = [
   { key: "upcoming", label: "Upcoming" },
   { key: "weekly", label: "Weekly" },
   { key: "monthly", label: "Monthly" },
+  { key: "yearly", label: "Yearly" },
+] as const;
+
+const COUNT_CARDS = [
+  { key: "today", label: "Today" },
+  { key: "upcoming", label: "Upcoming" },
+  { key: "weekly", label: "This week" },
+  { key: "monthly", label: "This month" },
+  { key: "yearly", label: "This year" },
 ] as const;
 
 const STATUSES = ["scheduled", "confirmed", "arrived", "in_consultation", "completed", "cancelled", "no_show"];
@@ -50,9 +59,43 @@ function matchesWhen(iso: string, filter: WhenFilter) {
     monday.setDate(start.getDate() - ((start.getDay() + 6) % 7));
     return time >= monday.getTime() && time < monday.getTime() + 7 * 86400000;
   }
+  if (filter === "yearly") {
+    const yearStart = new Date(start.getFullYear(), 0, 1).getTime();
+    const yearEnd = new Date(start.getFullYear() + 1, 0, 1).getTime();
+    return time >= yearStart && time < yearEnd;
+  }
   const monthStart = new Date(start.getFullYear(), start.getMonth(), 1).getTime();
   const monthEnd = new Date(start.getFullYear(), start.getMonth() + 1, 1).getTime();
   return time >= monthStart && time < monthEnd;
+}
+
+function countByWhen<T>(items: T[], test: (item: T, filter: WhenFilter) => boolean) {
+  const counts: Record<WhenFilter, number> = { all: items.length, today: 0, upcoming: 0, weekly: 0, monthly: 0, yearly: 0 };
+  for (const item of items) {
+    for (const card of COUNT_CARDS) {
+      if (test(item, card.key)) counts[card.key] += 1;
+    }
+  }
+  return counts;
+}
+
+function CountCards({ counts, value, onChange, noun }: { counts: Record<WhenFilter, number>; value: WhenFilter; onChange: (value: WhenFilter) => void; noun: string }) {
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-5" aria-label={`${noun} counts`}>
+      {COUNT_CARDS.map((card) => (
+        <button
+          key={card.key}
+          type="button"
+          onClick={() => onChange(card.key)}
+          className={`rounded-2xl border p-3 text-left ${value === card.key ? "border-[#0e1420] bg-[#0e1420] text-[#e8d5a3]" : "border-[#eadfca] bg-white text-ink"}`}
+        >
+          <p className={`text-xs ${value === card.key ? "text-[#e8d5a3]/80" : "text-muted"}`}>{card.label}</p>
+          <p className="mt-1 text-2xl font-semibold">{counts[card.key].toLocaleString("en-IN")}</p>
+          <p className={`text-[11px] ${value === card.key ? "text-[#e8d5a3]/70" : "text-muted"}`}>{noun}</p>
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function formatWhen(iso: string) {
@@ -72,12 +115,12 @@ function statusLabel(status: string) {
   return status.replaceAll("_", " ");
 }
 
-function Chips({ value, onChange }: { value: WhenFilter; onChange: (value: WhenFilter) => void }) {
+function Chips({ value, onChange, counts }: { value: WhenFilter; onChange: (value: WhenFilter) => void; counts?: Record<WhenFilter, number> }) {
   return (
     <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {APPOINTMENT_FILTERS.map((item) => (
         <button key={item.key} type="button" onClick={() => onChange(item.key)} className={`min-h-11 shrink-0 rounded-full px-3.5 text-sm ${value === item.key ? "bg-[#0e1420] text-[#e8d5a3]" : "border border-line bg-white text-ink"}`}>
-          {item.label}
+          {item.label}{counts ? ` (${counts[item.key].toLocaleString("en-IN")})` : ""}
         </button>
       ))}
     </div>
@@ -118,6 +161,7 @@ export function AppointmentsPage() {
     void listDoctors(workspace.id).then(setDoctors).catch(() => setDoctors([]));
   }, [workspace]);
   const visible = useMemo(() => rows.filter((row) => matchesWhen(row.startsAt, filter)), [rows, filter]);
+  const counts = useMemo(() => countByWhen(rows, (row, key) => matchesWhen(row.startsAt, key)), [rows]);
   const doctorName = (id: string) => doctors.find((item) => item.userId === id)?.name || "";
   const book = () => {
     if (!workspace || !patientId || !when || !doctorId) {
@@ -175,7 +219,8 @@ export function AppointmentsPage() {
         <label className="flex min-h-11 items-center gap-2 text-sm sm:col-span-2"><input type="checkbox" checked={walkIn} onChange={(event) => setWalkIn(event.target.checked)} /> Mark arrived now</label>
         <button type="submit" disabled={saving} className="min-h-11 rounded-md bg-navy px-3 text-sm text-white sm:col-span-2">{saving ? "Saving" : "Save appointment"}</button>
       </form>
-      <Chips value={filter} onChange={setFilter} />
+      <CountCards counts={counts} value={filter} onChange={setFilter} noun="appointments" />
+      <Chips value={filter} onChange={setFilter} counts={counts} />
       {visible.length === 0 ? <p className="rounded-2xl border border-dashed border-line bg-white px-4 py-10 text-center text-sm text-muted">No appointments in this range.</p> : (
         <div className="grid gap-3 sm:grid-cols-2">
           {visible.map((row) => (
@@ -271,13 +316,15 @@ export function BookingsPage() {
       return changed ? next : current;
     });
   }, [students, followUps]);
-  const visible = useMemo(() => students.filter((student) => {
+  const inRange = (student: DeskStudent, key: WhenFilter) => {
     const draft = drafts[student.id];
     const stamp = draft?.appointmentAt || student.admission_date || student.created_at;
-    if (filter === "all") return true;
-    if (filter === "upcoming") return student.status === "booked" || student.status === "enquiry" || matchesWhen(stamp, "upcoming");
-    return matchesWhen(stamp, filter);
-  }), [drafts, filter, students]);
+    if (key === "all") return true;
+    if (key === "upcoming") return student.status === "booked" || student.status === "enquiry" || matchesWhen(stamp, "upcoming");
+    return matchesWhen(stamp, key);
+  };
+  const visible = useMemo(() => students.filter((student) => inRange(student, filter)), [drafts, filter, students]);
+  const counts = useMemo(() => countByWhen(students, inRange), [drafts, students]);
   const save = (student: DeskStudent) => {
     if (!workspace) return;
     const draft = drafts[student.id];
@@ -302,7 +349,8 @@ export function BookingsPage() {
       </div>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {notice ? <p className="text-sm text-emerald-700">{notice}</p> : null}
-      <Chips value={filter} onChange={setFilter} />
+      <CountCards counts={counts} value={filter} onChange={setFilter} noun="bookings" />
+      <Chips value={filter} onChange={setFilter} counts={counts} />
       {visible.length === 0 ? <p className="rounded-2xl border border-dashed border-line bg-white px-4 py-10 text-center text-sm text-muted">No bookings in this range.</p> : (
         <div className="grid gap-3 sm:grid-cols-2">
           {visible.map((student) => {
