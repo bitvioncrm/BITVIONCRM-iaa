@@ -28,7 +28,10 @@ const APPOINTMENT_FILTERS = [
   { key: "weekly", label: "Weekly" },
   { key: "monthly", label: "Monthly" },
   { key: "yearly", label: "Yearly" },
+  { key: "custom", label: "Custom" },
 ] as const;
+
+const COUNTED_FILTERS: Array<Exclude<WhenFilterKey, "all">> = ["today", "upcoming", "weekly", "monthly", "yearly", "custom"];
 
 const COUNT_CARDS = [
   { key: "today", label: "Today" },
@@ -40,16 +43,23 @@ const COUNT_CARDS = [
 
 const STATUSES = ["scheduled", "confirmed", "arrived", "in_consultation", "completed", "cancelled", "no_show"];
 
-type WhenFilter = (typeof APPOINTMENT_FILTERS)[number]["key"];
+type WhenFilterKey = (typeof APPOINTMENT_FILTERS)[number]["key"];
+type WhenFilter = WhenFilterKey;
 
 function startOfDay(date = new Date()) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
-function matchesWhen(iso: string, filter: WhenFilter) {
+function matchesWhen(iso: string, filter: WhenFilter, customFrom = "", customTo = "") {
   if (filter === "all" || !iso) return filter === "all";
   const time = new Date(iso.length === 10 ? `${iso}T12:00:00` : iso).getTime();
   if (Number.isNaN(time)) return false;
+  if (filter === "custom") {
+    if (!customFrom && !customTo) return true;
+    const fromTime = customFrom ? new Date(`${customFrom}T00:00:00`).getTime() : Number.NEGATIVE_INFINITY;
+    const toTime = customTo ? new Date(`${customTo}T00:00:00`).getTime() + 86400000 : Number.POSITIVE_INFINITY;
+    return time >= fromTime && time < toTime;
+  }
   const start = startOfDay();
   const endToday = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1).getTime();
   if (filter === "today") return time >= start.getTime() && time < endToday;
@@ -70,10 +80,10 @@ function matchesWhen(iso: string, filter: WhenFilter) {
 }
 
 function countByWhen<T>(items: T[], test: (item: T, filter: WhenFilter) => boolean) {
-  const counts: Record<WhenFilter, number> = { all: items.length, today: 0, upcoming: 0, weekly: 0, monthly: 0, yearly: 0 };
+  const counts: Record<WhenFilter, number> = { all: items.length, today: 0, upcoming: 0, weekly: 0, monthly: 0, yearly: 0, custom: 0 };
   for (const item of items) {
-    for (const card of COUNT_CARDS) {
-      if (test(item, card.key)) counts[card.key] += 1;
+    for (const key of COUNTED_FILTERS) {
+      if (test(item, key)) counts[key] += 1;
     }
   }
   return counts;
@@ -115,7 +125,7 @@ function statusLabel(status: string) {
   return status.replaceAll("_", " ");
 }
 
-function Chips({ value, onChange, counts }: { value: WhenFilter; onChange: (value: WhenFilter) => void; counts?: Record<WhenFilter, number> }) {
+function Chips({ value, onChange, counts, customFrom, customTo, onFrom, onTo }: { value: WhenFilter; onChange: (value: WhenFilter) => void; counts?: Record<WhenFilter, number>; customFrom: string; customTo: string; onFrom: (value: string) => void; onTo: (value: string) => void }) {
   return (
     <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {APPOINTMENT_FILTERS.map((item) => (
@@ -123,6 +133,12 @@ function Chips({ value, onChange, counts }: { value: WhenFilter; onChange: (valu
           {item.label}{counts ? ` (${counts[item.key].toLocaleString("en-IN")})` : ""}
         </button>
       ))}
+      {value === "custom" ? (
+        <>
+          <input type="date" aria-label="From" className="h-11 shrink-0 rounded-full border border-line bg-white px-3 text-base" value={customFrom} onChange={(event) => onFrom(event.target.value)} />
+          <input type="date" aria-label="To" className="h-11 shrink-0 rounded-full border border-line bg-white px-3 text-base" value={customTo} onChange={(event) => onTo(event.target.value)} />
+        </>
+      ) : null}
     </div>
   );
 }
@@ -144,6 +160,8 @@ export function AppointmentsPage() {
   const [patients, setPatients] = useState<DeskPatient[]>([]);
   const [doctors, setDoctors] = useState<Array<{ userId: string; name: string }>>([]);
   const [filter, setFilter] = useState<WhenFilter>("all");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const [notice, setNotice] = useState("");
   const [patientId, setPatientId] = useState("");
   const [doctorId, setDoctorId] = useState("");
@@ -160,8 +178,8 @@ export function AppointmentsPage() {
     void listDeskPatients(workspace.id).then(setPatients).catch(() => setPatients([]));
     void listDoctors(workspace.id).then(setDoctors).catch(() => setDoctors([]));
   }, [workspace]);
-  const visible = useMemo(() => rows.filter((row) => matchesWhen(row.startsAt, filter)), [rows, filter]);
-  const counts = useMemo(() => countByWhen(rows, (row, key) => matchesWhen(row.startsAt, key)), [rows]);
+  const visible = useMemo(() => rows.filter((row) => matchesWhen(row.startsAt, filter, customFrom, customTo)), [rows, filter, customFrom, customTo]);
+  const counts = useMemo(() => countByWhen(rows, (row, key) => matchesWhen(row.startsAt, key, customFrom, customTo)), [rows, customFrom, customTo]);
   const doctorName = (id: string) => doctors.find((item) => item.userId === id)?.name || "";
   const book = () => {
     if (!workspace || !patientId || !when || !doctorId) {
@@ -220,7 +238,7 @@ export function AppointmentsPage() {
         <button type="submit" disabled={saving} className="min-h-11 rounded-md bg-navy px-3 text-sm text-white sm:col-span-2">{saving ? "Saving" : "Save appointment"}</button>
       </form>
       <CountCards counts={counts} value={filter} onChange={setFilter} noun="appointments" />
-      <Chips value={filter} onChange={setFilter} counts={counts} />
+      <Chips value={filter} onChange={setFilter} counts={counts} customFrom={customFrom} customTo={customTo} onFrom={setCustomFrom} onTo={setCustomTo} />
       {visible.length === 0 ? <p className="rounded-2xl border border-dashed border-line bg-white px-4 py-10 text-center text-sm text-muted">No appointments in this range.</p> : (
         <div className="grid gap-3 sm:grid-cols-2">
           {visible.map((row) => (
@@ -316,15 +334,17 @@ export function BookingsPage() {
       return changed ? next : current;
     });
   }, [students, followUps]);
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const inRange = (student: DeskStudent, key: WhenFilter) => {
     const draft = drafts[student.id];
     const stamp = draft?.appointmentAt || student.admission_date || student.created_at;
     if (key === "all") return true;
     if (key === "upcoming") return student.status === "booked" || student.status === "enquiry" || matchesWhen(stamp, "upcoming");
-    return matchesWhen(stamp, key);
+    return matchesWhen(stamp, key, customFrom, customTo);
   };
-  const visible = useMemo(() => students.filter((student) => inRange(student, filter)), [drafts, filter, students]);
-  const counts = useMemo(() => countByWhen(students, inRange), [drafts, students]);
+  const visible = useMemo(() => students.filter((student) => inRange(student, filter)), [drafts, filter, students, customFrom, customTo]);
+  const counts = useMemo(() => countByWhen(students, inRange), [drafts, students, customFrom, customTo]);
   const save = (student: DeskStudent) => {
     if (!workspace) return;
     const draft = drafts[student.id];
@@ -350,7 +370,7 @@ export function BookingsPage() {
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {notice ? <p className="text-sm text-emerald-700">{notice}</p> : null}
       <CountCards counts={counts} value={filter} onChange={setFilter} noun="bookings" />
-      <Chips value={filter} onChange={setFilter} counts={counts} />
+      <Chips value={filter} onChange={setFilter} counts={counts} customFrom={customFrom} customTo={customTo} onFrom={setCustomFrom} onTo={setCustomTo} />
       {visible.length === 0 ? <p className="rounded-2xl border border-dashed border-line bg-white px-4 py-10 text-center text-sm text-muted">No bookings in this range.</p> : (
         <div className="grid gap-3 sm:grid-cols-2">
           {visible.map((student) => {
