@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { StudentFile } from "@/components/institute/StudentFile";
 import { blankStudent, detailsFromStudent, StudentForm } from "@/components/institute/StudentForm";
 import { Portrait } from "@/components/shared/Portrait";
-import { FilterBar, studentMatches, type DeskFilter } from "@/pages/production/ProductionDashboard";
+import { FILTERS, FilterBar, studentMatches, type DeskFilter } from "@/pages/production/ProductionDashboard";
 import { Sheet, SheetBody, SheetContent, SheetHeader } from "@/components/ui/sheet";
 import { PatientHistory } from "@/components/clinic/PatientHistory";
 import { PatientSearchSelect } from "@/components/clinic/PatientSearchSelect";
@@ -293,6 +293,10 @@ function InstitutePanel({ workspace, onError, onNotice }: PanelProps) {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const visible = useMemo(() => students.filter((student) => studentMatches(student, filter, customFrom, customTo)), [students, filter, customFrom, customTo]);
+  const filterCounts = useMemo(
+    () => Object.fromEntries(FILTERS.map((item) => [item.key, students.filter((student) => studentMatches(student, item.key, customFrom, customTo)).length])) as Partial<Record<DeskFilter, number>>,
+    [students, customFrom, customTo],
+  );
   const load = () => void listDeskStudents(workspace.id).then(setStudents).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load students"));
   useEffect(() => {
     void listDeskStudents(workspace.id).then(setStudents).catch((reason: unknown) => onError(reason instanceof Error ? reason.message : "Could not load students"));
@@ -367,7 +371,7 @@ function InstitutePanel({ workspace, onError, onNotice }: PanelProps) {
       <StudentForm value={draft} onChange={setDraft} photo={photo} onPhoto={setPhoto} />
       <button className="min-h-11 rounded-md bg-navy px-3 text-sm text-white" type="submit" disabled={saving}>{saving ? "Saving" : "Admit"}</button>
     </form>
-    <FilterBar filter={filter} customFrom={customFrom} customTo={customTo} onFilter={setFilter} onFrom={setCustomFrom} onTo={setCustomTo} count={visible.length} noun="students" labels={{ appointment_today: "Admitted today", upcoming: "Upcoming admissions" }} />
+    <FilterBar filter={filter} customFrom={customFrom} customTo={customTo} onFilter={setFilter} onFrom={setCustomFrom} onTo={setCustomTo} count={visible.length} noun="students" labels={{ appointment_today: "Admitted today", upcoming: "Upcoming admissions" }} counts={filterCounts} countsNoun="bookings" />
     {visible.length === 0 ? <p className="rounded-2xl border border-dashed border-line bg-white px-4 py-10 text-center text-sm text-muted">No students in this range.</p> : (
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {visible.map((student) => (

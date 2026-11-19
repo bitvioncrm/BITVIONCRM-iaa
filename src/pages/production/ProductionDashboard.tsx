@@ -355,6 +355,11 @@ function DoctorDashboard() {
     [allMine, doctorId, filter, customFrom, customTo],
   );
 
+  const doctorCounts = useMemo(
+    () => Object.fromEntries(DOCTOR_FILTERS.map((item) => [item.key, allMine.filter((patient) => doctorPatientInFilter(patient, doctorId, item.key, customFrom, customTo)).length])) as Record<string, number>,
+    [allMine, doctorId, customFrom, customTo],
+  );
+
   const previousShared = useMemo(
     () => allMine.filter((patient) => patientHistoricallyConsulted(patient)),
     [allMine],
@@ -446,7 +451,7 @@ function DoctorDashboard() {
             onClick={() => setFilter(item.key)}
             className={`min-h-11 shrink-0 rounded-full px-3.5 text-sm ${filter === item.key ? "bg-[#0e1420] text-[#e8d5a3]" : "border border-line bg-white text-ink"}`}
           >
-            {item.label}
+            {item.label} ({(doctorCounts[item.key] ?? 0).toLocaleString("en-IN")})
           </button>
         ))}
         {filter === "custom" ? (
@@ -608,6 +613,10 @@ function ReceptionDashboard() {
   const arrivedPatients = useMemo(() => cards.filter((patient) => rangedAppointments(patient, filter, customFrom, customTo).some((item) => item.status === "arrived")), [cards, filter, customFrom, customTo]);
   const appointmentCount = useMemo(() => cards.reduce((sum, patient) => sum + rangedAppointments(patient, filter, customFrom, customTo).length, 0), [cards, filter, customFrom, customTo]);
   const arrivedCount = useMemo(() => cards.reduce((sum, patient) => sum + rangedAppointments(patient, filter, customFrom, customTo).filter((item) => item.status === "arrived").length, 0), [cards, filter, customFrom, customTo]);
+  const filterCounts = useMemo(
+    () => Object.fromEntries(FILTERS.map((item) => [item.key, cards.reduce((sum, patient) => sum + rangedAppointments(patient, item.key, customFrom, customTo).length, 0)])) as Partial<Record<DeskFilter, number>>,
+    [cards, customFrom, customTo],
+  );
   const followPatients = useMemo(() => cards.filter((patient) => Boolean(nextFollowUp(patient))), [cards]);
   const shown = focus === "appointments" ? withAppointments : focus === "arrived" ? arrivedPatients : focus === "followups" ? followPatients : visible;
   const shownLabel = focus === "appointments" ? "patients with appointments" : focus === "arrived" ? "arrived patients" : focus === "followups" ? "follow-ups" : "patients";
@@ -682,7 +691,7 @@ function ReceptionDashboard() {
         {recordError && !open ? <p className="mt-2 text-sm text-danger">{recordError}</p> : null}
       </section>
       <div className="flex flex-wrap gap-2"><Tile to="/appointments" label="Appointments" /><Tile to="/clinic" label="Register and appointments" /><Tile to="/billing" label="Billing" /><Tile to="/inventory" label="Stock" /></div>
-      <FilterBar filter={filter} customFrom={customFrom} customTo={customTo} onFilter={setFilter} onFrom={setCustomFrom} onTo={setCustomTo} count={shown.length} noun={shownLabel} />
+      <FilterBar filter={filter} customFrom={customFrom} customTo={customTo} onFilter={setFilter} onFrom={setCustomFrom} onTo={setCustomTo} count={shown.length} noun={shownLabel} counts={filterCounts} countsNoun="appointments" />
       <div id="reception-cards">
       {shown.length === 0 ? <p className="rounded-2xl border border-dashed border-line bg-white px-4 py-10 text-center text-sm text-muted">No patients in this range.</p> : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -1000,6 +1009,10 @@ function CallerDashboard({ title, institute }: { title: string; institute: boole
     if (institute) void listDeskStudents(workspace.id).then(setStudents).catch(() => setStudents([]));
   }, [institute, workspace]);
   const visible = useMemo(() => students.filter((student) => studentMatches(student, filter, customFrom, customTo)), [students, filter, customFrom, customTo]);
+  const filterCounts = useMemo(
+    () => Object.fromEntries(FILTERS.map((item) => [item.key, students.filter((student) => studentMatches(student, item.key, customFrom, customTo)).length])) as Partial<Record<DeskFilter, number>>,
+    [students, customFrom, customTo],
+  );
   return (
     <Shell title={title}>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
@@ -1032,6 +1045,8 @@ function CallerDashboard({ title, institute }: { title: string; institute: boole
             count={visible.length}
             noun="students"
             labels={{ appointment_today: "Admitted today", upcoming: "Upcoming admissions" }}
+            counts={filterCounts}
+            countsNoun="bookings"
           />
           {visible.length === 0 ? <p className="rounded-2xl border border-dashed border-line bg-white px-4 py-10 text-center text-sm text-muted">No students in this range.</p> : (
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -1126,7 +1141,7 @@ function InstituteCallerDashboard() {
 
 export type DeskFilter = "all" | "today" | "yesterday" | "appointment_today" | "upcoming" | "weekly" | "monthly" | "yearly" | "custom";
 
-const FILTERS: Array<{ key: DeskFilter; label: string }> = [
+export const FILTERS: Array<{ key: DeskFilter; label: string }> = [
   { key: "all", label: "All" },
   { key: "today", label: "Today" },
   { key: "yesterday", label: "Yesterday" },
@@ -1138,7 +1153,7 @@ const FILTERS: Array<{ key: DeskFilter; label: string }> = [
   { key: "custom", label: "Custom" },
 ];
 
-export function FilterBar({ filter, customFrom, customTo, onFilter, onFrom, onTo, count, noun, labels }: {
+export function FilterBar({ filter, customFrom, customTo, onFilter, onFrom, onTo, count, noun, labels, counts, countsNoun }: {
   filter: DeskFilter;
   customFrom: string;
   customTo: string;
@@ -1148,6 +1163,8 @@ export function FilterBar({ filter, customFrom, customTo, onFilter, onFrom, onTo
   count: number;
   noun: string;
   labels?: Partial<Record<DeskFilter, string>>;
+  counts?: Partial<Record<DeskFilter, number>>;
+  countsNoun?: string;
 }) {
   return (
     <div className="space-y-3">
@@ -1155,6 +1172,7 @@ export function FilterBar({ filter, customFrom, customTo, onFilter, onFrom, onTo
         {FILTERS.map((item) => (
           <button key={item.key} type="button" onClick={() => onFilter(item.key)} className={`min-h-11 shrink-0 rounded-full px-3.5 text-sm ${filter === item.key ? "bg-[#0e1420] text-[#e8d5a3]" : "border border-line bg-white text-ink"}`}>
             {labels?.[item.key] ?? item.label}
+            {counts && typeof counts[item.key] === "number" ? ` (${(counts[item.key] as number).toLocaleString("en-IN")})` : ""}
           </button>
         ))}
         {filter === "custom" ? (
@@ -1164,7 +1182,7 @@ export function FilterBar({ filter, customFrom, customTo, onFilter, onFrom, onTo
           </>
         ) : null}
       </div>
-      <p className="text-sm text-muted">{count.toLocaleString("en-IN")} {noun}</p>
+      <p className="text-sm text-muted">{count.toLocaleString("en-IN")} {noun}{counts && countsNoun ? ` · numbers on the filters are ${countsNoun}` : ""}</p>
     </div>
   );
 }

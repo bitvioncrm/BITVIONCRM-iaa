@@ -108,7 +108,7 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
               onPeriod={(period) => setRangeKey(moneyPeriodToRangeKey(period))}
               onFrom={setCustomFrom}
               onTo={setCustomTo}
-              countLabel={`Showing ${bounds.label}`}
+              countLabel={`Showing ${bounds.label}${data && showClinic ? ` · ${text(data.appointments)} appointments · ${text(data.todayAppointments)} today` : ""}`}
             />
           </div>
         </section>
