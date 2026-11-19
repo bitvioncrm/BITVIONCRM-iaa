@@ -734,6 +734,36 @@ export async function downloadWorkspaceCsv(workspaceId: string, range?: { from?:
   return lines.join("\n");
 }
 
+export async function listWorkspaceContacts(workspaceId: string) {
+  const rows: Array<{ name: string; phone: string }> = [];
+  const seen = new Set<string>();
+  const size = 1000;
+  let from = 0;
+  for (;;) {
+    const { data, error } = await client()
+      .from("leads")
+      .select("full_name, phone")
+      .eq("workspace_id", workspaceId)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: true })
+      .range(from, from + size - 1);
+    if (error) throw new Error(error.message);
+    const batch = data ?? [];
+    for (const row of batch) {
+      const phone = String(row.phone ?? "").trim();
+      if (!phone) continue;
+      const key = phone.replace(/\D/g, "").slice(-10) || phone;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push({ name: String(row.full_name ?? "").trim(), phone });
+    }
+    if (batch.length < size) break;
+    from += size;
+  }
+  return rows;
+}
+
 export interface DirectoryHit {
   id: string;
   title: string;

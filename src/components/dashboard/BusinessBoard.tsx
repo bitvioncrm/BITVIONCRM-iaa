@@ -7,7 +7,9 @@ import { formatLeadArrived } from "@/lib/dates";
 import { inr } from "@/lib/money";
 import { moneyPeriodToRangeKey, rangeKeyToMoneyPeriod } from "@/lib/money-filter";
 import { loadOverview, type Overview } from "@/services/overview";
-import { listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
+import { format } from "date-fns";
+import { downloadCsv, excelPhone } from "@/lib/csv";
+import { listWorkspaceContacts, listWorkspaces, type WorkspaceOption } from "@/services/production-leads";
 
 const tooltipStyle = { border: "1px solid #e6e8ee", borderRadius: 8, fontSize: 12 };
 
@@ -42,6 +44,8 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState<"" | "clinic" | "institute">("");
+  const [exportNote, setExportNote] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -89,6 +93,22 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
   const showClinic = desk !== "institute";
   const showInstitute = desk !== "clinic";
   const chartsReady = Boolean(data && !data.chartNote);
+  const exportContacts = (kind: "clinic" | "institute") => {
+    const target = kind === "clinic" ? clinic : institute;
+    if (!target) {
+      setExportNote(`The ${kind} desk is not available.`);
+      return;
+    }
+    setExporting(kind);
+    setExportNote("");
+    void listWorkspaceContacts(target.id)
+      .then((rows) => {
+        downloadCsv(`${kind}-leads-${format(new Date(), "yyyy-MM-dd")}.csv`, [["Name", "Mobile"], ...rows.map((row) => [row.name, excelPhone(row.phone)])]);
+        setExportNote(`${rows.length.toLocaleString("en-IN")} ${kind} leads exported (name and mobile only).`);
+      })
+      .catch((reason: unknown) => setExportNote(reason instanceof Error ? reason.message : "Export failed"))
+      .finally(() => setExporting(""));
+  };
 
   return (
     <div className="space-y-6">
@@ -111,6 +131,25 @@ export function BusinessBoard({ desk, variant = "full" }: { desk: DeskKey; varia
               countLabel={`Showing ${bounds.label}${data && showClinic ? ` · ${text(data.appointments)} appointments · ${text(data.todayAppointments)} today` : ""}`}
             />
           </div>
+        </section>
+      ) : null}
+      {variant === "full" ? (
+        <section className="rounded-2xl border border-line bg-white p-3 sm:p-4">
+          <h2 className="text-sm font-semibold">Export leads</h2>
+          <p className="mt-1 text-sm text-muted">Download each desk separately as a CSV with only the name and mobile number.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {showClinic ? (
+              <button type="button" disabled={Boolean(exporting) || !clinic} onClick={() => exportContacts("clinic")} className="min-h-11 rounded-md bg-navy px-4 text-sm text-white disabled:opacity-60">
+                {exporting === "clinic" ? "Preparing…" : "Export clinic leads"}
+              </button>
+            ) : null}
+            {showInstitute ? (
+              <button type="button" disabled={Boolean(exporting) || !institute} onClick={() => exportContacts("institute")} className="min-h-11 rounded-md border border-line bg-white px-4 text-sm font-medium disabled:opacity-60">
+                {exporting === "institute" ? "Preparing…" : "Export institute leads"}
+              </button>
+            ) : null}
+          </div>
+          {exportNote ? <p className="mt-2 text-sm text-muted">{exportNote}</p> : null}
         </section>
       ) : null}
       {error ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
